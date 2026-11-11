@@ -54,8 +54,8 @@ flowchart TD
 |---|---|---|
 | `quarto` | Removes Bootstrap JavaScript, Popper, Tippy, Clipboard.js and Anchor.js when the markup never uses them, and stubs the globals Quarto's own runtime calls regardless | The markup uses the library, or another script mentions it |
 | `js` | Minifies scripts, and turns data-URI module scripts into inline modules | The script does not parse, or is already minified |
-| `css` | Deletes rules that need a class, id or tag found nowhere in the markup or any script, then minifies. Custom property values are kept verbatim | The stylesheet parses with warnings |
-| `fonts` | Converts fonts to WOFF2, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. With `--subset-text-fonts`, text fonts are also subsetted to the characters the document uses (see below) | The family name is written with escapes |
+| `css` | Deletes rules that need a class, id or tag found nowhere in the markup or any script, then minifies. Custom property values are kept verbatim | A rule the parser rejects, and rules whose `calc()` arithmetic would lose precision, are kept exactly as written and the rest of the sheet is still optimized |
+| `fonts` | Keeps the one source browsers use (the last `src`, preferring WOFF2, then WOFF, then TrueType and OpenType, and dropping legacy EOT and SVG copies), converts it to WOFF2, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. With `--subset-text-fonts`, text fonts are also subsetted to the characters the document uses (see below) | The family name is written with escapes |
 | `images` | Recompresses embedded PNGs losslessly. With `--lossy-images`, re-encodes PNG and JPEG as AVIF (or WebP), shrinking anything wider than 3840 px | Lossless skips images over 40 megapixels |
 | `pack` | Gathers scripts, styles, stylesheet links, inline SVG, images and data blocks into one compressed blob, restored in place by a synchronous loader | A Content-Security-Policy meta tag; modules and import maps are never packed |
 
@@ -113,11 +113,11 @@ Bundled libraries carry license banners, and MIT, BSD and Apache require them to
 | Brotli for large packed blobs | [`brotli`](https://crates.io/crates/brotli) |
 | Text-safe encoding of the blob | [`base91`](https://crates.io/crates/base91) |
 
-Apart from a small tag scanner that records byte ranges, Octavo parses and encodes no format by hand. The only non-Rust code in the build is the WOFF2 encoder behind `fontcull` and libdeflate behind `oxipng` and `libdeflater`. Everything else is pure Rust.
+Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The only non-Rust code in the build is the WOFF2 encoder behind `fontcull` and libdeflate behind `oxipng` and `libdeflater`. Everything else is pure Rust.
 
 ## As a library
 
-The `octavo` crate is the whole optimizer, and the command line is a thin wrapper around it.
+The `octavo` crate is the whole optimizer, and the command line is a thin wrapper around it. `Mode` is `Safe`, `Scripts` or `Packed`, matching the three command-line levels.
 
 ```rust
 use octavo::{optimize, Mode};
@@ -155,6 +155,22 @@ node bench.mjs packed ../corpus/html/train ../corpus/html/test
 ```
 
 A pass means the tested matrix matched. It is not a proof of equivalence.
+
+On a busy machine, large pages loaded side by side can land in different timing states (scroll-view scrollbars, footnote popups, MathJax). Set `OCTAVO_PAGES=1` to load one page at a time and get deterministic comparisons.
+
+### The corpus
+
+`corpus/` holds a test corpus of about 470 documents: hand-written adversarial and realistic fixtures (parsing, CSS, scripts, images, fonts, Quarto-style pages, libraries, large pages) and about 160 real pages that Quarto renders from its own test documents, chosen across HTML, slides and dashboards by measured features. Every fixture states its expected outcome up front: optimize, keep unchanged, or reject.
+
+```sh
+cargo build --release
+node corpus/build.mjs                       # regenerate manifest.json, or --check it
+node corpus/upstream.mjs                    # render the real pages (needs Quarto)
+node verify/corpus.mjs --tier smoke --browser
+node verify/corpus.mjs --tier full --browser --jobs 2
+```
+
+See [`corpus/README.md`](corpus/README.md) for the format and how to add documents.
 
 ## Limits
 

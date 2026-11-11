@@ -1,0 +1,67 @@
+name: Corpus
+
+on:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "corpus/**"
+      - "verify/**"
+      - "Cargo.lock"
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Which documents to run
+        type: choice
+        options: [smoke, full]
+        default: smoke
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  OCTAVO_PAGES: 1
+  TIER: ${{ github.event_name == 'pull_request' && 'smoke' || github.event.inputs.tier || 'full' }}
+
+jobs:
+  corpus:
+    name: Corpus (${{ github.event_name == 'pull_request' && 'smoke' || github.event.inputs.tier || 'full' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: cargo build --locked --release
+      - run: npm ci
+        working-directory: verify
+      - run: npx playwright-core install --with-deps chromium
+        working-directory: verify
+      - run: node corpus/build.mjs --check
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.11.9
+      - uses: actions/cache@v4
+        with:
+          path: corpus/.cache
+          key: corpus-${{ hashFiles('corpus/sources.json') }}
+      - run: node corpus/upstream.mjs --jobs 2
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --jobs 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: corpus-report
+          path: out/corpus
+          if-no-files-found: ignore
