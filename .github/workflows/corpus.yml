@@ -131,3 +131,22 @@ jobs:
           name: corpus-report-${{ matrix.shard }}
           path: out/corpus
           if-no-files-found: ignore
+
+  totals:
+    name: Totals
+    needs: [plan, corpus]
+    if: always() && needs.plan.outputs.tier != 'select'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: corpus-report-*
+          path: reports
+      - run: node verify/merge-reports.mjs reports
