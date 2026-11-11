@@ -87,3 +87,23 @@ jobs:
         working-directory: verify
       - run: node --test
         working-directory: verify
+
+  release-readiness:
+    name: Release readiness
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: The changelog describes this version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          grep -qF "## [$version]" CHANGELOG.md
+      - name: The library packages and builds on its own
+        run: cargo publish --dry-run --locked -p octavo
+      - name: The command line packages
+        run: cargo package --locked --no-verify -p octavo-cli

@@ -1,0 +1,6 @@
+- name: Install cargo-about
+  uses: taiki-e/install-action@v2
+  with:
+    tool: cargo-about
+- name: Generate third-party licenses
+  run: cargo about generate about.hbs -o THIRD-PARTY-LICENSES.txt

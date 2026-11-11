@@ -11,10 +11,11 @@ ci = "github"
 installers = []
 # Files to include in each archive besides the licenses and README
 include = ["THIRD-PARTY-LICENSES.txt"]
-# Workflow edits (such as Dependabot action bumps) are expected
 allow-dirty = ["ci"]
+# Workflow edits (such as Dependabot action bumps) are expected
 github-attestations = true
 plan-jobs = ["./ci", "./corpus"]
+github-build-setup = "../build-setup.yml"
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = [
   "aarch64-apple-darwin",

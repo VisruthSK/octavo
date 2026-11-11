@@ -91,7 +91,7 @@ jobs:
           key: corpus-${{ hashFiles('corpus/sources.json', 'corpus/selection.json') }}
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
       - run: node verify/corpus.mjs --tier "$TIER" --browser --jobs 2 --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: corpus-report-${{ matrix.shard }}
