@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{borrow::Borrow, ops::Range};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Element {
@@ -34,47 +34,195 @@ impl Element {
             .find(|element| element.name().eq_ignore_ascii_case(written))
     }
 
-    fn holds_raw_text(self) -> bool {
-        matches!(self, Element::Script | Element::Style)
+    fn raw_text_name(self) -> Option<&'static str> {
+        match self {
+            Element::Script => Some("script"),
+            Element::Style => Some("style"),
+            Element::Link | Element::Img | Element::Svg => None,
+        }
     }
 }
 
-const OTHER_RAW_TEXT: [&str; 8] = [
-    "textarea", "title", "noscript", "template", "iframe", "noembed", "noframes", "xmp",
-];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RawText {
+    Textarea,
+    Title,
+    Noscript,
+    Template,
+    Iframe,
+    Noembed,
+    Noframes,
+    Xmp,
+}
+
+impl RawText {
+    const ALL: [RawText; 8] = [
+        RawText::Textarea,
+        RawText::Title,
+        RawText::Noscript,
+        RawText::Template,
+        RawText::Iframe,
+        RawText::Noembed,
+        RawText::Noframes,
+        RawText::Xmp,
+    ];
+
+    fn name(self) -> &'static str {
+        match self {
+            RawText::Textarea => "textarea",
+            RawText::Title => "title",
+            RawText::Noscript => "noscript",
+            RawText::Template => "template",
+            RawText::Iframe => "iframe",
+            RawText::Noembed => "noembed",
+            RawText::Noframes => "noframes",
+            RawText::Xmp => "xmp",
+        }
+    }
+
+    fn parse(written: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|raw| raw.name().eq_ignore_ascii_case(written))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AttrName {
+    Src,
+    DataSrc,
+    Href,
+    Rel,
+    Type,
+    Id,
+    Other(String),
+}
+
+impl AttrName {
+    pub fn as_str(&self) -> &str {
+        match self {
+            AttrName::Src => "src",
+            AttrName::DataSrc => "data-src",
+            AttrName::Href => "href",
+            AttrName::Rel => "rel",
+            AttrName::Type => "type",
+            AttrName::Id => "id",
+            AttrName::Other(name) => name,
+        }
+    }
+
+    fn parse(written: &str) -> Self {
+        if written.eq_ignore_ascii_case("src") {
+            AttrName::Src
+        } else if written.eq_ignore_ascii_case("data-src") {
+            AttrName::DataSrc
+        } else if written.eq_ignore_ascii_case("href") {
+            AttrName::Href
+        } else if written.eq_ignore_ascii_case("rel") {
+            AttrName::Rel
+        } else if written.eq_ignore_ascii_case("type") {
+            AttrName::Type
+        } else if written.eq_ignore_ascii_case("id") {
+            AttrName::Id
+        } else {
+            AttrName::Other(written.to_ascii_lowercase())
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Attribute {
+    pub name: AttrName,
+    pub value: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rel<'a> {
+    Stylesheet,
+    Other(&'a str),
+}
+
+impl Rel<'_> {
+    pub fn is_stylesheet(&self) -> bool {
+        match self {
+            Rel::Stylesheet => true,
+            Rel::Other(value) => value
+                .split_whitespace()
+                .any(|word| word.eq_ignore_ascii_case("stylesheet")),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Tag {
     pub element: Element,
     pub span: Range<usize>,
-    pub attrs: Vec<(String, String)>,
+    pub attrs: Vec<Attribute>,
     pub body: Option<Range<usize>>,
     pub in_svg: bool,
 }
 
 impl Tag {
-    pub fn attr(&self, name: &str) -> Option<&str> {
+    pub fn attr(&self, name: impl Borrow<AttrName>) -> Option<&str> {
+        let name = name.borrow();
         self.attrs
             .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, v)| v.as_str())
+            .find(|attr| attr.name == *name)
+            .map(|attr| attr.value.as_str())
     }
 
-    pub fn open_tag(&self, mut rewrite: impl FnMut(&str, &str) -> Option<String>) -> String {
+    pub fn rel(&self) -> Option<Rel<'_>> {
+        self.attr(AttrName::Rel).map(|value| {
+            if value == "stylesheet" {
+                Rel::Stylesheet
+            } else {
+                Rel::Other(value)
+            }
+        })
+    }
+
+    pub fn open_tag(&self, mut rewrite: impl FnMut(&AttrName, &str) -> Option<String>) -> String {
         let attrs: String = self
             .attrs
             .iter()
-            .filter_map(|(name, value)| {
-                rewrite(name, value).map(|v| format!(" {name}=\"{}\"", v.replace('"', "&quot;")))
+            .filter_map(|attr| {
+                rewrite(&attr.name, &attr.value).map(|value| {
+                    format!(
+                        " {}=\"{}\"",
+                        attr.name.as_str(),
+                        value.replace('"', "&quot;")
+                    )
+                })
             })
             .collect();
         format!("<{}{attrs}>", self.element.name())
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct Scanned {
+    html: String,
+    tags: Vec<Tag>,
+}
+
+impl Scanned {
+    pub fn new(html: String) -> Self {
+        let tags = scan(&html);
+        Scanned { html, tags }
+    }
+
+    pub fn html(&self) -> &str {
+        &self.html
+    }
+
+    pub fn tags(&self) -> &[Tag] {
+        &self.tags
+    }
+}
+
 struct Svg {
     start: usize,
-    attrs: Vec<(String, String)>,
+    attrs: Vec<Attribute>,
     body_start: usize,
 }
 
@@ -108,12 +256,10 @@ pub fn scan(src: &str) -> Vec<Tag> {
         }
         let written = &src[name_start..name_start + name_len];
         let element = Element::parse(written);
-        let opaque = OTHER_RAW_TEXT
-            .iter()
-            .any(|name| name.eq_ignore_ascii_case(written));
+        let raw = RawText::parse(written);
         let (attrs, tag_end, self_closing) =
             parse_attrs(src, name_start + name_len, element.is_some());
-        if element.is_none() && !opaque {
+        if element.is_none() && raw.is_none() {
             i = tag_end;
             continue;
         }
@@ -146,8 +292,12 @@ pub fn scan(src: &str) -> Vec<Tag> {
         }
         let mut span = i..tag_end;
         let mut body = None;
-        if opaque || element.is_some_and(Element::holds_raw_text) {
-            let close = find_close(src, tag_end, written);
+        let close_name = match element {
+            Some(element) => element.raw_text_name(),
+            None => raw.map(RawText::name),
+        };
+        if let Some(name) = close_name {
+            let close = find_close(src, tag_end, name);
             body = Some(tag_end..close);
             span.end = src[close..].find('>').map_or(src.len(), |e| close + e + 1);
         }
@@ -180,7 +330,7 @@ fn find_close(src: &str, from: usize, name: &str) -> usize {
         .unwrap_or(src.len())
 }
 
-fn parse_attrs(src: &str, mut i: usize, collect: bool) -> (Vec<(String, String)>, usize, bool) {
+fn parse_attrs(src: &str, mut i: usize, collect: bool) -> (Vec<Attribute>, usize, bool) {
     let b = src.as_bytes();
     let mut attrs = Vec::new();
     let mut self_closing = false;
@@ -227,7 +377,10 @@ fn parse_attrs(src: &str, mut i: usize, collect: bool) -> (Vec<(String, String)>
                     }
                 }
                 if collect {
-                    attrs.push((name.to_ascii_lowercase(), value.to_string()));
+                    attrs.push(Attribute {
+                        name: AttrName::parse(name),
+                        value: value.to_string(),
+                    });
                 }
             }
         }
