@@ -1,5 +1,705 @@
 [
   {
+    "id": "assets-avif-declared-png-bytes",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/avif;base64,"
+      ]
+    },
+    "bytes": 1331,
+    "sha256": "70497e906264f7b8e02537cf4854bc88bb9f5c285c0f9c1b3fd0f0ede9d7471f"
+  },
+  {
+    "id": "assets-base64-with-a-missing-pad",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1334,
+    "sha256": "1e8bd8d50d213cf898632ba718765a456f5b2686ed24d095e3da1f708b93bf2b"
+  },
+  {
+    "id": "assets-base64-with-an-extra-pad",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1333,
+    "sha256": "6d966da387601324a86564e3f5ee4cbee0c4aea7e4e4b4917492e229ef134172"
+  },
+  {
+    "id": "assets-base64-with-whitespace",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1334,
+    "sha256": "4cc54fb584f847238c3e84ecb84bd2c1cc17ec58beeedfd397df48d044de9a49"
+  },
+  {
+    "id": "assets-corrupt-png",
+    "category": "images",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1333,
+    "sha256": "53e3995a974b89ed3d834edeb3d447c480ad83fedad45cf9ddfde97c5171fb89"
+  },
+  {
+    "id": "assets-duplicated-images",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 2949,
+    "sha256": "8fc759fd6cc925e2e7aae2b908ad46eeab2b03225fe888331571bd9033705cb6"
+  },
+  {
+    "id": "assets-font-faces-with-unicode-ranges",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "U+4E00",
+        "U+1F600"
+      ]
+    },
+    "bytes": 924,
+    "sha256": "25cc24203040fdd94a96d0a4ad4405100209332b364a9d0e8614476f6ef354d1"
+  },
+  {
+    "id": "assets-font-in-a-data-uri-stylesheet",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@font-face",
+        "data:font/ttf;base64,"
+      ]
+    },
+    "bytes": 471,
+    "sha256": "782f96cb120c7e15e8bd6ac6a9c0c4694a7c9761f278bfbc454058341cb9ca9c"
+  },
+  {
+    "id": "assets-font-named-by-a-script-is-kept",
+    "category": "fonts",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@font-face",
+        "data:font/ttf;base64,"
+      ]
+    },
+    "bytes": 452,
+    "sha256": "01374f542020ac5681310ad3278c46b60116f529c2ce5000a535dfe825cb8827"
+  },
+  {
+    "id": "assets-font-referenced-through-a-custom-property",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@font-face",
+        "data:font/ttf;base64,"
+      ]
+    },
+    "bytes": 465,
+    "sha256": "d22e67cc25239e9493b7ae8a340a74c5feb146826b746e2812b9141a46707155"
+  },
+  {
+    "id": "assets-font-with-an-escaped-family-name",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:font/ttf;base64,"
+      ]
+    },
+    "bytes": 436,
+    "sha256": "c342497a931f689a02865b16ea06edc482797e681742bbec6bcf992fe9bf506e"
+  },
+  {
+    "id": "assets-gif",
+    "category": "images",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/gif;base64,"
+      ]
+    },
+    "bytes": 645,
+    "sha256": "70f9324e3929e2e3467b4f31bf403713e6ad66e15660748927f4c329479c690f"
+  },
+  {
+    "id": "assets-gif-animated",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/gif;base64,"
+      ]
+    },
+    "bytes": 1109,
+    "sha256": "e1ed67b95dbaaa62c98299761da9149d06ecb1aca858dffd78bdb227362ee0de"
+  },
+  {
+    "id": "assets-icon-font-with-corrupt-data",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:font/ttf;base64,"
+      ]
+    },
+    "bytes": 471,
+    "sha256": "56da43c5c311c6270ca6cd1ec8216afe60faf4a5404cbe4e7116c7881328548a"
+  },
+  {
+    "id": "assets-image-inside-an-inline-svg",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1377,
+    "sha256": "46192fdc4d3554cfb1ceb83adc56fac4e0ec899f611bb1a5a1a9ed9d3802f36b"
+  },
+  {
+    "id": "assets-image-with-width-and-height",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "width=\"64\"",
+        "height=\"48\""
+      ]
+    },
+    "bytes": 2106,
+    "sha256": "e6ee845c14c40016b9263b36187aeb68c6b6b4574e4f91bcf1fdbe367d62dbef"
+  },
+  {
+    "id": "assets-inline-svg-with-a-script",
+    "category": "images",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "window.assetsSvg = 1"
+      ]
+    },
+    "bytes": 246,
+    "sha256": "a11451206ea1a107bc948ad2d3c086f97e4628368754b6b746b807d2fe927cc4"
+  },
+  {
+    "id": "assets-inline-svg-with-a-style",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<style>.assets-shape{fill:red}</style>"
+      ]
+    },
+    "bytes": 268,
+    "sha256": "fa778a6f361df48674e538d82abb339048f91303e6258ca320dc18a83b23039a"
+  },
+  {
+    "id": "assets-jpeg-baseline",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/jpeg;base64,"
+      ]
+    },
+    "bytes": 451,
+    "sha256": "1cffbe752695a2c3f856530fcfa607c0fb4113a5c61dfa5e1c2da34bfd317321"
+  },
+  {
+    "id": "assets-jpeg-large",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/jpeg;base64,"
+      ]
+    },
+    "bytes": 2151,
+    "sha256": "942b7c9d435e077deaa8f7de9d804a23c8af784adfa28283236dcf497e732247"
+  },
+  {
+    "id": "assets-large-image",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 79653,
+    "sha256": "971c68054535745a12df9414320004317c7a812a6eb6c28f96a248cfc3e9cbf6"
+  },
+  {
+    "id": "assets-many-images",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 48399,
+    "sha256": "f559bd6e83355ee5955c1c94e011571213825572f9a47f0a4f82869280a0ebac"
+  },
+  {
+    "id": "assets-otf-with-corrupt-data",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:font/otf;base64,"
+      ]
+    },
+    "bytes": 424,
+    "sha256": "385d8fb21d3877dd217f7cf6c02b179075ce7565da120337acc610b36721e790"
+  },
+  {
+    "id": "assets-percent-encoded-png",
+    "category": "images",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ],
+      "removes": [
+        "%89PNG"
+      ]
+    },
+    "bytes": 3235,
+    "sha256": "191eeb9882bedc13be64f5d7840be099ef911aeab167cc06bb494d5952233a67"
+  },
+  {
+    "id": "assets-png-as-a-css-background",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,iVBORw0KGgo"
+      ]
+    },
+    "bytes": 1428,
+    "sha256": "ebe874597d5cd24a04dc7c537d69171c38c536a92dc2d2f4ecdfdee23d251a87"
+  },
+  {
+    "id": "assets-png-grayscale",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 802,
+    "sha256": "6555ecd51989b108d49174e82ee49ce2a9202dd18dddc6167d0c49628d0540f1"
+  },
+  {
+    "id": "assets-png-in-a-data-src-attribute",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data-src=\"data:image/png;base64,"
+      ]
+    },
+    "bytes": 1335,
+    "sha256": "81751048d91abad4c2dc84c0380c357a5d9f0c40fcf6582455ad96eda444173e"
+  },
+  {
+    "id": "assets-png-in-a-srcset",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "srcset=\""
+      ]
+    },
+    "bytes": 4098,
+    "sha256": "25c68f325b36fe5a6f9c2b0cf8bb79d4ddce67376180565dda42eb9c38c196ad"
+  },
+  {
+    "id": "assets-png-interlaced",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1212,
+    "sha256": "913d6314a936926bc4c74d3f58b72d53f53520aa4f52030653e29fd1978025ab"
+  },
+  {
+    "id": "assets-png-one-pixel",
+    "category": "images",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 287,
+    "sha256": "b32296fd85f4e9720ca8ec8ee6892eb8c1515d4f5b9332afa11f1729d5403f2d"
+  },
+  {
+    "id": "assets-png-palette",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 349,
+    "sha256": "4fd752a5ef8e35b17c1e2c479189b50ee576d947c0b0628f5744ca65d4d86602"
+  },
+  {
+    "id": "assets-png-palette-with-transparency",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 369,
+    "sha256": "fd0adb9f3cd3ccc74ef3e56a8d28ceb9fc58c0f549f2b9017df145d56ad2d321"
+  },
+  {
+    "id": "assets-png-sixteen-bit",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1454,
+    "sha256": "e73276980385f8a917887fb5b51b8baad87368c0a8f6315a24415de01c83705f"
+  },
+  {
+    "id": "assets-png-truecolor",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1671,
+    "sha256": "1ccbb516d0152b7509c1f148e34a528dc1edb441ddd6abc5cc5731fb89fc711c"
+  },
+  {
+    "id": "assets-png-with-a-charset-parameter",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ],
+      "removes": [
+        "charset=utf-8"
+      ]
+    },
+    "bytes": 2927,
+    "sha256": "fb86d22a8170a66591bbcf5f158fa3f46930e96e43bef11a8d26a50d693ad4b0"
+  },
+  {
+    "id": "assets-png-with-a-color-profile",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1353,
+    "sha256": "ef58a8408c964eb6e738e914c0d8922b5ee69b824ed4e45ba3092a84621d9473"
+  },
+  {
+    "id": "assets-png-with-a-gamma-chunk",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1355,
+    "sha256": "29c9ec3a1b814f9cf51329c3b72abf6db7ddad8447bfe7f84d54ded16f72c198"
+  },
+  {
+    "id": "assets-png-with-a-text-chunk",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 2695,
+    "sha256": "d6acfd899f8aea7c770250c53b602e0a164b07d9eaf70777ab7c5234e1c19d05"
+  },
+  {
+    "id": "assets-png-with-a-wrong-mime",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/gif;base64,"
+      ]
+    },
+    "bytes": 1337,
+    "sha256": "84cc029081f7ce85ad98613887d12ba76d089921135d9c833faa0e0f5ed7a313"
+  },
+  {
+    "id": "assets-png-with-alpha",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1071,
+    "sha256": "746789d586f2e4bd55071b7268d11c8dc54216787832885d74b4dde0a4cf9eb7"
+  },
+  {
+    "id": "assets-png-with-ancillary-chunks",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1384,
+    "sha256": "151143a9d4a1fc1b4252096eb2c06ef57e08e3f1f35a71732d33a78c15651f1f"
+  },
+  {
+    "id": "assets-svg-data-uri-image",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/svg+xml,"
+      ]
+    },
+    "bytes": 315,
+    "sha256": "6363028962817e929b16ec7a007513b5cb60ff34d79530945b2e63e0ce1da81f"
+  },
+  {
+    "id": "assets-truncated-png",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 1711,
+    "sha256": "249904dd9ccc814ed4fc4270c6413202d92b87f837db0ca3a8875c1f97855abc"
+  },
+  {
+    "id": "assets-ttf-with-corrupt-data",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:font/ttf;base64,"
+      ]
+    },
+    "bytes": 424,
+    "sha256": "2b9c0b0ef1b39216099de7050847f05bc44c4afc96599661c1f21af1f8f43662"
+  },
+  {
+    "id": "assets-two-fonts-one-used",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "KeptFont"
+      ],
+      "removes": [
+        "DroppedFont"
+      ]
+    },
+    "bytes": 638,
+    "sha256": "44230e515fff5bca7def462de92190b426cecc7c28993c338525f6712aceb441"
+  },
+  {
+    "id": "assets-unused-font-face-is-dropped",
+    "category": "fonts",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        "GhostFamily"
+      ]
+    },
+    "bytes": 400,
+    "sha256": "161cc8db4829ced24c4676489b819fcb90c9df67fec570845f25800c9bec8262"
+  },
+  {
+    "id": "assets-webp-lossless",
+    "category": "images",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/webp;base64,"
+      ]
+    },
+    "bytes": 239,
+    "sha256": "ef699bff1d2a134f0c702f787811f2e597623470bbab5ed100cb3ec8e3377662"
+  },
+  {
+    "id": "assets-woff-with-corrupt-data",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:font/woff;base64,"
+      ]
+    },
+    "bytes": 425,
+    "sha256": "1f90719ea7ef98c889e90c03022d3ee240304dc62f1826804a5d8bdc8ae630bb"
+  },
+  {
+    "id": "assets-woff2-with-corrupt-data",
+    "category": "fonts",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:font/woff2;base64,"
+      ]
+    },
+    "bytes": 426,
+    "sha256": "270f656ea1addfb2cd98460517fb5432d865f32532e417c1897adbbb10af38c3"
+  },
+  {
     "id": "css-class-added-by-classlist-add",
     "category": "css",
     "tier": "smoke",
@@ -794,6 +1494,737 @@
     "sha256": "51186525bab96db6d12808e9f130a6d7a7174ce8577d176d6eaf99dd57564e65"
   },
   {
+    "id": "libs-big-framework-5000-rules",
+    "category": "libraries",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".fw-0{",
+        ".fw-19{"
+      ],
+      "removes": [
+        ".fw-4999{",
+        ".fw-3211{"
+      ]
+    },
+    "bytes": 673707,
+    "sha256": "4d5ed42868166034dcea3d7913ba01105ef66cdcf691a38dc7ad2b26fff857ab"
+  },
+  {
+    "id": "libs-big-icon-set-3000-classes",
+    "category": "libraries",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@font-face",
+        ".ic-g-1{"
+      ],
+      "removes": [
+        ".ic-g-2999{",
+        ".ic-g-1002{"
+      ]
+    },
+    "bytes": 128413,
+    "sha256": "f49d73e90fc8f71331734ef0dcebc2da782c5672a81ff749e6dabc9d983b4d0f"
+  },
+  {
+    "id": "libs-bootstrap-css-framework",
+    "category": "libraries",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Bootstrap v5.3.3",
+        ".btn{",
+        ".container{"
+      ],
+      "removes": [
+        ".bs-dead-0{"
+      ]
+    },
+    "bytes": 91935,
+    "sha256": "0a7d8292e82922be110248f7bd35a3be4002cc72a5132c8c64d4c17fe5291edf"
+  },
+  {
+    "id": "libs-bootstrap-license-first",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Licensed under MIT",
+        ".btn{"
+      ],
+      "removes": [
+        ".bslic-dead-0{"
+      ]
+    },
+    "bytes": 2195,
+    "sha256": "a46cc3b4034c4ae10bb407a4fd5318e29967bef495525ce9b017caace52df0cf"
+  },
+  {
+    "id": "libs-bulma-framework",
+    "category": "libraries",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".button{",
+        ".column{"
+      ],
+      "removes": [
+        ".bulma-dead-0{"
+      ]
+    },
+    "bytes": 60261,
+    "sha256": "ad199405979608dbe7bac611f9641c55639cc70abcee11137df44baddba22f70"
+  },
+  {
+    "id": "libs-bulma-helpers-used",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".is-flex{",
+        ".has-text-weight-bold{"
+      ],
+      "removes": [
+        ".is-family-monospace{",
+        ".is-italic{"
+      ]
+    },
+    "bytes": 2204,
+    "sha256": "ef333be21af009462e87800a9b8780b001cce5675d26c6594dd9e3574f606a2d"
+  },
+  {
+    "id": "libs-chartjs",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Chart.js v4.4.3",
+        "chartjs-keep{"
+      ],
+      "removes": [
+        ".chartjs-dead-0{"
+      ]
+    },
+    "bytes": 72605,
+    "sha256": "f32de91361d6800666a7580dfdcf8bfc304912706a579867a2942f544c6adbec"
+  },
+  {
+    "id": "libs-core-js-polyfill",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "core-js v3.37.1",
+        ".corejs-keep{"
+      ],
+      "removes": [
+        ".corejs-dead-0{"
+      ]
+    },
+    "bytes": 62537,
+    "sha256": "184ed74cbd889a966617aab680173e670526dd9be5de430afc8e4b29a783449e"
+  },
+  {
+    "id": "libs-css-custom-properties-framework",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "--fw-primary:#0d6efd",
+        "--fw-radius:6px",
+        ".fw-btn{"
+      ],
+      "removes": [
+        "--fw-orphan"
+      ]
+    },
+    "bytes": 1758,
+    "sha256": "a747f289ec3b8da49f8b4b36267a713cbebea0d78372adbcffb4c244ef76c8b3"
+  },
+  {
+    "id": "libs-d3-and-three-together",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "d3 v7.9.0",
+        "three r160"
+      ],
+      "removes": [
+        ".combo-dead-0{"
+      ]
+    },
+    "bytes": 242556,
+    "sha256": "50d8e676860d38015b43cd365269dc91557eff84c5178df05e906ca2716c1373"
+  },
+  {
+    "id": "libs-d3-chart",
+    "category": "libraries",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "d3 v7.9.0",
+        ".axis{",
+        ".scale{"
+      ],
+      "removes": [
+        ".d3-dead-0{"
+      ]
+    },
+    "bytes": 112417,
+    "sha256": "823800ccf453de0fe224e957b601ab78267ec0a4f734e8e7079fea6fd0a0c0dc"
+  },
+  {
+    "id": "libs-datatables-with-jquery",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "DataTables v2.0.8",
+        "jQuery v3.7.1",
+        ".dataTable{"
+      ],
+      "removes": [
+        ".dt-dead-0{"
+      ]
+    },
+    "bytes": 177370,
+    "sha256": "c20307f59bba7e62816a72b83b785988019e40c24b0fc8cc37245b1f4cebfd83"
+  },
+  {
+    "id": "libs-framework-grid-retained",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".row{",
+        ".col-md-6{"
+      ],
+      "removes": [
+        ".carousel{",
+        ".toast{"
+      ]
+    },
+    "bytes": 2161,
+    "sha256": "e921c09e0d9e7c790f94cbdc77e71da2df29ea0097af34c1fbd2cc033b9c420e"
+  },
+  {
+    "id": "libs-handlebars",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Handlebars v4.7.8",
+        ".handlebars-keep{"
+      ],
+      "removes": [
+        ".handlebars-dead-0{"
+      ]
+    },
+    "bytes": 47656,
+    "sha256": "ca470c2f65cac1a0d55b7b2efa993cf0e2dcdc73a5ca455d816d0bae3e017204"
+  },
+  {
+    "id": "libs-icon-font-class-from-script",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "font-family:Iconic",
+        "ic-trash"
+      ],
+      "removes": [
+        ".script-dead-0{"
+      ]
+    },
+    "bytes": 1943,
+    "sha256": "5c07075b6f018a30b5b580f9488eebe256bdf259023b90aab44cd1b48f3efdfb"
+  },
+  {
+    "id": "libs-icon-font-pseudo-before",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Pictonic",
+        ".pi:before{"
+      ],
+      "removes": [
+        ".pictonic-dead-0{"
+      ]
+    },
+    "bytes": 1885,
+    "sha256": "d53451d17a41f1db029f01a2a57c36c4a5b90289f70cdaf737dcfbfee777f2b0"
+  },
+  {
+    "id": "libs-icon-font-unused-dropped",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".keep-iconic{"
+      ],
+      "removes": [
+        "@font-face",
+        ".iconic-unused-0{"
+      ]
+    },
+    "bytes": 432,
+    "sha256": "9847f7b102a0cf448391fdd8e8392dc0d524391bf0833fd8c73022ca13f034b2"
+  },
+  {
+    "id": "libs-icon-font-used-via-classes",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@font-face",
+        "Iconic",
+        ".iconic-home{"
+      ],
+      "removes": [
+        ".iconic-dead-0{"
+      ]
+    },
+    "bytes": 1988,
+    "sha256": "501acc8df8ff8e6229bba97a9bb7601912a0c603ac21773a6a6fbc10ac486309"
+  },
+  {
+    "id": "libs-jquery",
+    "category": "libraries",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "jQuery v3.7.1",
+        ".jquery-keep{"
+      ],
+      "removes": [
+        ".jquery-dead-0{"
+      ]
+    },
+    "bytes": 92579,
+    "sha256": "2c3a6291969697cb500baf5cf52b1cbb7403a7b53393d7881b54d566edde0c39"
+  },
+  {
+    "id": "libs-jquery-plugin-countdown",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "jQuery v3.7.1",
+        "jquery.countdown v2.2.0"
+      ],
+      "removes": [
+        ".countdown-dead-0{"
+      ]
+    },
+    "bytes": 98351,
+    "sha256": "52bb6d7eafc768c429ed5140ec2dadd12c6de3353a859aca001355613e29d273"
+  },
+  {
+    "id": "libs-license-banners-all-kept",
+    "category": "libraries",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "jQuery v3.7.1",
+        "lodash v4.17.21",
+        "Bootstrap v5.3.3",
+        "Chart.js v4.4.3",
+        "three r160"
+      ],
+      "removes": [
+        ".banners-dead-0{"
+      ]
+    },
+    "bytes": 367619,
+    "sha256": "b3cbdc08121a3a187ba471d2f9aa868a3d5e563f44a9f45ea38052afd226fd36"
+  },
+  {
+    "id": "libs-lodash",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "lodash v4.17.21",
+        ".lodash-keep{"
+      ],
+      "removes": [
+        ".lodash-dead-0{"
+      ]
+    },
+    "bytes": 77510,
+    "sha256": "f3b7eec387e5ab3558e9694f52c7baaf9de593a17c0bb9a5e08100519d7ad1a2"
+  },
+  {
+    "id": "libs-luxon",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Luxon v3.4.4",
+        ".luxon-keep{"
+      ],
+      "removes": [
+        ".luxon-dead-0{"
+      ]
+    },
+    "bytes": 57502,
+    "sha256": "2ec153c877a7ceee55b8fbf5d0d8d9ba695a26b7a227bb520ac2b34a1fd0dd28"
+  },
+  {
+    "id": "libs-modal-component-used",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".modal{",
+        ".modal-dialog{",
+        ".modal-body{"
+      ],
+      "removes": [
+        ".carousel{",
+        ".toast{",
+        ".accordion{"
+      ]
+    },
+    "bytes": 2389,
+    "sha256": "5b55bd50d3afc5324b526cc9acf0af9afe2a5de5d3a059d962b24347c4e29673"
+  },
+  {
+    "id": "libs-moment",
+    "category": "libraries",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Moment.js v2.30.1",
+        ".moment-keep{"
+      ],
+      "removes": [
+        ".moment-dead-0{"
+      ]
+    },
+    "bytes": 67535,
+    "sha256": "a6f97774610dae4ba8c251ea7703f2d762c5636d26f538026b35d9f15231df3b"
+  },
+  {
+    "id": "libs-nonminified-legal-comment-kept",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "MIT License",
+        "WidgetToolkit"
+      ],
+      "removes": [
+        ".legal-dead-5{"
+      ]
+    },
+    "bytes": 2288,
+    "sha256": "25b5f8d2683ba56bf8ce3c33cf04463196f23a7bfa53e047cdf1604c2f56db7c"
+  },
+  {
+    "id": "libs-prism-highlight",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Prism v1.29.0",
+        ".token.keyword{",
+        ".token.string{"
+      ],
+      "removes": [
+        ".token.boolean{",
+        ".token.entity{"
+      ]
+    },
+    "bytes": 52017,
+    "sha256": "59e4317256f29393fb12b0baf7fb7d570c336c52f6efb87a3c2386feb615b2c7"
+  },
+  {
+    "id": "libs-revealjs-deck-like",
+    "category": "libraries",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Reveal.js v4.6.1",
+        ".fragment{",
+        ".reveal{"
+      ],
+      "removes": [
+        ".reveal-dead-0{"
+      ]
+    },
+    "bytes": 160824,
+    "sha256": "9125bdeca0c87c9b9063020f8d134f646d47a098b8df714aeb89ad3b76a22547"
+  },
+  {
+    "id": "libs-revealjs-notes-plugin",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Reveal.js v4.6.1",
+        "reveal.js notes plugin v4.6.1"
+      ],
+      "removes": [
+        ".deck-dead-0{"
+      ]
+    },
+    "bytes": 121642,
+    "sha256": "6253e03311c2bb114c3951327d125f06a45a74da37469a339c733661019945d8"
+  },
+  {
+    "id": "libs-scripts-only-accepted",
+    "category": "libraries",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "accepts"
+    },
+    "bytes": 165408,
+    "sha256": "856ad8ce81960f503c3076a77043021e6d4de9257142ca8519c77cb50253019b"
+  },
+  {
+    "id": "libs-svg-sprite-icons",
+    "category": "libraries",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<symbol",
+        "ic-sprite"
+      ],
+      "removes": [
+        ".sprite-dead-0{"
+      ]
+    },
+    "bytes": 3879,
+    "sha256": "2a2190e56402454b6840ba157a8d44aa64490764fd074b15040f62906a972e92"
+  },
+  {
+    "id": "libs-tailwind-media-queries-pruned",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".bp-base{"
+      ],
+      "removes": [
+        "@media",
+        ".bp-md-1{",
+        ".bp-sm-1{"
+      ]
+    },
+    "bytes": 400,
+    "sha256": "57c2258a2c3cea3e01cf1bcba1fd3585eb2347385abe9d4aec18631d2ba8c622"
+  },
+  {
+    "id": "libs-tailwind-utilities",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".tw-m-3{",
+        ".tw-pad-8{"
+      ],
+      "removes": [
+        ".tw-m-421{",
+        ".tw-pad-913{"
+      ]
+    },
+    "bytes": 50693,
+    "sha256": "4a2086afdd9bb05f1c3a8e9350207a1bb01aafa08ab828a803b1a5950dc0970d"
+  },
+  {
+    "id": "libs-text-webfont-layout",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "SourceSans",
+        "@font-face",
+        ".text-font-keep{"
+      ],
+      "removes": [
+        ".text-font-dead-0{"
+      ]
+    },
+    "bytes": 1655,
+    "sha256": "8dc0dd7321245a2472df17b940ec1a68a1a264371e736b1ae1ba02ec6f8b9df1"
+  },
+  {
+    "id": "libs-three",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "three r160",
+        "three-keep{"
+      ],
+      "removes": [
+        ".three-dead-0{"
+      ]
+    },
+    "bytes": 132496,
+    "sha256": "decaa490f44b340d39d0a01bab90a656865bb8dbb15a2e5fa5bf7a42500ae7c9"
+  },
+  {
+    "id": "libs-underscore",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Underscore.js v1.13.6",
+        ".underscore-keep{"
+      ],
+      "removes": [
+        ".underscore-dead-0{"
+      ]
+    },
+    "bytes": 32667,
+    "sha256": "ecf7f6b7037c18276e89cbcdb689176307328f45c4aafa2105de7021c2da8b00"
+  },
+  {
+    "id": "libs-vue",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Vue.js v3.4.27",
+        ".vue-keep{"
+      ],
+      "removes": [
+        ".vue-dead-0{"
+      ]
+    },
+    "bytes": 107432,
+    "sha256": "e3697f1e0aa84714b11f27e11e515b7440af55e376459568ba0e81e18d26b8c7"
+  },
+  {
+    "id": "libs-webfont-awesome-layout",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "FontAwesome",
+        "@font-face",
+        "fa-check",
+        "fa-times"
+      ],
+      "removes": [
+        ".fa-bell{",
+        ".fa-trash{"
+      ]
+    },
+    "bytes": 1702,
+    "sha256": "da5d8ea8f722f57f766fcf72581fc01506dde221346c12125bb87ef3178ca3e4"
+  },
+  {
+    "id": "libs-webfont-octicons",
+    "category": "libraries",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Octicons v8.5.0",
+        "@font-face"
+      ],
+      "removes": [
+        ".octicon-dead-0{"
+      ]
+    },
+    "bytes": 1657,
+    "sha256": "7adaa9bcb236c31db0ec76a856de5b04e5c92ce2d365da9f251ad89148a87609"
+  },
+  {
+    "id": "libs-xml-document-rejected",
+    "category": "libraries",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-html"
+    },
+    "bytes": 103,
+    "sha256": "e3b6bd05ff71db9115389fc55db7a52ecd04824eadcbf4708851ed5b42457e1f"
+  },
+  {
     "id": "linked-stylesheet-is-rejected",
     "category": "validation",
     "tier": "smoke",
@@ -1580,6 +3011,1090 @@
     "sha256": "9a98e070b2e457e061b5384eea65716a5b2877b3365446976a6faf3f6f521a4f"
   },
   {
+    "id": "quarto-anchored-headings-keep-anchorjs",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "AnchorJS - v4"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "Tippy.js v6",
+        "@popperjs/core v2"
+      ]
+    },
+    "bytes": 87431,
+    "sha256": "fea706278dba96c20001d18c01720a69aff481ce4e4cf40c79fdf3e7f439b49e"
+  },
+  {
+    "id": "quarto-before-body-color-scheme-script",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "quarto-color-scheme",
+        "quarto-dark"
+      ],
+      "removes": [
+        ".before-dead-5{"
+      ]
+    },
+    "bytes": 85114,
+    "sha256": "05ee6eae80343f2debd051ce518995aece93a15088286225fe1a5b291b033f6e"
+  },
+  {
+    "id": "quarto-bibliography-section",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".references{",
+        "csl-bib-body",
+        "Tippy.js v6"
+      ],
+      "removes": [
+        ".biblio-dead-0{"
+      ]
+    },
+    "bytes": 85307,
+    "sha256": "ca4a85a7e0411cbab5a906c707b946816c8547a82d3450709dbc99385ef30ae5"
+  },
+  {
+    "id": "quarto-book-chapter",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Tippy.js v6",
+        "quarto-sidebar"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87953,
+    "sha256": "fd62f9de30a2c74eb1e1d8ebcec55c11fade96590b5c9e9280f0d0991fce1927"
+  },
+  {
+    "id": "quarto-callout-types",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "callout-note",
+        "callout-tip",
+        "callout-important"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 88436,
+    "sha256": "8d130f83eb68fa8088c3fb284d8c59a2af0944c2294778c777d39a6389d933b1"
+  },
+  {
+    "id": "quarto-citations-keep-tippy",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Tippy.js v6",
+        "@popperjs/core v2"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87556,
+    "sha256": "908c2c6a1cd7ea82d1dc8a8f51d078e640323c16eb2b83eca657958be06b130f"
+  },
+  {
+    "id": "quarto-code-annotations-keep-tippy",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Tippy.js v6",
+        "@popperjs/core v2"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87613,
+    "sha256": "a40163a474b29e2d8759d0ab63f8c5afb946f981d6c3b596c0a1aaa7ac6eb1a2"
+  },
+  {
+    "id": "quarto-code-copy-button-keeps-clipboard",
+    "category": "quarto",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "clipboard.js v2",
+        "Bootstrap v5",
+        "@popperjs/core v2"
+      ],
+      "removes": [
+        "Tippy.js v6",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87478,
+    "sha256": "372d9916c9e2562b5672ae8b8e1a7bf4c82ccb8a0ea049a5094b95e18e93f820"
+  },
+  {
+    "id": "quarto-collapsible-callout-keeps-bootstrap",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Bootstrap v5",
+        "@popperjs/core v2"
+      ],
+      "removes": [
+        "Tippy.js v6",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87863,
+    "sha256": "70da9c6ee8eb71a41925c51987ea257ac3db37f7dca5a1109c8aa801e7338546"
+  },
+  {
+    "id": "quarto-cross-references-keep-tippy",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Tippy.js v6",
+        "@popperjs/core v2"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87440,
+    "sha256": "72b1da7524e3e4578dd1a8e7be3ecf3cd983066c1e7b6eb50fefd04b2c314d2e"
+  },
+  {
+    "id": "quarto-custom-script-mentions-bootstrap-keeps-it",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Bootstrap v5"
+      ],
+      "removes": [
+        "@popperjs/core v2",
+        "Tippy.js v6",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87522,
+    "sha256": "2cfac21a64ef5e3f14b62ec584b936617dc253ba3e4811077442096885f3a870"
+  },
+  {
+    "id": "quarto-dashboard-datatable",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "DataTable 2",
+        "datatable",
+        "data-for=\"dt_1\""
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 148305,
+    "sha256": "4f18559dfb72988b518594232b020a0c2b14ebfd6861698160a5920258ca8ad2"
+  },
+  {
+    "id": "quarto-dashboard-tabset-pills",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Bootstrap v5",
+        "@popperjs/core v2"
+      ],
+      "removes": [
+        "Tippy.js v6",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87919,
+    "sha256": "95b4ea76230b7937fda37fdf69db4ff4808c3ebf92310bf254a39e3933a53bc3"
+  },
+  {
+    "id": "quarto-dashboard-valueboxes",
+    "category": "quarto",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "plotly_1",
+        "htmlwidgets v1",
+        "data-for=\"plotly_1\""
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 152499,
+    "sha256": "6dcb7fa5195fb1233bd021ab9132a5b6c21e6000d66904453cc54b2405b33f04"
+  },
+  {
+    "id": "quarto-data-bs-modal-keeps-bootstrap",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Bootstrap v5",
+        "@popperjs/core v2"
+      ],
+      "removes": [
+        "Tippy.js v6",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87549,
+    "sha256": "e3964ce6a03d8a55fb26d242440f09c133a268708e1aefe69c1d5d9bdd0ed45f"
+  },
+  {
+    "id": "quarto-embed-remote-script-warns",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "https://cdn.example.com/quarto-widget.js"
+      ],
+      "removes": [
+        ".remote-dead-5{"
+      ]
+    },
+    "bytes": 85012,
+    "sha256": "0e0615fbfd30de5c0a511fa7259bcb1554439fef44a4542a83f057a4f8671823"
+  },
+  {
+    "id": "quarto-embed-remote-stylesheet-warns",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "https://cdn.example.com/widget.css"
+      ],
+      "removes": [
+        ".remote-css-dead-5{"
+      ]
+    },
+    "bytes": 85047,
+    "sha256": "380443f3ca8a5a174dc03531dbe57a7cb3d7527b664dde6f0170063ef21a6bb0"
+  },
+  {
+    "id": "quarto-empty-document-keeps",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "keeps"
+    },
+    "bytes": 74,
+    "sha256": "8a92783b521cf9fb4720105de8d81186df3f89fcab1ce414382ea61d3ef14f06"
+  },
+  {
+    "id": "quarto-figure-plain-png",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<img",
+        "figcaption"
+      ],
+      "removes": [
+        ".figure-dead-0{"
+      ]
+    },
+    "bytes": 94632,
+    "sha256": "03b6be695269f5ace738306eacd2f3e127b7d65102acee89278466e78053ec0e"
+  },
+  {
+    "id": "quarto-figure-with-srcset",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "srcset",
+        "figure-srcset"
+      ],
+      "removes": [
+        ".srcset-dead-0{"
+      ]
+    },
+    "bytes": 110421,
+    "sha256": "96021f5efadfcc07c3142928d23cdc56947d2be02f1392cdc5174757ca899bc6"
+  },
+  {
+    "id": "quarto-footnotes-keep-tippy",
+    "category": "quarto",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Tippy.js v6",
+        "@popperjs/core v2"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87625,
+    "sha256": "ea0e8b9d374c4fc5aabe3e803fb165f545a1b5d130804095d3fe564b010dba1c"
+  },
+  {
+    "id": "quarto-gt-table-output",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "gt_table",
+        "gt_col_heading"
+      ],
+      "removes": [
+        ".gt-unused-0{",
+        "Bootstrap v5"
+      ]
+    },
+    "bytes": 87565,
+    "sha256": "d4eb6a3e7d12de9b33774fd1809a781ed19881344c3b2de9210a2a0dd215b9cc"
+  },
+  {
+    "id": "quarto-htmlwidget-two-payloads-share-loader",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data-for=\"w_1\"",
+        "data-for=\"w_2\""
+      ],
+      "removes": [
+        "Bootstrap v5"
+      ]
+    },
+    "bytes": 105712,
+    "sha256": "de019d3945516593daf2e3a245228aad45c76ca4f5f422767b81514ad2dff4e0"
+  },
+  {
+    "id": "quarto-importmap-kept",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "importmap"
+      ],
+      "removes": [
+        ".import-dead-5{"
+      ]
+    },
+    "bytes": 85070,
+    "sha256": "26e92f3fccb1dfedf0cfc199c9cf7953ab3ca1857bc865bd86941c0a3d84dfa4"
+  },
+  {
+    "id": "quarto-index-redirect-page",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "keeps"
+    },
+    "bytes": 161,
+    "sha256": "dae5841dc4bb100f82759fbc194555f3b0b970cc02cb396b4bc52e4d83b77211"
+  },
+  {
+    "id": "quarto-invalid-css-passes-through",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@@@ {{{ this is not css",
+        ".valid-dead-0{"
+      ],
+      "removes": [
+        ".valid-dead-1{"
+      ]
+    },
+    "bytes": 84956,
+    "sha256": "5fa09e424ebc2033f652e9c24a552139131294229f2eff7bf444c29a914a9a65"
+  },
+  {
+    "id": "quarto-katex-and-mermaid-combined",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "mermaid",
+        "KaTeX_Main"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "Tippy.js v6"
+      ]
+    },
+    "bytes": 116492,
+    "sha256": "f44fc4e569e63481b123bd77a6048cda7a5c8c2f95d131c73b376f4a66718fd3"
+  },
+  {
+    "id": "quarto-katex-math-payload",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "KaTeX_Main",
+        "katex.min.js"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "Tippy.js v6"
+      ]
+    },
+    "bytes": 101984,
+    "sha256": "07c2c7d9d0275e1644cde55f74e8f41decef73d665ad429b42ec7965ae9f6b5a"
+  },
+  {
+    "id": "quarto-kitchen-sink-everything-used",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Bootstrap v5",
+        "@popperjs/core v2",
+        "Tippy.js v6",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 89891,
+    "sha256": "0bf9488b6e488027971571af72b0495f36b1ade75dea094cb819e5714fb79b3b"
+  },
+  {
+    "id": "quarto-large-paragraph-article",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "quarto-title-block"
+      ],
+      "removes": [
+        ".long-dead-0{"
+      ]
+    },
+    "bytes": 122018,
+    "sha256": "57adb49b45003bf2d8822d9371e796319fafb745cb7645f922c0dcbc342e6626"
+  },
+  {
+    "id": "quarto-leaflet-map-widget",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "leaflet v1.9",
+        "data-for=\"map_1\""
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2"
+      ]
+    },
+    "bytes": 146022,
+    "sha256": "5129b00d25cd46053ac10e66ac46b5dcff91146cc9cf048c887ea252e56a2315"
+  },
+  {
+    "id": "quarto-lightbox-gallery",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data-zoomable",
+        "figure-lightbox"
+      ],
+      "removes": [
+        ".lightbox-dead-0{",
+        "Tippy.js v6"
+      ]
+    },
+    "bytes": 107715,
+    "sha256": "9c73a3880a8c2fc9eeb86198e8e85d50f4904ac4a4cf3c4b8f0825093b78be77"
+  },
+  {
+    "id": "quarto-linked-site-libs-rejected",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-self-contained"
+    },
+    "bytes": 329,
+    "sha256": "5023bd4341a4dbc20a0797255325119b71cc61645104f73b9b23d40ed618bdd0"
+  },
+  {
+    "id": "quarto-margin-notes-no-features",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "column-margin"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "Tippy.js v6",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87486,
+    "sha256": "de1d7695ca958825f9040d14f624e8bc09f48d8bffdb75587308c400b1576bcc"
+  },
+  {
+    "id": "quarto-mathjax-payload",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "MathJax v3",
+        "window.MathJax"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "Tippy.js v6"
+      ]
+    },
+    "bytes": 100038,
+    "sha256": "f95773c3f0788d6d0799c22470b7a2a4a507e7efb483f9fa4c6344cb8b01b336"
+  },
+  {
+    "id": "quarto-mermaid-diagram",
+    "category": "quarto",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "mermaid",
+        "mermaid.initialize"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "Tippy.js v6"
+      ]
+    },
+    "bytes": 120618,
+    "sha256": "7918fea665d7cabfbd583723ac2febcbe530359ba07bc4eb79e1d6558865f6d6"
+  },
+  {
+    "id": "quarto-mixed-footnote-and-copy-keeps-both",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Tippy.js v6",
+        "clipboard.js v2",
+        "Bootstrap v5",
+        "@popperjs/core v2"
+      ],
+      "removes": [
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87613,
+    "sha256": "5380399a8cb673ea5e9547f9cc96192a94d311c96bce163c4872e9786aeb78bf"
+  },
+  {
+    "id": "quarto-multiple-stylesheets-pruned",
+    "category": "quarto",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".multi-used-0{",
+        ".second-used-0{"
+      ],
+      "removes": [
+        ".multi-dead-0{",
+        ".second-dead-0{"
+      ]
+    },
+    "bytes": 86516,
+    "sha256": "1dd5b64fb6bdc0e057ef5bb4aa70b9b2e8957e61d74d183938876f50f4d2b048"
+  },
+  {
+    "id": "quarto-no-features-dead-libraries",
+    "category": "quarto",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "window.tippy=n;",
+        "window.ClipboardJS=n;",
+        "window.AnchorJS=n;"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4",
+        "@popperjs/core v2",
+        "Tippy.js v6"
+      ]
+    },
+    "bytes": 89138,
+    "sha256": "a8f4924c1d73c70d9a4aa907041b86c5d7b7380d96a35e31c7fc573b07c20e46"
+  },
+  {
+    "id": "quarto-noscript-style-verbatim",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "noscript-marker{color:#c0ffee}",
+        "show-fallback"
+      ],
+      "removes": [
+        ".noscript-dead-5{"
+      ]
+    },
+    "bytes": 85080,
+    "sha256": "06b6a1228571d68e0715f21e96cfc8e2eb81feb3f88d00fa9c4b2e551d8a918c"
+  },
+  {
+    "id": "quarto-panel-tabset",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "panel-tabset",
+        "tab-pane"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 88227,
+    "sha256": "dd9ee49d2f11b49c1ec0cd672a420bbee096b5e6cb8f2674f2f921b28c9660a2"
+  },
+  {
+    "id": "quarto-plain-article",
+    "category": "quarto",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "/*! quarto-css-bootstrap-banner-001 */",
+        "window.tippy=n;",
+        "window.AnchorJS=n;",
+        "window.ClipboardJS=n;"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4",
+        "@popperjs/core v2",
+        "Tippy.js v6"
+      ]
+    },
+    "bytes": 88638,
+    "sha256": "d389430861a64071793edb8de89c3b569fed23afa752891bb55a3e6283f61ce6"
+  },
+  {
+    "id": "quarto-plain-article-no-theme",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "keeps"
+    },
+    "bytes": 192,
+    "sha256": "9399bf35b540245191fee05b0288c654247b3c0d3f4694d86a24a3284c50cd90"
+  },
+  {
+    "id": "quarto-reactable-widget",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Reactable",
+        "data-for=\"table_1\""
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 132066,
+    "sha256": "74952fdc4bdf714ebd68e39d22c1ae38b83ab0efad86766c8b1327a8eab08bbe"
+  },
+  {
+    "id": "quarto-revealjs-notes-plugin",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Reveal.js v4",
+        "RevealNotes"
+      ],
+      "removes": [
+        "Bootstrap v5"
+      ]
+    },
+    "bytes": 147463,
+    "sha256": "f8f20ab0a26d7e5b67397d0417c254c67cd195f2189287c92df8c8daf8516517"
+  },
+  {
+    "id": "quarto-revealjs-simple-deck",
+    "category": "quarto",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Reveal.js v4",
+        "Reveal"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "Tippy.js v6",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 140215,
+    "sha256": "391ac569708941faae9c6bf67cb06b137da5afe78821a0107c931c763137cb13"
+  },
+  {
+    "id": "quarto-script-already-minified",
+    "category": "quarto",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "window.counter=(window.counter||0)+1;window.half=window.counter/2;"
+      ],
+      "removes": [
+        ".min-dead-5{"
+      ]
+    },
+    "bytes": 86879,
+    "sha256": "5dc707f350f8cbbaf4a9f0568b4aebe2ba8f54b0bb1e37dd8c62931e9585aa7b"
+  },
+  {
+    "id": "quarto-script-syntax-error-untouched",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "var broken = ;"
+      ],
+      "removes": [
+        ".broken-dead-5{"
+      ]
+    },
+    "bytes": 84978,
+    "sha256": "18d959f8a4548a5636b5c71acc9cee9c2c87c03de5b7478c310c228438599982"
+  },
+  {
+    "id": "quarto-search-index-embedded",
+    "category": "quarto",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "quarto-search-index",
+        "objectID"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4",
+        "@popperjs/core v2"
+      ]
+    },
+    "bytes": 93467,
+    "sha256": "60f75b235ca6a85dddafc22952612efb5fe4a350bb9eb164ea57fd82ab39709c"
+  },
+  {
+    "id": "quarto-search-payload-big-index",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "quarto-search-data",
+        "entry 400"
+      ],
+      "removes": [
+        ".search-big-dead-5{"
+      ]
+    },
+    "bytes": 145910,
+    "sha256": "e913ebbd43643d3b73ed3b62018c66d43eafe96735d03d113883b649a4c86844"
+  },
+  {
+    "id": "quarto-speculationrules-kept",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "speculationrules",
+        "prefetch"
+      ],
+      "removes": [
+        ".spec-dead-5{"
+      ]
+    },
+    "bytes": 85012,
+    "sha256": "5f6b269b6aab45b184eaec0a74a9f108fd8cfc48141b88972a2a5b7e887de67a"
+  },
+  {
+    "id": "quarto-style-link-data-uri",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:text/css",
+        ".kept-dead-0{"
+      ],
+      "removes": [
+        ".link-dead-0{"
+      ]
+    },
+    "bytes": 85307,
+    "sha256": "087df3b954ac5edf4e3f06a8afc42691fb194d4436cb18f767b09fb72844fb3d"
+  },
+  {
+    "id": "quarto-syntax-highlighting-used",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".kw{",
+        ".str{",
+        ".cmt{"
+      ],
+      "removes": [
+        ".hl-dead-0{"
+      ]
+    },
+    "bytes": 86363,
+    "sha256": "cff352214140ef5728a682f8737ea5725dd912d5a1c8f7a979e816672c40d6a5"
+  },
+  {
+    "id": "quarto-theme-dark-light-toggle",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".quarto-dark",
+        "--quarto-bg"
+      ],
+      "removes": [
+        ".theme-toggle-unused-0{"
+      ]
+    },
+    "bytes": 85994,
+    "sha256": "cf43deacde30cd9ea2d1357b3e17f93819422e864ccbdfbff576065402938abd"
+  },
+  {
+    "id": "quarto-toc-sidebar",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "toc",
+        "nav-link"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87595,
+    "sha256": "453dcb5fa158e6d5f46546b1dc2f26fdc17fa9ef64260df5c7b9e1a6435292b6"
+  },
+  {
+    "id": "quarto-two-plotly-widgets",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data-for=\"plot_a\"",
+        "data-for=\"plot_b\"",
+        "plotly.js"
+      ],
+      "removes": [
+        "Bootstrap v5"
+      ]
+    },
+    "bytes": 152259,
+    "sha256": "d023f8446712a3fc53d5fce03aaa7441bb6287eacac409a334d9055fef9aa543"
+  },
+  {
+    "id": "quarto-website-listing-grid",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "quarto-listing",
+        "quarto-listing-grid"
+      ],
+      "removes": [
+        "Bootstrap v5",
+        "clipboard.js v2",
+        "AnchorJS - v4",
+        "@popperjs/core v2"
+      ]
+    },
+    "bytes": 89284,
+    "sha256": "dd111b1e3923badbb9af498469dbdcffbd6a1f7bf9c7f2ab256820aaae9479f3"
+  },
+  {
+    "id": "quarto-website-navbar-toggler",
+    "category": "quarto",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Bootstrap v5",
+        "@popperjs/core v2",
+        "navbar-toggler"
+      ],
+      "removes": [
+        "Tippy.js v6",
+        "clipboard.js v2",
+        "AnchorJS - v4"
+      ]
+    },
+    "bytes": 87892,
+    "sha256": "bdd3716b505007154e3bb5be538d6c4edb06b2adb7e26eb5d4ee5ef5df322db3"
+  },
+  {
     "id": "runtime-built-class-names-survive",
     "category": "css",
     "tier": "smoke",
@@ -1597,6 +4112,438 @@
     "sha256": "cd1de362bfa53ee88fbe971130dee43431eb30d6939a7ce7a48ba3351174582a"
   },
   {
+    "id": "scale-five-mib-framework-and-scripts",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".mega2-0{"
+      ],
+      "removes": [
+        ".mega2-9000{"
+      ]
+    },
+    "bytes": 4904275,
+    "sha256": "dff604f8450c5cb1b754837156d80996ed4426ee55f81a6a3fcf9e0fb014f68e"
+  },
+  {
+    "id": "scale-four-mib-paragraphs-and-images",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "article-four",
+        "<img"
+      ],
+      "removes": [
+        ".scale-four-dead-0{"
+      ]
+    },
+    "bytes": 4933981,
+    "sha256": "03a8520acec9f8010de463e25e1f7b2c8541f202cbe69db47dcbdcf2306aaaf5"
+  },
+  {
+    "id": "scale-hundred-thousand-classes",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".cls-1{",
+        ".cls-19000{"
+      ],
+      "removes": [
+        ".cls-30000{",
+        ".cls-39999{"
+      ]
+    },
+    "bytes": 3421070,
+    "sha256": "016749fc0c5aabe69cda00051129af6988d415d9ff299ab75a03ee17720fcb1f"
+  },
+  {
+    "id": "scale-one-mib-base64-image-set",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<img"
+      ],
+      "removes": [
+        ".scale-set-dead-0{"
+      ]
+    },
+    "bytes": 1539781,
+    "sha256": "6d2fb052f73cb0d1e6b8721c51deb24256e5e17c89450618c5ecebd2ac9061ad"
+  },
+  {
+    "id": "scale-one-mib-big-base64-image",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<img"
+      ],
+      "removes": [
+        ".scale-blob-dead-0{"
+      ]
+    },
+    "bytes": 1180315,
+    "sha256": "1866baad6d70bb008b4f5bf53f12c837803a5808435ed5c34a05186836392896"
+  },
+  {
+    "id": "scale-one-mib-deep-nesting",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "deep-179"
+      ],
+      "removes": [
+        ".scale-deep-dead-0{"
+      ]
+    },
+    "bytes": 968394,
+    "sha256": "8dbd36881f91e83c084c21a915923963cd52cdc46a843b5a37aaa18e8e9c1583"
+  },
+  {
+    "id": "scale-one-mib-many-small-scripts",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "smallScriptCount"
+      ],
+      "removes": [
+        ".scale-script-dead-0{"
+      ]
+    },
+    "bytes": 1001992,
+    "sha256": "9692f8ca4ef45e85c33e3e9f483a74e582fa7c7ea5f807131cc82f425017e605"
+  },
+  {
+    "id": "scale-one-mib-many-small-styles",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".scale-keep-0{"
+      ],
+      "removes": [
+        ".scale-styles-dead-0-0{"
+      ]
+    },
+    "bytes": 1098769,
+    "sha256": "ef9e235251c702dfeb2eb262234442690d73d3a2f50ebb066ee605af0c8c6ce4"
+  },
+  {
+    "id": "scale-one-mib-many-svgs",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<svg",
+        "scale-svg-keep{"
+      ],
+      "removes": [
+        ".scale-svg-dead-0{"
+      ]
+    },
+    "bytes": 1239432,
+    "sha256": "58885010ec73443eef0af494e0c671cc760fa1232c0d53f232c85f3f9ae6c19a"
+  },
+  {
+    "id": "scale-one-mib-paragraphs",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "article-body"
+      ],
+      "removes": [
+        ".scale-para-dead-0{"
+      ]
+    },
+    "bytes": 1104885,
+    "sha256": "70baf95249d5dfbb3044913269fb698e38b4556d6023323ea7554884435dcac2"
+  },
+  {
+    "id": "scale-one-mib-pure-markup",
+    "category": "scale",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "keeps"
+    },
+    "bytes": 1087052,
+    "sha256": "623b74cf1bb6775a0e6bddd47eb566cc74ddad949e17c4bd1c1ca0450d2fb282"
+  },
+  {
+    "id": "scale-seven-mib-long-article-too-big-for-browser",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "article-seven"
+      ],
+      "removes": [
+        ".scale-seven-dead-0{"
+      ]
+    },
+    "bytes": 6242932,
+    "sha256": "cb92164e6ca60e84aadec10f44807ec5048d74f3b5bfb5b1f2aad8106840e7c6"
+  },
+  {
+    "id": "scale-six-mib-many-images",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<img"
+      ],
+      "removes": [
+        ".scale-six-dead-0{"
+      ]
+    },
+    "bytes": 6706327,
+    "sha256": "2ff277a9714cc3df6df50434ddf36f1f6403483c34a15375fe116a240b1ded1f"
+  },
+  {
+    "id": "scale-three-mib-htmlwidget-json",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "application/json",
+        "quantum-point-999"
+      ],
+      "removes": [
+        ".scale-json-dead-0{"
+      ]
+    },
+    "bytes": 2457167,
+    "sha256": "7a9f1989e1c574abb63652ed0e9b36ace7443afbeb32d983f5c9ab2831fb32e2"
+  },
+  {
+    "id": "scale-three-mib-many-images",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<img"
+      ],
+      "removes": [
+        ".scale-manyimg-dead-0{"
+      ]
+    },
+    "bytes": 3393459,
+    "sha256": "60bb2c69e3d7c0deecf17e8f23a4ec2437816c41db2ccb56cfa7f97e4f644e0a"
+  },
+  {
+    "id": "scale-three-mib-mixed-widgets",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "plotly.js",
+        "leaflet v1.9",
+        "data-for=\"widget_a\""
+      ],
+      "removes": [
+        ".scale-widgets-dead-0{"
+      ]
+    },
+    "bytes": 2046378,
+    "sha256": "23608a43e50a9029cce3db2268f60a61d6dd0e709d64f4f32734f932bdb451c0"
+  },
+  {
+    "id": "scale-too-big-for-browser-eleven-mib-stylesheet",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".colossal-keep-0{"
+      ],
+      "removes": [
+        ".colossal-dead-8000{"
+      ]
+    },
+    "bytes": 11147391,
+    "sha256": "a038903f5442a2bddbe61472c930ba2df465364be7564cf75816d7033f4f1a15"
+  },
+  {
+    "id": "scale-too-big-for-browser-fifteen-mib-mixed",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "article-mixed",
+        "mixedModuleMarker"
+      ],
+      "removes": [
+        ".scale-fifteen-dead-0{"
+      ]
+    },
+    "bytes": 14247724,
+    "sha256": "fe5faedf93d669110b6a97c397945dc119a3a98a5381a0ee7a2f8d7af657f4c1"
+  },
+  {
+    "id": "scale-too-big-for-browser-ten-mib-module",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "hugeModuleMarker"
+      ],
+      "removes": [
+        ".scale-ten-dead-5{"
+      ]
+    },
+    "bytes": 10896524,
+    "sha256": "088ac948e4127ca48090d9008703d0877858ff8f1eee5a230bbab735da1de767"
+  },
+  {
+    "id": "scale-too-big-for-browser-thirteen-mib-paragraphs",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "article-thirteen"
+      ],
+      "removes": [
+        ".scale-thirteen-dead-0{"
+      ]
+    },
+    "bytes": 14039110,
+    "sha256": "2cec7daf5bd9f17eec130d2e06327523075c629e805b57f9155799df09066075"
+  },
+  {
+    "id": "scale-too-big-for-browser-twelve-mib-images",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<img"
+      ],
+      "removes": [
+        ".scale-twelve-dead-0{"
+      ]
+    },
+    "bytes": 13153435,
+    "sha256": "0305c1bffda18d7a819cf2be8d9c1e643ddfe5f57a237a64c2186aa8be08a682"
+  },
+  {
+    "id": "scale-too-big-for-browser-twentyseven-mib-giant-json",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "application/json",
+        "giant-json-entry-4199"
+      ],
+      "removes": [
+        ".scale-json-giant-dead-5{"
+      ]
+    },
+    "bytes": 29799261,
+    "sha256": "c711528f3aa657046320baee00c34b1f5ed8beda75b048faf4ba14ff54036216"
+  },
+  {
+    "id": "scale-two-mib-code-listings",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".tk-kw{",
+        ".listing-block{"
+      ],
+      "removes": [
+        ".scale-code-dead-0{"
+      ]
+    },
+    "bytes": 1567242,
+    "sha256": "3e35555ba86fa93275a923370041491a0694738455aa361de3a3ee2c42c92de0"
+  },
+  {
+    "id": "scale-two-mib-framework-css",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".mega-0{",
+        ".mega-19{"
+      ],
+      "removes": [
+        ".mega-12000{",
+        ".mega-8001{"
+      ]
+    },
+    "bytes": 2607778,
+    "sha256": "837cab936852aabdb2d078788cc96458f3a2a169df5f75a788c93879e7094668"
+  },
+  {
+    "id": "scale-two-mib-long-article",
+    "category": "scale",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "article-long",
+        "footnotes"
+      ],
+      "removes": [
+        ".scale-long-dead-0{"
+      ]
+    },
+    "bytes": 2193104,
+    "sha256": "1a5d1ce618dd5433a4d812a03efd7ec9b20a5f2ce4029af390507b8ba94a663f"
+  },
+  {
     "id": "script-text-inside-a-comment-is-left-alone",
     "category": "parsing",
     "tier": "smoke",
@@ -1609,6 +4556,582 @@
     },
     "bytes": 1150,
     "sha256": "9a70269506050b36bfdd990e2d4d914b6642b9e34e045d778fc5c25279a3ddb4"
+  },
+  {
+    "id": "scripts-already-minified-script-is-left-alone",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "window.scriptsMinified=1"
+      ]
+    },
+    "bytes": 5857,
+    "sha256": "5c65aa9f09e07f0b8303204804a9d98274100b3811a1752300b0ae5ac8a51865"
+  },
+  {
+    "id": "scripts-async-function-and-await",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "async function",
+        "await "
+      ]
+    },
+    "bytes": 306,
+    "sha256": "d519c2fcb2411822d0cda1e3432f02583746b36f7e8d11faf01b809d1c92e546"
+  },
+  {
+    "id": "scripts-automatic-semicolon-insertion",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "scripts-asi-guard"
+      ]
+    },
+    "bytes": 328,
+    "sha256": "b1a2222a6cd8e06522c5abc75e0d7dcad4ec7ea5e9b40f2e3dc11f4acfe8c028"
+  },
+  {
+    "id": "scripts-class-private-fields",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "#count",
+        "static make"
+      ]
+    },
+    "bytes": 372,
+    "sha256": "1da563fc1aa9a5c530623ed59655ae18b95b48fcd031b2f10ce6416faf988c4b"
+  },
+  {
+    "id": "scripts-data-uri-module-is-inlined",
+    "category": "modules",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "type=\"module\""
+      ],
+      "removes": [
+        "data:text/javascript"
+      ]
+    },
+    "bytes": 234,
+    "sha256": "5f62854b93ff2e1970aeb606435013f264a62938146fe64711f6758f799dcca0"
+  },
+  {
+    "id": "scripts-defer-and-async-attributes-are-kept",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "defer",
+        "async"
+      ]
+    },
+    "bytes": 278,
+    "sha256": "88d683c31e713a667dd535cda57221bc018da25973332dffea868c41971afa04"
+  },
+  {
+    "id": "scripts-destructuring-and-spread",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "..."
+      ]
+    },
+    "bytes": 360,
+    "sha256": "5f787f907fd1ec156ad19322e7ff13354a43b776e3e15b391eecf1792347021b"
+  },
+  {
+    "id": "scripts-document-write-of-markup",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "document.write"
+      ]
+    },
+    "bytes": 243,
+    "sha256": "8dcb83f9e8bbcb125c48e753aff04ca8c5905d942d44d4b7d635469f5ae28e82"
+  },
+  {
+    "id": "scripts-duplicate-data-uri-module-is-not-inlined",
+    "category": "modules",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:text/javascript"
+      ]
+    },
+    "bytes": 309,
+    "sha256": "fcd34c239c290e841cb16683e45713587910049bd327e05dcc5691e11f376298"
+  },
+  {
+    "id": "scripts-element-with-entities-in-attributes",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data-note=\"x &amp; y\""
+      ]
+    },
+    "bytes": 261,
+    "sha256": "5301a94f3dcf1a68294548713eeb8c1c76ee6b99ecf6545e982f36f39cc0a8dc"
+  },
+  {
+    "id": "scripts-eval-built-code",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "eval("
+      ]
+    },
+    "bytes": 313,
+    "sha256": "235ac8a32b7a9cd5ab3e432d7cf0d2a9f73277acb5b9a60f3441473720461593"
+  },
+  {
+    "id": "scripts-function-constructor",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Function("
+      ]
+    },
+    "bytes": 294,
+    "sha256": "3450a855dcb8a0367a277cec42c4a9a813524ec792af244b5a2dd643471fd0f6"
+  },
+  {
+    "id": "scripts-generator-function",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "function*"
+      ]
+    },
+    "bytes": 338,
+    "sha256": "8b89bd0df444c17a8d5e131aa2a5c14f0e0683f268045f402fc9fc8d1b62501f"
+  },
+  {
+    "id": "scripts-html-comment-inside-a-script",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        "legacy marker"
+      ]
+    },
+    "bytes": 267,
+    "sha256": "30dd5039352dae7a16f4b9cbc54b7625360c590121fb02ae66309b1a74ba0bd2"
+  },
+  {
+    "id": "scripts-importmap-is-left-alone",
+    "category": "modules",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "{\"imports\":{\"lib\":\"./lib.js\"}}"
+      ]
+    },
+    "bytes": 213,
+    "sha256": "99bd4fffcc0a2269a781a400f68588c86788668f9574f41ecd9f1ac257096c82"
+  },
+  {
+    "id": "scripts-inline-event-handler-is-kept",
+    "category": "script-tags",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "onclick=\"scriptsHandler(1)\""
+      ]
+    },
+    "bytes": 199,
+    "sha256": "dfc75505612bbad7856a0f9a19455975a1abf8a945aa033e1145ed3f63fd0c8e"
+  },
+  {
+    "id": "scripts-json-data-block-is-left-alone",
+    "category": "modules",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "{\"items\":[1,2,3],\"label\":\"scripts-json\"}"
+      ]
+    },
+    "bytes": 248,
+    "sha256": "51733ce252872f19a857aae67fd0b8a74c1b688ac2bd52272b4b5238aeb87df9"
+  },
+  {
+    "id": "scripts-labeled-statement",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "outer:",
+        "scripts-label-ok"
+      ]
+    },
+    "bytes": 363,
+    "sha256": "fd89762fcfccbcab270cd1e2678918786331fdaaf8dee1b459d5ac000eafed47"
+  },
+  {
+    "id": "scripts-large-script-is-minified",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "scripts-large-ok"
+      ]
+    },
+    "bytes": 54853,
+    "sha256": "1a9cc19a3a033a738fac82f72219ef709f3aab935cacb1ff428ca694fe04d9b7"
+  },
+  {
+    "id": "scripts-library-stays-when-another-script-mentions-it",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "clipboard.js v2.0.11"
+      ]
+    },
+    "bytes": 4635,
+    "sha256": "01ea26b25a2657ae910ca52d97b32996d6a512d5db2669122226e2a27002f1b5"
+  },
+  {
+    "id": "scripts-license-banner-is-kept",
+    "category": "script-tags",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "MIT License"
+      ],
+      "removes": [
+        "// an ordinary comment"
+      ]
+    },
+    "bytes": 329,
+    "sha256": "9e42db459b7281ca590d5372074c8b8d70304479d85c1008c0c670a0f371f8db"
+  },
+  {
+    "id": "scripts-many-tiny-scripts",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "window.scriptsTiny"
+      ]
+    },
+    "bytes": 2769,
+    "sha256": "4a332a2621b14ec11d3579ad6089a49021489790adf6d543afa65c4894477962"
+  },
+  {
+    "id": "scripts-module-script-is-minified",
+    "category": "modules",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "export",
+        "scripts-module"
+      ]
+    },
+    "bytes": 292,
+    "sha256": "9eec9988ab5b39ce4ab1f8204f0f524f92935d3f56791ff67445c162d087ba75"
+  },
+  {
+    "id": "scripts-module-with-top-level-await",
+    "category": "modules",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "await"
+      ]
+    },
+    "bytes": 266,
+    "sha256": "c2a56dd86d090aa11dbc9f9d375d58a556759a01d9fc6023b1563b81506475c6"
+  },
+  {
+    "id": "scripts-object-accessors-are-kept",
+    "category": "javascript",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "get value",
+        "set value"
+      ]
+    },
+    "bytes": 352,
+    "sha256": "ee13cdd3d954a7421f253445fb07bcb4005eac693d64d9cfc2ce88704d75f05d"
+  },
+  {
+    "id": "scripts-optional-chaining-and-nullish-coalescing",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "?.",
+        "??"
+      ]
+    },
+    "bytes": 329,
+    "sha256": "8cb29337879104a0c353c41fd329324f2ba529b657d5bd7c556aedec2e805676"
+  },
+  {
+    "id": "scripts-order-dependence-between-scripts",
+    "category": "script-tags",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "scripts-order-ok"
+      ]
+    },
+    "bytes": 307,
+    "sha256": "13e8bf03e01834c3082eea6dd2614959c9001138dcd39bc33f21ab706540e245"
+  },
+  {
+    "id": "scripts-quarto-library-stays-when-the-markup-uses-it",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "clipboard.js v2.0.11"
+      ]
+    },
+    "bytes": 4639,
+    "sha256": "d0e577df533555de51527f3fcf3cc43f62387db31933a74554cec32fd0575de0"
+  },
+  {
+    "id": "scripts-quarto-runtime-stub-replaces-a-dead-library",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "window.ClipboardJS="
+      ],
+      "removes": [
+        "clipboard.js v2.0.11"
+      ]
+    },
+    "bytes": 4721,
+    "sha256": "3483d55cd3894e32df86db422d8997b884b8335839ffe037363d0747a28f79e4"
+  },
+  {
+    "id": "scripts-reading-its-own-source",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "scripts-self-source"
+      ]
+    },
+    "bytes": 350,
+    "sha256": "bc2216d0afa128ad7e7e0cb37bb181f6dfcc6428a320a3b4725932ad14bef000"
+  },
+  {
+    "id": "scripts-reading-location-hash",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "location.hash"
+      ]
+    },
+    "bytes": 289,
+    "sha256": "feec97674c036a5670fcbb81daf98957d789bb1f19ecfc4f74b3e9f9fd1ee6d2"
+  },
+  {
+    "id": "scripts-regex-literal-keeps-its-pattern",
+    "category": "javascript",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "/\\d{4}-\\d{2}-\\d{2}/"
+      ]
+    },
+    "bytes": 366,
+    "sha256": "00f2c5cb79457fac2c95bcbdf6d42033ee7a4399dece49ec4afee015903363be"
+  },
+  {
+    "id": "scripts-script-inside-an-inline-svg-is-left-alone",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "window.scriptsSvg = 1"
+      ]
+    },
+    "bytes": 246,
+    "sha256": "bf328de6af758b755c19af340d35b17dd323b8fb6c6e9ff2a351f7c946b9c3c4"
+  },
+  {
+    "id": "scripts-script-inside-noscript-is-left-alone",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "window.scriptsNoscript = 1"
+      ]
+    },
+    "bytes": 213,
+    "sha256": "fb3d47e59f82575dc5de15c413a110ba5610f8d7772d2ba9aac88c09e61bfa5e"
+  },
+  {
+    "id": "scripts-script-type-that-is-not-javascript",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "{\"label\":\"scripts-template\"}"
+      ]
+    },
+    "bytes": 217,
+    "sha256": "bcf1ee560b15bfd045cb40b2a98de6740729cf57668957f228cf4c6166086c5f"
+  },
+  {
+    "id": "scripts-source-map-comment",
+    "category": "script-tags",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        "sourceMappingURL"
+      ]
+    },
+    "bytes": 406,
+    "sha256": "38c56d5363059208299283340e384116a8c60a5ee48a393ca052a188bb0707bc"
+  },
+  {
+    "id": "scripts-template-literal-with-a-closing-script-tag",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<\\/script>"
+      ]
+    },
+    "bytes": 281,
+    "sha256": "0995b2c4d4a34bc21d5a882e80f05b7bad6ca4d02980d06828995e5794b1b8cf"
+  },
+  {
+    "id": "scripts-unicode-identifiers-and-strings",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "scripts-unicode-ok"
+      ]
+    },
+    "bytes": 301,
+    "sha256": "5c47f367ac693155fc40319755a499a23a0d99a00226d6d3a841a0db72737837"
+  },
+  {
+    "id": "scripts-unparseable-script-is-left-unchanged",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "function scriptsBroken( {"
+      ]
+    },
+    "bytes": 230,
+    "sha256": "93c11598caecc06fa1ee0211d4b03e60b9bb461c3c1fd1210ab918e9c637e5e0"
+  },
+  {
+    "id": "scripts-use-strict-directive",
+    "category": "javascript",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "\"use strict\""
+      ]
+    },
+    "bytes": 333,
+    "sha256": "768a674a6ff423101914bf2e470ce6a1ab5bd5a750d43c4744f6252e86fe769d"
   },
   {
     "id": "textarea-content-is-not-markup",
