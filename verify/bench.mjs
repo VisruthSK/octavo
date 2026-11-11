@@ -1,12 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, statSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { verify } from "./verify.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const built = join(root, "target", "release", process.platform === "win32" ? "octavo.exe" : "octavo");
-const binary = join(mkdtempSync(join(tmpdir(), "octavo-bench-")), basename(built));
+const scratch = mkdtempSync(join(tmpdir(), "octavo-bench-"));
+process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
+const binary = join(scratch, basename(built));
 copyFileSync(built, binary);
 const outDir = join(root, "out");
 const [mode = "packed", ...inputs] = process.argv.slice(2).filter((a) => !a.startsWith("--"));

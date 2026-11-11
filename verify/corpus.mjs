@@ -27,7 +27,9 @@ const upstream = !process.argv.includes("--no-upstream");
 const outDirectory = resolve(flag("out", join(root, "out", "corpus")));
 
 const built = resolve(flag("binary", join(root, "target", "release", process.platform === "win32" ? "octavo.exe" : "octavo")));
-const binary = join(mkdtempSync(join(tmpdir(), "octavo-corpus-")), basename(built));
+const scratch = mkdtempSync(join(tmpdir(), "octavo-corpus-"));
+process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
+const binary = join(scratch, basename(built));
 copyFileSync(built, binary);
 
 const run = (args) =>

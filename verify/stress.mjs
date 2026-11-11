@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const binary = new URL(`../target/release/octavo${process.platform === "win32" ? ".exe" : ""}`, import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
 const dir = mkdtempSync(join(tmpdir(), "octavo-stress-"));
+process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+
 const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const page = (head, body) => `<!DOCTYPE html><html><head><meta charset="utf-8">${head}</head><body>${body}</body></html>`;
 const times = (n, make) => Array.from({ length: n }, (_, i) => make(i)).join("");
