@@ -12,7 +12,7 @@ categories = ["web-programming", "compression"]
 
 [dependencies]
 base64 = "0.22"
-brotli = "7"
+brotli = "9"
 lightningcss = { version = "1.0.0-alpha.72", default-features = false, features = ["visitor"] }
 serde_json = "1"
 fontcull = "2"
