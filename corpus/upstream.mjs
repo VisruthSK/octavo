@@ -116,13 +116,20 @@ const render = (file, outputDirectory) =>
       stdio: ["ignore", "ignore", "pipe"],
     });
     let stderr = "";
+    let timedOut = false;
     child.stderr.on("data", (chunk) => (stderr += chunk));
-    const timer = setTimeout(() => child.kill(), RENDER_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, RENDER_TIMEOUT_MS);
     child.on("close", (code) => {
       clearTimeout(timer);
-      done({ ok: code === 0, stderr });
+      done({ ok: code === 0, stderr, code, timedOut });
     });
   });
+
+const failureReason = ({ stderr, code, timedOut }) =>
+  stderr.trim().split("\n").at(-1)?.slice(0, 120) || (timedOut ? "render timed out" : `quarto exited with code ${code}`);
 
 const pool = async (items, limit, work) => {
   let next = 0;
@@ -147,51 +154,51 @@ const hasLocalLink = (markup) => localLink.test(withoutRawText(markup));
 
 const needsNetwork = (markup) => remoteResource.test(withoutRawText(markup));
 
-const capped = (quotas, cap) =>
-  Object.fromEntries(Object.entries(quotas).map(([format, count]) => [format, cap ? Math.min(count, cap) : count]));
+async function renderDocument({ id, file }) {
+  const kept = join(rendered, `${id}.html`);
+  let text = existsSync(kept) ? readFileSync(kept) : null;
+  if (!text) {
+    const output = join(rendered, id);
+    rmSync(output, { recursive: true, force: true });
+    mkdirSync(output, { recursive: true });
+    const result = await render(file, output);
+    const html = readdirSync(output).find((name) => name.endsWith(".html"));
+    text = result.ok && html ? readFileSync(join(output, html)) : null;
+    rmSync(output, { recursive: true, force: true });
+    if (!text) return { reason: failureReason(result) };
+  }
+  const markup = text.toString("utf8");
+  if (hasLocalLink(markup)) return { reason: "not self-contained" };
+  if (needsNetwork(markup)) return { reason: "needs the network" };
+  writeFileSync(kept, text);
+  return { text, markup };
+}
 
-export async function renderUpstream({ jobs = 4, cap } = {}) {
-  const sources = JSON.parse(readFileSync(join(import.meta.dirname, "sources.json"), "utf8"));
+const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+const sourcesPath = join(import.meta.dirname, "sources.json");
+export const selectionPath = join(import.meta.dirname, "selection.json");
+
+export async function chooseUpstream({ jobs = 4 } = {}) {
+  const sources = readJson(sourcesPath);
   const version = spawnSync(quarto, ["--version"], { encoding: "utf8" }).stdout.trim();
   mkdirSync(rendered, { recursive: true });
   const selected = [];
   const everything = [];
+  const skipped = new Map();
   for (const source of sources) {
     const directory = extract(source, await download(source));
     const eligible = candidates(directory);
-    const poolSizes = capped(source.pool, cap);
     const queue = formats.flatMap((format) =>
-      spread(eligible.filter((entry) => entry.format === format)).slice(0, poolSizes[format] ?? 0),
+      spread(eligible.filter((entry) => entry.format === format)).slice(0, source.pool[format] ?? 0),
     );
     const pooled = [];
     await pool(queue, jobs, async ({ file, path, format }) => {
       const id = `${source.name}-${slug(path.replace(/\.qmd$/, ""))}`;
-      const kept = join(rendered, `${id}.html`);
-      let result = { ok: true, stderr: "" };
-      let text = existsSync(kept) ? readFileSync(kept) : null;
-      if (!text) {
-        const output = join(rendered, id);
-        rmSync(output, { recursive: true, force: true });
-        mkdirSync(output, { recursive: true });
-        result = await render(file, output);
-        const html = readdirSync(output).find((name) => name.endsWith(".html"));
-        text = result.ok && html ? readFileSync(join(output, html)) : null;
-        rmSync(output, { recursive: true, force: true });
-      }
-      if (!text) {
-        console.error(`skipped ${id}: ${result.stderr.trim().split("\n").at(-1)?.slice(0, 120) ?? "render failed"}`);
+      const outcome = await renderDocument({ id, file });
+      if (!outcome.text) {
+        skipped.set(outcome.reason, (skipped.get(outcome.reason) ?? 0) + 1);
         return;
       }
-      const markup = text.toString("utf8");
-      if (hasLocalLink(markup)) {
-        console.error(`skipped ${id}: not self-contained`);
-        return;
-      }
-      if (needsNetwork(markup)) {
-        console.error(`skipped ${id}: needs the network`);
-        return;
-      }
-      writeFileSync(join(rendered, `${id}.html`), text);
       pooled.push({
         id,
         format,
@@ -199,41 +206,71 @@ export async function renderUpstream({ jobs = 4, cap } = {}) {
         category: `${source.name}-${format}`,
         source: { name: source.name, path },
         quarto: version,
-        bytes: text.length,
-        sha256: sha256(text),
-        features: featuresOf(markup),
+        features: featuresOf(outcome.markup),
       });
     });
     pooled.sort((a, b) => a.id.localeCompare(b.id));
-    const order = new Map(selectStratified(pooled, capped(source.select, cap)).map((pick) => [pick.id, pick.position]));
+    const order = new Map(selectStratified(pooled, source.select).map((pick) => [pick.id, pick.position]));
     for (const entry of pooled) {
       const position = order.get(entry.id);
-      entry.selected = position !== undefined;
-      if (entry.selected) selected.push({ ...entry, tier: position < (source.smoke[entry.format] ?? 0) ? "smoke" : "full" });
+      if (position !== undefined) {
+        selected.push({ ...entry, tier: position < (source.smoke[entry.format] ?? 0) ? "smoke" : "full" });
+      }
     }
     everything.push(...pooled);
   }
   selected.sort((a, b) => a.id.localeCompare(b.id));
-  writeFileSync(join(rendered, "pool.json"), `${JSON.stringify(everything, null, 2)}\n`);
-  writeFileSync(indexPath, `${JSON.stringify(selected, null, 2)}\n`);
-  return { pool: everything, selected };
+  writeFileSync(selectionPath, `${JSON.stringify(selected, null, 2)}\n`);
+  return { pooled: everything.length, selected, skipped };
+}
+
+export async function renderSelected({ jobs = 4, tier = "full" } = {}) {
+  const sources = readJson(sourcesPath);
+  mkdirSync(rendered, { recursive: true });
+  const entries = readJson(selectionPath).filter((entry) => tier === "full" || entry.tier === tier);
+  const done = [];
+  const failures = [];
+  for (const source of sources) {
+    const mine = entries.filter((entry) => entry.source.name === source.name);
+    if (mine.length === 0) continue;
+    const directory = extract(source, await download(source));
+    await pool(mine, jobs, async (entry) => {
+      const outcome = await renderDocument({ id: entry.id, file: join(directory, entry.source.path) });
+      if (!outcome.text) {
+        failures.push(`${entry.id}: ${outcome.reason}`);
+        return;
+      }
+      done.push({ ...entry, bytes: outcome.text.length, sha256: sha256(outcome.text) });
+    });
+  }
+  if (failures.length > 0) {
+    throw new Error(`${failures.length} pinned documents failed to render:\n${failures.sort().join("\n")}`);
+  }
+  done.sort((a, b) => a.id.localeCompare(b.id));
+  writeFileSync(indexPath, `${JSON.stringify(done, null, 2)}\n`);
+  return done;
 }
 
 export const renderedPath = (id) => join(rendered, `${id}.html`);
 
-export const readRendered = () => (existsSync(indexPath) ? JSON.parse(readFileSync(indexPath, "utf8")) : []);
+export const readRendered = () => (existsSync(indexPath) ? readJson(indexPath) : []);
 
 if (process.argv[1]?.endsWith("upstream.mjs")) {
   const flag = (name) => {
     const at = process.argv.indexOf(`--${name}`);
-    return at < 0 ? undefined : Number(process.argv[at + 1]);
+    return at < 0 ? undefined : process.argv[at + 1];
   };
-  const { pool: everything, selected } = await renderUpstream({
-    jobs: flag("jobs") ?? Math.max(1, Math.floor(cpus().length / 4)),
-    cap: flag("cap"),
-  });
-  const byFormat = Map.groupBy(selected, (entry) => entry.format);
-  console.log(
-    `rendered ${everything.length} usable documents and selected ${selected.length} (${formats.map((format) => `${format} ${byFormat.get(format)?.length ?? 0}`).join(", ")})`,
-  );
+  const jobs = Number(flag("jobs") ?? Math.max(1, Math.floor(cpus().length / 4)));
+  if (process.argv.includes("--select")) {
+    const { pooled, selected, skipped } = await chooseUpstream({ jobs });
+    const dropped = [...skipped].map(([reason, count]) => `${count} ${reason}`).join(", ");
+    console.log(`rendered ${pooled + [...skipped.values()].reduce((a, b) => a + b, 0)} candidates${dropped ? `, dropped ${dropped}` : ""}`);
+    const byFormat = Map.groupBy(selected, (entry) => entry.format);
+    console.log(
+      `wrote ${selected.length} to selection.json (${formats.map((format) => `${format} ${byFormat.get(format)?.length ?? 0}`).join(", ")})`,
+    );
+  } else {
+    const documents = await renderSelected({ jobs, tier: flag("tier") ?? "full" });
+    console.log(`rendered ${documents.length} pinned documents`);
+  }
 }
