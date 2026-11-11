@@ -27,17 +27,24 @@ Widget libraries such as Plotly and reveal.js ship their own minified JavaScript
 
 ## How it works
 
-Octavo scans the document once, then runs a fixed series of stages. Each stage reads the document and returns edits to byte ranges. The edits are applied to the original text, so anything Octavo does not understand stays exactly as it was.
+Octavo scans the document once and builds a word index of everything the page can reach. A short serial prefix removes unused Quarto libraries, because later stages depend on which scripts survive. After that the independent stages run in parallel on a rayon work queue. Each stage reads the shared scan and returns edits to byte ranges. The edits are merged and applied to the original text in one pass, so anything Octavo does not understand stays exactly as it was.
+
+The stylesheet stage parses each stylesheet into a syntax tree once. Pruning, minification and the font facts all come from that one tree, and the font stage rewrites its `@font-face` rules in place instead of parsing the CSS again.
 
 ```mermaid
 flowchart TD
-    A[Quarto HTML] --> B[Scan tags and collect every word the page uses]
+    A[Quarto HTML] --> B[Scan tags once]
     B --> Q[quarto: remove runtime libraries the page never calls]
-    Q --> J[js: minify scripts]
-    J --> C[css: delete unreachable rules, minify]
-    C --> F[fonts: convert to WOFF2, subset icon fonts]
-    F --> I[images: recompress PNG, optionally re-encode as AVIF or WebP]
-    I --> L{level}
+    Q --> W[Index every word the page and its scripts use]
+    W --> J[js: minify scripts]
+    W --> C[css: parse once, prune, minify]
+    W --> I[images: recompress PNG, optionally AVIF or WebP]
+    C --> F[fonts: rewrite @font-face from the same tree, subset icon fonts]
+    J --> M[Merge edits]
+    F --> M
+    I --> M
+    M --> P[Apply all edits in one pass and rescan]
+    P --> L{level}
     L -->|safe| O[Optimized HTML]
     L -->|scripts or packed| K[pack: compress into one blob, add loader]
     K --> O
