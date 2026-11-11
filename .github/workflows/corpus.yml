@@ -67,7 +67,7 @@ jobs:
           else
             tier=full
           fi
-          if [ "$tier" = full ]; then shards='[1,2,3,4,5,6]'; else shards='[1,2]'; fi
+          if [ "$tier" = full ]; then shards='[1,2,3,4,5,6,7,8,9,10,11,12]'; else shards='[1,2]'; fi
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "shards=$shards" >> "$GITHUB_OUTPUT"
 
@@ -93,9 +93,33 @@ jobs:
           name: selection
           path: corpus/selection.json
 
+  build:
+    name: Build
+    needs: plan
+    if: needs.plan.outputs.tier != 'select'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_PROFILE_RELEASE_LTO: ${{ needs.plan.outputs.tier == 'smoke' && 'off' || 'true' }}
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ needs.plan.outputs.tier == 'smoke' && '16' || '1' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ needs.plan.outputs.tier }}
+      - run: cargo build --locked --release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: octavo-binary
+          path: target/release/octavo
+          retention-days: 3
+
   corpus:
     name: Corpus (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
-    needs: plan
+    needs: [plan, build]
     if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 30 || 240 }}
@@ -106,18 +130,18 @@ jobs:
     env:
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
-      CARGO_PROFILE_RELEASE_LTO: ${{ needs.plan.outputs.tier == 'smoke' && 'off' || 'true' }}
-      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ needs.plan.outputs.tier == 'smoke' && '16' || '1' }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - run: cargo build --locked --release
+      - uses: actions/download-artifact@v8
+        with:
+          name: octavo-binary
+          path: target/release
+      - run: chmod +x target/release/octavo
       - run: npm ci
         working-directory: verify
       - run: |

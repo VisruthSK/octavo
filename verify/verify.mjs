@@ -1,6 +1,6 @@
 import { cpus } from "node:os";
 import { launch } from "./browser.mjs";
-import { capture, scenarios } from "./capture.mjs";
+import { capture, hasInteractions, scenarios } from "./capture.mjs";
 import { compare, signature } from "./compare.mjs";
 
 export const pages = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
@@ -56,15 +56,15 @@ const eachLimited = async (items, limit, work) => {
   );
 };
 
-async function confirmed(original, file, scenario, before, after, lossy) {
+async function confirmed(original, file, scenario, before, after, lossy, interact) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
   if (!issues.length) return { issues, rounded: stats.roundedPixels };
   const kept = await slots.using(async () => {
     const open = await browser();
     const [before2, after2] = await Promise.all([
-      capture(open, original, scenario, lossy).catch(crashed),
-      capture(open, file, scenario, lossy).catch(crashed),
+      capture(open, original, scenario, lossy, { interact }).catch(crashed),
+      capture(open, file, scenario, lossy, { interact }).catch(crashed),
     ]);
     const noise = new Set([...compare(before, before2, lossy), ...compare(after, after2, lossy)].map(signature));
     const reproduced = new Set(compare(before2, after2, lossy).map(signature));
@@ -76,15 +76,16 @@ async function confirmed(original, file, scenario, before, after, lossy) {
 export async function verify(original, optimized, { lossy = false } = {}) {
   const files = [optimized].flat();
   const reports = files.map(() => []);
+  const interact = await slots.using(async () => hasInteractions(await browser(), original));
   const run = async (file, scenario) => {
     const open = await browser();
-    return slots.using(() => capture(open, file, scenario, lossy).catch(crashed));
+    return slots.using(() => capture(open, file, scenario, lossy, { interact }).catch(crashed));
   };
   await eachLimited(scenarios, SCENARIOS_AT_ONCE, async (scenario) => {
     const [before, ...afters] = await Promise.all([original, ...files].map((file) => run(file, scenario)));
     await Promise.all(
       files.map(async (file, at) => {
-        const { issues, rounded } = await confirmed(original, file, scenario, before, afters[at], lossy);
+        const { issues, rounded } = await confirmed(original, file, scenario, before, afters[at], lossy, interact);
         reports[at].push({ scenario: scenario.name, issues, rounded });
       }),
     );

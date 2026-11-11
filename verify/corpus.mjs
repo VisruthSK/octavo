@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { brotliCompressSync } from "node:zlib";
 import { documentPath, materialize } from "../corpus/build.mjs";
 import { readRendered, renderedPath } from "../corpus/upstream.mjs";
@@ -56,6 +57,8 @@ const pool = async (items, limit, work) => {
   );
   return results;
 };
+
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 const naive = (html) => html.replace(/<!--[\s\S]*?-->/g, "").replace(/>\s+</g, "><").replace(/\s{2,}/g, " ");
 const brotli = (text) => brotliCompressSync(Buffer.from(text)).length;
@@ -132,15 +135,18 @@ if (browser) {
   const { verify, closeBrowser, pages } = await import("./verify.mjs");
   const documents = [...Map.groupBy(results.filter((entry) => entry.browser), (entry) => entry.input).values()];
   await pool(documents, pages, async (entries) => {
+    const outputs = [...Map.groupBy(entries, (entry) => sha256(readFileSync(entry.output)))].map(([, same]) => same);
     const reports = await verify(
       entries[0].input,
-      entries.map((entry) => entry.output),
+      outputs.map((same) => same[0].output),
     );
-    for (const [at, entry] of entries.entries()) {
-      entry.roundedPixels = reports[at].reduce((total, report) => total + report.rounded, 0);
-      for (const { scenario, issues } of reports[at]) {
-        if (entry.level === "packed" && scenario === "no-js") continue;
-        for (const issue of issues) entry.problems.push(`${scenario}: ${issue}`);
+    for (const [at, same] of outputs.entries()) {
+      for (const entry of same) {
+        entry.roundedPixels = reports[at].reduce((total, report) => total + report.rounded, 0);
+        for (const { scenario, issues } of reports[at]) {
+          if (entry.level === "packed" && scenario === "no-js") continue;
+          for (const issue of issues) entry.problems.push(`${scenario}: ${issue}`);
+        }
       }
     }
   });

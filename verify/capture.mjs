@@ -192,7 +192,21 @@ async function settledAccessibilityTree(page) {
   return previous;
 }
 
-export async function capture(browser, file, scenario, lossy) {
+const INTERACTIVE_CONTENT =
+  "script, details, summary, button, input, select, textarea, dialog, [role=tab], [tabindex], [contenteditable]";
+
+export async function hasInteractions(browser, file) {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
+    return await page.evaluate((selector) => Boolean(document.querySelector(selector)), INTERACTIVE_CONTENT);
+  } finally {
+    await context.close();
+  }
+}
+
+export async function capture(browser, file, scenario, lossy, { interact = true } = {}) {
   const scripted = scenario.javaScriptEnabled !== false;
   const context = await browser.newContext({
     viewport: scenario.viewport,
@@ -225,7 +239,7 @@ export async function capture(browser, file, scenario, lossy) {
       forced: scripted && !scenario.motion ? await forcedStates(page) : [],
       accessibility: await settledAccessibilityTree(page),
     });
-    if (scripted && !scenario.media && !scenario.motion) {
+    if (interact && scripted && !scenario.media && !scenario.motion) {
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
       for (const [index, interact] of interactions.entries()) {
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));

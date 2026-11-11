@@ -509,8 +509,42 @@ fn convert(
 }
 
 fn subsetted(sfnt: &[u8], chars: &HashSet<char>) -> Option<Vec<u8>> {
-    let subset = fontcull::subset_font_data(sfnt, chars, &[]).ok()?;
+    let subset = fontcull::subset_font_data(sfnt, chars, &layout_features(sfnt)).ok()?;
     (!has_positioning(sfnt) || has_positioning(&subset)).then_some(subset)
+}
+
+fn layout_features(sfnt: &[u8]) -> Vec<[u8; 4]> {
+    let Ok(font) = FontRef::new(sfnt) else {
+        return Vec::new();
+    };
+    let substitution = font
+        .gsub()
+        .ok()
+        .and_then(|table| table.feature_list().ok())
+        .map(|list| {
+            list.feature_records()
+                .iter()
+                .map(|record| record.feature_tag().to_be_bytes())
+                .collect::<Vec<_>>()
+        });
+    let positioning = font
+        .gpos()
+        .ok()
+        .and_then(|table| table.feature_list().ok())
+        .map(|list| {
+            list.feature_records()
+                .iter()
+                .map(|record| record.feature_tag().to_be_bytes())
+                .collect::<Vec<_>>()
+        });
+    let mut tags: Vec<[u8; 4]> = substitution
+        .into_iter()
+        .chain(positioning)
+        .flatten()
+        .collect();
+    tags.sort_unstable();
+    tags.dedup();
+    tags
 }
 
 fn has_positioning(sfnt: &[u8]) -> bool {
@@ -533,7 +567,7 @@ fn notice(sfnt: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::has_positioning;
+    use super::{has_positioning, layout_features};
 
     fn sfnt_with(tag: &[u8; 4], table: &[u8]) -> Vec<u8> {
         let mut font = vec![0, 1, 0, 0, 0, 1, 0, 16, 0, 0, 0, 0];
@@ -543,6 +577,22 @@ mod tests {
         font.extend_from_slice(&(table.len() as u32).to_be_bytes());
         font.extend_from_slice(table);
         font
+    }
+
+    #[test]
+    fn every_feature_of_a_font_is_listed_once_in_order() {
+        let gsub = [
+            0, 1, 0, 0, 0, 10, 0, 12, 0, 34, 0, 0, 0, 2, b't', b'n', b'u', b'm', 0, 10, b's', b'm',
+            b'c', b'p', 0, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let tags = layout_features(&sfnt_with(b"GSUB", &gsub));
+        assert_eq!(tags, [*b"smcp", *b"tnum"]);
+    }
+
+    #[test]
+    fn a_font_with_no_layout_tables_lists_no_features() {
+        assert!(layout_features(&sfnt_with(b"head", &[0; 16])).is_empty());
+        assert!(layout_features(b"not a font").is_empty());
     }
 
     #[test]

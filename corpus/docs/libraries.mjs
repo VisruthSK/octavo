@@ -567,7 +567,7 @@ export default [
     },
     build: () =>
       page(
-        `<title>Iconic unused</title><style>@font-face{font-family:Iconic;src:url(data:font/woff2;base64,${FONT_DATA}) format('woff2')}\n.iconic-unused-0{color:#123456}\n.iconic-unused-1{content:"\\e010"}\n.keep-iconic{color:#036}</style>`,
+        `<title>No glyph fonts</title><style>@font-face{font-family:Iconic;src:url(data:font/woff2;base64,${FONT_DATA}) format('woff2')}\n.iconic-unused-0{color:#123456}\n.iconic-unused-1{content:"\\e010"}\n.keep-iconic{color:#036}</style>`,
         '<main><p class="keep-iconic">No icons in use anywhere on this page.</p></main>',
       ),
   },
