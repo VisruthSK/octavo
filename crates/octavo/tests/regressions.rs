@@ -276,3 +276,31 @@ fn a_font_face_with_legacy_sources_keeps_one_woff2_copy_from_the_last_src() {
     assert!(!out.contains("fontobject"), "{out}");
     assert!(!out.contains("data:font/ttf"), "{out}");
 }
+
+#[test]
+fn a_rule_the_parser_rejects_is_kept_in_place_while_the_rest_of_the_sheet_is_optimized() {
+    let css = ".gone{color:red}\n.a:first{margin-top:12px}\n.keep{color:#0000ff}\n@media print{.gone{color:blue}}";
+    let out = safe(&page(
+        &format!("<style>{css}</style>"),
+        "<p class=\"keep a\">",
+    ));
+    assert!(out.contains(".a:first{margin-top:12px}"), "{out}");
+    assert!(out.contains(".keep{color:#00f}"), "{out}");
+    assert!(!out.contains(".gone"), "{out}");
+    assert!(
+        out.find(".a:first").unwrap() < out.find(".keep").unwrap(),
+        "{out}"
+    );
+}
+
+#[test]
+fn several_rejected_rules_and_non_ascii_text_before_them_are_all_restored() {
+    let css = ".gone{color:red}\n.a::-moz-bogus-thing{x:y}\n/* é€ */ .b:first{margin:0}\n.keep{color:#0000ff}";
+    let out = safe(&page(
+        &format!("<style>{css}</style>"),
+        "<p class=\"keep a b\">",
+    ));
+    assert!(out.contains(".a::-moz-bogus-thing{x:y}"), "{out}");
+    assert!(out.contains(".b:first{margin:0}"), "{out}");
+    assert!(!out.contains(".gone"), "{out}");
+}

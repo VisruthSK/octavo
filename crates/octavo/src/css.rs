@@ -25,6 +25,16 @@ use std::{
 };
 
 const PLACEHOLDER: &str = "__octavo";
+const KEPT_RULE: &str = "__octavo_keep_";
+
+struct Isolated {
+    css: String,
+    rules: Vec<String>,
+}
+
+fn marker(n: usize) -> String {
+    format!("@layer {KEPT_RULE}{n};")
+}
 
 struct Shielded<'a> {
     source: &'a str,
@@ -55,29 +65,145 @@ fn shield<'a>(
     }
 }
 
-fn prune<'i>(css: &'i str, words: &Words) -> Option<StyleSheet<'i>> {
+fn parse(css: &str) -> Result<StyleSheet<'_>, Vec<(u32, u32)>> {
     let warnings = Arc::new(RwLock::new(Vec::new()));
     let options = ParserOptions {
         error_recovery: true,
         warnings: Some(warnings.clone()),
         ..Default::default()
     };
-    let mut sheet = StyleSheet::parse(css, options).ok()?;
-    if !warnings.read().ok()?.is_empty() {
-        return None;
+    let sheet = StyleSheet::parse(css, options).map_err(|_| Vec::new())?;
+    let found = warnings.read().map_err(|_| Vec::new())?;
+    if found.is_empty() {
+        return Ok(sheet);
     }
+    let places: Vec<(u32, u32)> = found
+        .iter()
+        .filter_map(|warning| warning.loc.as_ref().map(|loc| (loc.line, loc.column)))
+        .collect();
+    Err(if places.len() == found.len() {
+        places
+    } else {
+        Vec::new()
+    })
+}
+
+fn finish<'i>(mut sheet: StyleSheet<'i>, words: &Words) -> Option<StyleSheet<'i>> {
     sheet.visit(&mut Prune { words }).ok()?;
     sheet.minify(MinifyOptions::default()).ok()?;
     sheet.visit(&mut KeepUnprefixed).ok()?;
     Some(sheet)
 }
 
-fn print(sheet: &StyleSheet, shielded: &Shielded, font_notices: &[String]) -> Option<String> {
+fn isolate(css: &str, places: &[(u32, u32)]) -> Option<Isolated> {
+    let offsets: Vec<usize> = places
+        .iter()
+        .map(|&(line, column)| offset_of(css, line, column))
+        .collect::<Option<_>>()?;
+    let mut out = String::with_capacity(css.len());
+    let mut rules = Vec::new();
+    let mut at = 0;
+    for item in top_level_items(css) {
+        if offsets.iter().any(|offset| item.contains(offset)) {
+            out.push_str(&css[at..item.start]);
+            out.push_str(&marker(rules.len()));
+            rules.push(css[item.clone()].to_string());
+            at = item.end;
+        }
+    }
+    out.push_str(&css[at..]);
+    (!rules.is_empty()).then_some(Isolated { css: out, rules })
+}
+
+fn offset_of(css: &str, line: u32, column: u32) -> Option<usize> {
+    let bytes = css.as_bytes();
+    let mut start = 0;
+    for _ in 0..line {
+        let end = start
+            + bytes[start..]
+                .iter()
+                .position(|c| matches!(c, b'\n' | b'\r' | 0x0c))?;
+        start = end
+            + if bytes[end] == b'\r' && bytes.get(end + 1) == Some(&b'\n') {
+                2
+            } else {
+                1
+            };
+    }
+    let target = column.saturating_sub(1);
+    let mut units = 0;
+    for (at, character) in css[start..].char_indices() {
+        if units >= target {
+            return Some(start + at);
+        }
+        units += character.len_utf16() as u32;
+    }
+    (units >= target).then_some(css.len())
+}
+
+fn top_level_items(css: &str) -> Vec<std::ops::Range<usize>> {
+    let b = css.as_bytes();
+    let (mut items, mut i) = (Vec::new(), 0);
+    while i < b.len() {
+        if b[i].is_ascii_whitespace() {
+            i += 1;
+            continue;
+        }
+        if b[i] == b'/' && b.get(i + 1) == Some(&b'*') {
+            i = skip_literal(b, i).min(b.len());
+            continue;
+        }
+        let start = i;
+        let (mut braces, mut parens) = (0i32, 0i32);
+        while i < b.len() {
+            let skipped = skip_literal(b, i);
+            if skipped != i {
+                i = skipped.min(b.len());
+                continue;
+            }
+            match b[i] {
+                b'(' => parens += 1,
+                b')' => parens -= 1,
+                b'{' => braces += 1,
+                b'}' => {
+                    braces -= 1;
+                    if braces <= 0 {
+                        i += 1;
+                        break;
+                    }
+                }
+                b';' if braces == 0 && parens <= 0 => {
+                    i += 1;
+                    break;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        items.push(start..i);
+    }
+    items
+}
+
+fn print(
+    sheet: &StyleSheet,
+    shielded: &Shielded,
+    isolated: Option<&Isolated>,
+    font_notices: &[String],
+) -> Option<String> {
     let printer = PrinterOptions {
         minify: true,
         ..Default::default()
     };
-    let css = unshield(&sheet.to_css(printer).ok()?.code, &shielded.saved);
+    let mut code = sheet.to_css(printer).ok()?.code;
+    for (n, rule) in isolated.iter().flat_map(|i| i.rules.iter()).enumerate() {
+        let marker = marker(n);
+        if !code.contains(&marker) {
+            return None;
+        }
+        code = code.replacen(&marker, rule, 1);
+    }
+    let css = unshield(&code, &shielded.saved);
     let mut out = shielded.notices.clone();
     for notice in font_notices {
         out.push_str("/*!");
@@ -301,9 +427,31 @@ pub(crate) fn stage(
         .par_iter()
         .map(|source| shield(source, words, &referenced, licenses))
         .collect();
-    let mut sheets: Vec<Option<StyleSheet>> = shielded
+    let parsed: Vec<_> = shielded
         .par_iter()
-        .map(|shielded| prune(&shielded.css, words))
+        .map(|shielded| parse(&shielded.css))
+        .collect();
+    let isolated: Vec<Option<Isolated>> = parsed
+        .iter()
+        .zip(&shielded)
+        .map(|(parsed, shielded)| {
+            parsed
+                .as_ref()
+                .err()
+                .and_then(|places| isolate(&shielded.css, places))
+        })
+        .collect();
+    let mut sheets: Vec<Option<StyleSheet>> = parsed
+        .into_par_iter()
+        .zip(&isolated)
+        .map(|(parsed, isolated)| {
+            let sheet = match (parsed, isolated) {
+                (Ok(sheet), _) => sheet,
+                (Err(_), Some(isolated)) => parse(&isolated.css).ok()?,
+                (Err(_), None) => return None,
+            };
+            finish(sheet, words)
+        })
         .collect();
     let embedded = doc
         .tags()
@@ -313,6 +461,12 @@ pub(crate) fn stage(
     let loose: Vec<&str> = shielded
         .iter()
         .flat_map(|s| s.saved.iter().map(String::as_str))
+        .chain(
+            isolated
+                .iter()
+                .flatten()
+                .flat_map(|i| i.rules.iter().map(String::as_str)),
+        )
         .chain(embedded)
         .collect();
     let settings = fonts::Settings {
@@ -325,8 +479,11 @@ pub(crate) fn stage(
     let printed: Vec<Option<String>> = sheets
         .par_iter()
         .zip(&shielded)
+        .zip(&isolated)
         .zip(&notices)
-        .map(|((sheet, shielded), notices)| print(sheet.as_ref()?, shielded, notices))
+        .map(|(((sheet, shielded), isolated), notices)| {
+            print(sheet.as_ref()?, shielded, isolated.as_ref(), notices)
+        })
         .collect();
     let printed: HashMap<&str, &String> = shielded
         .iter()
