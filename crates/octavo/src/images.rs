@@ -17,7 +17,7 @@ use std::{cmp::Reverse, io::Cursor};
 
 const MAX_LOSSLESS_PIXELS: u64 = 40_000_000;
 const MAX_LOSSY_PIXELS: u64 = 200_000_000;
-const THOROUGH_PIXELS: u64 = 2_000_000;
+const THOROUGH_PIXELS: u64 = 400_000;
 const HEAVY_PIXELS: u64 = 8_000_000;
 
 struct Decoded {

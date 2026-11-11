@@ -170,15 +170,18 @@ fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Dec
         .family
         .chars()
         .all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'));
-    let Some(font) = data::decode(&face.uri).filter(|_| plain) else {
+    if !plain {
         return Decision::Keep;
-    };
+    }
     let in_markup = settings.words.mentions(&face.family);
     let Some(pseudo_only) = usage
         .of(&face.family.to_lowercase())
         .or(in_markup.then_some(false))
     else {
         return Decision::Drop;
+    };
+    let Some(font) = data::decode(&face.uri) else {
+        return Decision::Keep;
     };
     let subset = if pseudo_only && !in_markup {
         Some(&chars.icons)
