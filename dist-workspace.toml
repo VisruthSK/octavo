@@ -14,6 +14,7 @@ include = ["THIRD-PARTY-LICENSES.txt"]
 # Workflow edits (such as Dependabot action bumps) are expected
 allow-dirty = ["ci"]
 github-attestations = true
+plan-jobs = ["./ci", "./corpus"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = [
   "aarch64-apple-darwin",

@@ -9,6 +9,7 @@ on:
       - "Cargo.lock"
   schedule:
     - cron: "0 6 * * 1"
+  workflow_call:
   workflow_dispatch:
     inputs:
       tier:
@@ -18,7 +19,7 @@ on:
         default: smoke
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: corpus-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
