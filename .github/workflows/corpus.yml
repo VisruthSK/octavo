@@ -59,7 +59,7 @@ jobs:
       - uses: quarto-dev/quarto-actions/setup@v2
         with:
           version: 1.11.9
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: corpus/.cache
           key: corpus-${{ hashFiles('corpus/sources.json', 'corpus/selection.json') }}
