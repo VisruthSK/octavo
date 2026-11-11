@@ -31,7 +31,8 @@ const DIM: Style = Style::new().dimmed();
 #[command(
     name = "octavo",
     version,
-    about = "Structure-aware optimizer for Quarto HTML. Run `octavo <input> [output]` to shrink a file",
+    about = "Shrinks the self-contained HTML that Quarto writes",
+    after_help = EXAMPLES,
     styles = STYLES,
     arg_required_else_help = true
 )]
@@ -43,10 +44,19 @@ struct Cli {
         long,
         value_name = "N",
         default_value_t = default_jobs(),
-        help = "Parallel workers"
+        help = "Worker threads, by default one per logical CPU"
     )]
     jobs: NonZeroUsize,
 }
+
+const EXAMPLES: &str = "\
+Examples:
+  octavo report.html                     write report.min.html
+  octavo deck.html --level safe          keep the page working without JavaScript
+  octavo deck.html --lossy-images        smaller, but images are not pixel-exact
+  octavo report.html --maximum           the smallest output, however long it takes
+  octavo report.html --audit             show what each step would save
+  octavo report.html --verify 'node check.mjs {original} {optimized}'";
 
 fn default_jobs() -> NonZeroUsize {
     std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)
@@ -64,19 +74,21 @@ struct Optimize {
         value_name = "LEVEL",
         default_value_t = Mode::Packed,
         value_parser = value_parser!(Mode),
-        help = "How much to rewrite: safe, scripts or packed"
+        help = "How much to rewrite. Output shrinks in this order: safe is the largest and works without JavaScript, scripts is smaller, packed is the smallest and needs JavaScript"
     )]
     level: Mode,
     #[arg(
         long,
         value_name = "COMMAND",
-        help = "Check each candidate with a shell command; {original} and {optimized} are substituted, and a failing candidate steps down to the next level"
+        help_heading = "Checking",
+        help = "Run COMMAND on each result and keep the result only if it exits with 0. A failing result is replaced by the next level down (packed, then scripts, then safe). In COMMAND, {original} is the path of the input file and {optimized} the path of the result"
     )]
     verify: Option<String>,
     #[arg(
         long,
         conflicts_with_all = ["output", "verify"],
-        help = "Report what each transformation would save, without writing anything"
+        help_heading = "Checking",
+        help = "Show what each step would save, and write nothing"
     )]
     audit: bool,
     #[arg(
@@ -85,7 +97,8 @@ struct Optimize {
         num_args = 0..=1,
         default_missing_value = "avif",
         value_parser = value_parser!(ImageFormat),
-        help = "Re-encode PNG and JPEG images in a lossy format: avif or webp"
+        help_heading = "Images",
+        help = "Re-encode PNG and JPEG images as avif (the default) or webp. Much smaller, not pixel-exact"
     )]
     lossy_images: Option<ImageFormat>,
     #[arg(
@@ -93,36 +106,36 @@ struct Optimize {
         value_name = "QUALITY",
         requires = "lossy_images",
         value_parser = value_parser!(u8).range(1..=100),
-        help = "Quality of the re-encoded images [default: 60 for AVIF, 80 for WebP]"
+        help_heading = "Images",
+        help = "Quality from 1 to 100 [default: 60 for avif, 80 for webp]"
     )]
     image_quality: Option<u8>,
-    #[arg(
-        long,
-        help = "Subset text fonts to the characters the document uses. Often a large saving, but not exact: some kerning is lost, so text can shift by a pixel or two"
-    )]
-    subset_text_fonts: bool,
     #[arg(
         long,
         value_name = "PIXELS",
         requires = "lossy_images",
         value_parser = parse_nonzero_side,
-        help = "Shrink re-encoded images whose longest side exceeds this many pixels [default: 3840]"
+        help_heading = "Images",
+        help = "Shrink images whose longest side is over this many pixels [default: 3840]"
     )]
     max_image_side: Option<NonZeroU32>,
     #[arg(
         long,
-        help = "Drop the license and copyright notices of bundled libraries and fonts, which most licenses require keeping"
+        help_heading = "Fonts",
+        help = "Keep only the characters each text font needs. Often a large saving, but some letter pairs come out about a pixel wider"
     )]
-    strip_licenses: bool,
+    subset_text_fonts: bool,
     #[arg(
         long,
         value_name = "DIRECTORY",
-        help = "Remember converted fonts in this directory, so later runs skip the slowest step"
+        help_heading = "Fonts",
+        help = "Remember converted fonts here, so later runs skip the slowest step"
     )]
     cache_dir: Option<PathBuf>,
     #[arg(
         long,
-        help = "Use the slowest, strongest compression everywhere, whatever it costs in time"
+        help_heading = "Compression",
+        help = "Use the slowest settings everywhere, whatever it costs in time. Cannot be combined with the three options below"
     )]
     maximum: bool,
     #[arg(
@@ -130,7 +143,8 @@ struct Optimize {
         value_name = "0-11",
         value_parser = clap::value_parser!(u8).range(0..=11),
         conflicts_with = "maximum",
-        help = "Brotli quality of re-encoded fonts"
+        help_heading = "Compression",
+        help = "Quality of re-encoded fonts [default: 9, slowest: 11]"
     )]
     woff2_quality: Option<u8>,
     #[arg(
@@ -138,7 +152,8 @@ struct Optimize {
         value_name = "0-6",
         value_parser = clap::value_parser!(u8).range(0..=6),
         conflicts_with = "maximum",
-        help = "oxipng preset for PNG images; by default chosen by image size"
+        help_heading = "Compression",
+        help = "oxipng preset for PNG images [default: chosen by image size, slowest: 6]"
     )]
     png_preset: Option<u8>,
     #[arg(
@@ -146,9 +161,16 @@ struct Optimize {
         value_name = "0-11",
         value_parser = clap::value_parser!(u8).range(0..=11),
         conflicts_with = "maximum",
-        help = "Brotli quality of the packed blob"
+        help_heading = "Compression",
+        help = "Quality of the packed blob [default: 9, slowest: 11]"
     )]
     brotli_quality: Option<u8>,
+    #[arg(
+        long,
+        help_heading = "Licenses",
+        help = "Drop the license and copyright notices of bundled libraries and fonts. Most licenses require keeping them"
+    )]
+    strip_licenses: bool,
 }
 
 fn parse_nonzero_side(value: &str) -> Result<NonZeroU32, String> {

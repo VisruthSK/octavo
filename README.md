@@ -78,7 +78,9 @@ Everything else in the code only knows about HTML, CSS, JavaScript, fonts and im
 | `scripts` | Also packs scripts and data blocks. Stylesheets and SVG stay real. |
 | `packed` | Packs everything. **The page needs JavaScript to be styled.** Use it for documents that already need JavaScript. |
 
-`--verify "<command>"` checks each candidate with a command of your choice (`{original}` and `{optimized}` are substituted). A candidate that fails steps down from `packed` to `scripts` to `safe`, and finally to the original, so a failing result is never written.
+Output size shrinks in the order `safe`, `scripts`, `packed`: `safe` is the largest and `packed` the smallest.
+
+`--verify "<command>"` runs your command on each candidate and keeps the candidate only if the command exits with 0. In the command, `{original}` is the path of the input file and `{optimized}` is the path of the candidate. A candidate that fails is replaced by the next level down, from `packed` to `scripts` to `safe`, and finally by the original, so a failing result is never written.
 
 ### Compression effort
 
