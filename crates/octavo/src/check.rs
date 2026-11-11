@@ -153,9 +153,8 @@ impl Links {
     }
 }
 
-pub(crate) fn is_html(src: &str) -> bool {
-    src.match_indices('<')
-        .any(|(at, _)| starts_with_ignore_case(&src[at..], "<html"))
+pub(crate) fn is_html(doc: &Doc) -> bool {
+    doc.found_html()
 }
 
 pub(crate) fn links(doc: &Doc) -> Links {

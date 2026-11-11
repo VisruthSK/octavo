@@ -524,10 +524,10 @@ pub fn optimize(src: &str, mode: Mode) -> Result<Output, Error> {
 /// # Ok::<(), octavo::Error>(())
 /// ```
 pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
-    if !check::is_html(src) {
+    let doc = Doc::new(src);
+    if !check::is_html(&doc) {
         return Err(Error::NotHtml);
     }
-    let doc = Doc::new(src);
     let links = check::links(&doc);
     if !links.is_self_contained() {
         return Err(Error::NotSelfContained(links.local().cloned().collect()));

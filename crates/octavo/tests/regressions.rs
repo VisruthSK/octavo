@@ -1,6 +1,6 @@
 mod common;
 
-use common::{busy_script, data_uri, packed, page, safe};
+use common::{busy_script, data_uri, packed, page, safe, simplified};
 use octavo::{optimize, simplify, Mode, Options};
 
 #[test]
@@ -315,6 +315,100 @@ fn arithmetic_that_would_lose_precision_is_left_as_written() {
     assert!(out.contains(".a{font-size:calc(1.6em / .7)}"), "{out}");
     assert!(out.contains(".keep{color:#00f}"), "{out}");
     assert!(!out.contains(".gone"), "{out}");
+}
+
+#[test]
+fn plaintext_content_is_not_markup() {
+    let src = page(
+        "<style>.witness{margin-left:1px}</style>",
+        "<p>before</p><plaintext><script>var x = 1;</script>",
+    );
+    let out = safe(&src);
+    assert!(out.contains("var x = 1;"), "{out}");
+    assert!(!out.contains(".witness"), "{out}");
+}
+
+#[test]
+fn bogus_comments_are_not_markup_and_stay_byte_identical() {
+    for (bogus, kept) in [
+        ("<![CDATA[ <script>var x = 1;</script> ]]>", "var x = 1;"),
+        ("<!garbage <script>var y = 2;</script>", "var y = 2;"),
+        ("<?xml <script>var z = 3;</script>", "var z = 3;"),
+        ("</ 4 <script>var w = 4;</script>", "var w = 4;"),
+    ] {
+        let src = page(
+            "<style>.witness{margin-left:1px}</style>",
+            &format!("<p>before</p>{bogus}"),
+        );
+        let out = safe(&src);
+        assert!(out.contains(kept), "{out}");
+        assert!(out.contains(bogus), "{out}");
+        assert!(!out.contains(".witness"), "{out}");
+    }
+}
+
+#[test]
+fn an_html_word_inside_a_script_is_not_a_document() {
+    for src in [
+        "<script>var s = '<html>';</script>",
+        "<!-- <html> --><p>x</p>",
+    ] {
+        assert_eq!(
+            optimize(src, Mode::Safe).unwrap_err(),
+            octavo::Error::NotHtml,
+            "{src}"
+        );
+    }
+}
+
+#[test]
+fn a_css_banner_is_printed_exactly_once_unless_licenses_are_stripped() {
+    let dead: String = (0..80).map(|i| format!(".dead-{i}{{color:red}}")).collect();
+    let src = page(
+        &format!("<style>/*! Bootstrap v5.3.3 | Licensed under MIT */\n.keep{{display:block}}\n{dead}</style>"),
+        "<p class=\"keep\">",
+    );
+    let kept = safe(&src);
+    assert_eq!(kept.matches("Bootstrap v5.3.3").count(), 1, "{kept}");
+    assert!(!kept.contains(".dead-0"), "{kept}");
+    let stripped = simplified(
+        &src,
+        Options {
+            strip_licenses: true,
+            ..Options::default()
+        },
+    )
+    .pack(Mode::Safe);
+    assert!(
+        !stripped.html.contains("Bootstrap v5.3.3"),
+        "{}",
+        stripped.html
+    );
+}
+
+#[test]
+fn an_unterminated_block_is_kept_while_the_rest_of_the_sheet_is_optimized() {
+    let css = ".gone{color:red}\n.keep{color:#0000ff}\n.a:first{margin-top:12px";
+    let out = safe(&page(
+        &format!("<style>{css}</style>"),
+        "<p class=\"keep a\">",
+    ));
+    assert!(out.contains(".a:first{margin-top:12px"), "{out}");
+    assert!(out.contains(".keep{color:#00f}"), "{out}");
+    assert!(!out.contains(".gone"), "{out}");
+}
+
+#[test]
+fn a_rejected_rule_inside_media_is_kept_while_the_rest_of_the_sheet_is_optimized() {
+    let css = ".gone{color:red}\n@media print{.g2{color:blue}.a:first{margin-top:12px}}\n.keep{color:#0000ff}";
+    let out = safe(&page(
+        &format!("<style>{css}</style>"),
+        "<p class=\"keep a\">",
+    ));
+    assert!(out.contains("@media print"), "{out}");
+    assert!(out.contains(".a:first{margin-top:12px}"), "{out}");
+    assert!(out.contains(".keep{color:#00f}"), "{out}");
+    assert!(!out.contains(".gone{color:red}"), "{out}");
 }
 
 #[test]

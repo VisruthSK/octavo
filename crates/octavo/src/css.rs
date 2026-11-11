@@ -6,7 +6,6 @@ use crate::{
     words::Words,
     Licenses, Target, Transform,
 };
-use cssparser::{Parser, ParserInput, Token};
 use indexmap::IndexSet;
 use lightningcss::{
     properties::Property,
@@ -71,14 +70,10 @@ fn shield<'a>(
     referenced: &HashSet<&str>,
     licenses: Licenses,
 ) -> Shielded<'a> {
-    let (css, saved) = shield_custom_properties(source, |name| {
+    let (masked, notices) = mask_legal_comments(source, licenses);
+    let (css, saved) = shield_custom_properties(&masked, |name| {
         words.has("--") || referenced.contains(name) || words.has(name)
     });
-    let notices = if licenses == Licenses::Keep {
-        legal_comments(source)
-    } else {
-        String::new()
-    };
     Shielded {
         source,
         css,
@@ -265,18 +260,50 @@ fn print(
     Some(out)
 }
 
-fn legal_comments(css: &str) -> String {
-    let mut input = ParserInput::new(css);
-    let mut parser = Parser::new(&mut input);
+fn mask_legal_comments(source: &str, licenses: Licenses) -> (String, String) {
+    let b = source.as_bytes();
+    let mut out = String::with_capacity(source.len());
     let mut notices = String::new();
-    while let Ok(token) = parser.next_including_whitespace_and_comments() {
-        if let Token::Comment(text) = token {
-            if text.starts_with('!') || text.contains("@license") || text.contains("@preserve") {
-                notices.push_str(&format!("/*{text}*/"));
+    let (mut at, mut i) = (0, 0);
+    while i < b.len() {
+        if b[i] == b'/' && b.get(i + 1) == Some(&b'*') {
+            let (end, inner) = match source[i + 2..].find("*/") {
+                Some(p) => (i + 4 + p, &source[i + 2..i + 2 + p]),
+                None => (source.len(), &source[i + 2..]),
+            };
+            let legal =
+                inner.starts_with('!') || inner.contains("@license") || inner.contains("@preserve");
+            if legal {
+                out.push_str(&source[at..i]);
+                blank_comment(&source[i..end], &mut out);
+                if licenses == Licenses::Keep {
+                    notices.push_str("/*");
+                    notices.push_str(inner);
+                    notices.push_str("*/");
+                }
+                at = end;
             }
+            i = end;
+            continue;
+        }
+        let skipped = skip_literal(b, i);
+        if skipped != i {
+            i = skipped.min(b.len());
+            continue;
+        }
+        i += 1;
+    }
+    out.push_str(&source[at..]);
+    (out, notices)
+}
+
+fn blank_comment(comment: &str, out: &mut String) {
+    for &byte in comment.as_bytes() {
+        match byte {
+            b'\n' | b'\r' | 0x0c => out.push(byte as char),
+            _ => out.push(' '),
         }
     }
-    notices
 }
 
 fn skip_literal(b: &[u8], i: usize) -> usize {
