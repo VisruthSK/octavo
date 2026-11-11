@@ -2,8 +2,9 @@ use crate::{
     data,
     doc::{Doc, Edit},
     fonts,
-    html::Tag,
+    html::{Element, Tag},
     words::Words,
+    Transform,
 };
 use cssparser::{Parser, ParserInput, Token};
 use lightningcss::{
@@ -24,38 +25,64 @@ use std::{
 
 const PLACEHOLDER: &str = "__octavo";
 
-pub fn optimize(
-    css: &str,
+struct Shielded {
+    css: String,
+    saved: Vec<String>,
+    notices: String,
+}
+
+fn shield(
+    source: &str,
     words: &Words,
     referenced: &HashSet<&str>,
     keep_licenses: bool,
-) -> Option<String> {
+) -> Shielded {
+    let (css, saved) = shield_custom_properties(source, &|name| {
+        words.has("--") || referenced.contains(name) || words.has(name)
+    });
     let notices = if keep_licenses {
-        legal_comments(css)
+        legal_comments(source)
     } else {
         String::new()
     };
-    let (css, saved) = shield_custom_properties(css, &|name| {
-        words.has("--") || referenced.contains(name) || words.has(name)
-    });
+    Shielded {
+        css,
+        saved,
+        notices,
+    }
+}
+
+fn prune<'i>(css: &'i str, words: &Words) -> Option<StyleSheet<'i>> {
     let warnings = Arc::new(RwLock::new(Vec::new()));
     let options = ParserOptions {
         error_recovery: true,
         warnings: Some(warnings.clone()),
         ..Default::default()
     };
-    let mut sheet = StyleSheet::parse(&css, options).ok()?;
+    let mut sheet = StyleSheet::parse(css, options).ok()?;
     if !warnings.read().ok()?.is_empty() {
         return None;
     }
     sheet.visit(&mut Prune { words }).ok()?;
     sheet.minify(MinifyOptions::default()).ok()?;
     sheet.visit(&mut KeepUnprefixed).ok()?;
+    Some(sheet)
+}
+
+fn print(sheet: &StyleSheet, shielded: &Shielded, font_notices: &[String]) -> Option<String> {
     let printer = PrinterOptions {
         minify: true,
         ..Default::default()
     };
-    Some(notices + &unshield(&sheet.to_css(printer).ok()?.code, &saved))
+    let css = unshield(&sheet.to_css(printer).ok()?.code, &shielded.saved);
+    let mut out = shielded.notices.clone();
+    for notice in font_notices {
+        out.push_str("/*!");
+        out.push_str(notice);
+        out.push_str("*/");
+    }
+    out.push_str(&css);
+    Some(out)
 }
 
 fn legal_comments(css: &str) -> String {
@@ -246,59 +273,64 @@ fn variable_references(css: &str) -> impl Iterator<Item = &str> {
     })
 }
 
-struct Sheet<'a> {
-    tag: &'a Tag,
-    source: &'a str,
-    pruned: Option<&'a str>,
-}
-
-pub fn stage(doc: &Doc, subset_text_fonts: bool, keep_licenses: bool) -> Vec<Edit> {
+pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, keep_licenses: bool) -> Vec<Edit> {
     let sources: Vec<(&Tag, Cow<str>)> = doc
         .tags
         .iter()
         .filter(|t| !t.in_svg)
         .filter_map(|tag| Some((tag, stylesheet(doc, tag)?)))
         .collect();
-    let words = doc.words();
     let referenced: HashSet<&str> = sources
         .iter()
         .flat_map(|(_, source)| variable_references(source))
         .collect();
-    let unique: HashSet<&str> = sources.iter().map(|(_, source)| source.as_ref()).collect();
-    let optimized: HashMap<&str, Option<String>> = unique
-        .into_par_iter()
-        .map(|source| (source, optimize(source, words, &referenced, keep_licenses)))
-        .collect();
-    let sheets: Vec<Sheet> = sources
+    let unique: Vec<&str> = sources
         .iter()
-        .map(|(tag, source)| Sheet {
-            tag,
-            source,
-            pruned: optimized[source.as_ref()].as_deref(),
-        })
+        .map(|(_, source)| source.as_ref())
+        .collect::<HashSet<_>>()
+        .into_iter()
         .collect();
-    let embedded: Vec<&str> = doc
+    let shielded: Vec<Shielded> = unique
+        .par_iter()
+        .map(|source| shield(source, words, &referenced, keep_licenses))
+        .collect();
+    let mut sheets: Vec<Option<StyleSheet>> = shielded
+        .par_iter()
+        .map(|shielded| prune(&shielded.css, words))
+        .collect();
+    let embedded = doc
         .tags
         .iter()
-        .filter(|t| t.in_svg && t.name == "style")
-        .filter_map(|t| Some(&doc.src[t.body.clone()?]))
-        .collect();
-    let all_css = sheets
+        .filter(|t| t.in_svg && t.element == Element::Style)
+        .filter_map(|t| Some(&doc.src[t.body.clone()?]));
+    let loose: Vec<&str> = shielded
         .iter()
-        .map(|s| s.pruned.unwrap_or(s.source))
+        .flat_map(|s| s.saved.iter().map(String::as_str))
         .chain(embedded)
-        .collect::<Vec<_>>()
-        .join("\n");
-    let cx = fonts::Context::new(&all_css, doc, subset_text_fonts, keep_licenses);
-    sheets
+        .collect();
+    let css: Vec<&str> = shielded.iter().map(|s| s.css.as_str()).collect();
+    let settings = fonts::Settings {
+        src: doc.src,
+        words,
+        subset_text_fonts,
+        keep_notices: keep_licenses,
+    };
+    let notices = fonts::rewrite(&mut sheets, &css, &loose, &settings);
+    let printed: Vec<Option<String>> = sheets
+        .par_iter()
+        .zip(&shielded)
+        .zip(&notices)
+        .map(|((sheet, shielded), notices)| print(sheet.as_ref()?, shielded, notices))
+        .collect();
+    let at: HashMap<&str, usize> = unique.iter().enumerate().map(|(i, s)| (*s, i)).collect();
+    sources
         .iter()
-        .filter_map(|sheet| {
-            let css = fonts::rewrite(sheet.pruned?, &cx);
-            let tag = sheet.tag;
+        .filter_map(|(tag, source)| {
+            let css = printed[at[source.as_ref()]].as_ref()?;
             let (span, text) = match tag.body.clone() {
-                Some(body) => (body, css),
+                Some(body) => (body, css.clone()),
                 None => {
-                    let href = data::encode_text("text/css", &css);
+                    let href = data::encode_text("text/css", css);
                     (
                         tag.span.clone(),
                         tag.open_tag(|n, v| {
@@ -314,8 +346,8 @@ pub fn stage(doc: &Doc, subset_text_fonts: bool, keep_licenses: bool) -> Vec<Edi
             Some(Edit {
                 span,
                 text,
-                transform: "css-reachability",
-                target: tag.attr("id").unwrap_or(tag.name).to_string(),
+                transform: Transform::PrunedStylesheet,
+                target: tag.attr("id").unwrap_or(tag.element.name()).to_string(),
             })
         })
         .filter(Edit::shrinks)
@@ -323,9 +355,9 @@ pub fn stage(doc: &Doc, subset_text_fonts: bool, keep_licenses: bool) -> Vec<Edi
 }
 
 fn stylesheet<'a>(doc: &'a Doc, tag: &Tag) -> Option<Cow<'a, str>> {
-    match tag.name {
-        "style" => Some(Cow::Borrowed(&doc.src[tag.body.clone()?])),
-        "link" if tag.attr("rel") == Some("stylesheet") => {
+    match tag.element {
+        Element::Style => Some(Cow::Borrowed(&doc.src[tag.body.clone()?])),
+        Element::Link if tag.attr("rel") == Some("stylesheet") => {
             String::from_utf8(data::decode(tag.attr("href")?)?.bytes)
                 .ok()
                 .map(Cow::Owned)

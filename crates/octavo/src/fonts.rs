@@ -1,160 +1,340 @@
-use crate::{data, doc::Doc, words::Words};
+use crate::{data, words::Words};
 use cssparser::{ParseError, Parser, ParserInput, Token};
+use lightningcss::{
+    properties::{font::FontFamily, Property},
+    rules::{
+        font_face::{FontFaceProperty, FontFaceRule, FontFormat, Source},
+        style::StyleRule,
+        CssRule,
+    },
+    selector::PseudoElement,
+    stylesheet::{PrinterOptions, StyleSheet},
+    traits::ToCss,
+    values::string::CowArcStr,
+    visitor::{Visit, VisitTypes, Visitor},
+};
 use rayon::prelude::*;
 use skrifa::{string::StringId, FontRef, MetadataProvider};
-use std::{borrow::Cow, collections::HashSet, ops::Range};
+use std::{borrow::Cow, collections::HashSet, convert::Infallible, ops::Range};
 
 const WESTERN_TEXT: [Range<u32>; 3] = [0x20..0x250, 0x2000..0x2070, 0x20A0..0x20D0];
 const QUOTES: [char; 2] = ['"', '\''];
-const PSEUDO_ELEMENTS: [&str; 4] = ["::before", "::after", ":before", ":after"];
 
-struct Block {
-    selector: Range<usize>,
-    body: Range<usize>,
+struct Face {
+    family: String,
+    uri: String,
 }
 
-pub struct Context<'a> {
-    css: String,
-    blocks: Vec<Block>,
-    icon_chars: HashSet<char>,
-    text_chars: Option<HashSet<char>>,
-    keep_notices: bool,
-    words: &'a Words,
+enum Decision {
+    Keep,
+    Drop,
+    Replace { uri: String, notice: Option<String> },
 }
 
-impl<'a> Context<'a> {
-    pub fn new(all_css: &str, doc: &'a Doc, subset_text_fonts: bool, keep_notices: bool) -> Self {
-        let mut icon_chars = document_chars(doc.src);
-        icon_chars.extend(content_chars(all_css));
-        let text_chars = subset_text_fonts.then(|| {
-            let cased: Vec<char> = icon_chars
-                .iter()
-                .flat_map(|c| c.to_uppercase().chain(c.to_lowercase()))
-                .collect();
-            let western = WESTERN_TEXT
-                .into_iter()
-                .flatten()
-                .filter_map(char::from_u32);
-            icon_chars
-                .iter()
-                .copied()
-                .chain(western)
-                .chain(cased)
-                .collect()
-        });
-        let css = all_css.to_lowercase();
-        Context {
-            blocks: leaf_blocks(&css),
-            css,
-            icon_chars,
-            text_chars,
-            keep_notices,
-            words: doc.words(),
-        }
-    }
+struct RuleFacts {
+    pseudo_only: bool,
+    declared: Vec<String>,
+    text: String,
+}
 
-    fn usage(&self, family: &str) -> Option<bool> {
+struct Usage {
+    rules: Vec<RuleFacts>,
+    loose: String,
+}
+
+impl Usage {
+    fn of(&self, family: &str) -> Option<bool> {
         let mut used = false;
         let mut pseudo_only = true;
-        for block in &self.blocks {
-            let (selector, body) = (
-                &self.css[block.selector.clone()],
-                &self.css[block.body.clone()],
-            );
-            if selector.starts_with("@font-face") || !body.contains(family) {
-                continue;
-            }
-            let declared = declaration(body, "font-family").is_some_and(|v| v.contains(family));
-            let pseudo = selector
-                .split(',')
-                .all(|s| PSEUDO_ELEMENTS.iter().any(|p| s.trim().ends_with(p)));
+        for rule in self.rules.iter().filter(|r| r.text.contains(family)) {
             used = true;
-            pseudo_only &= declared && pseudo && body.matches(family).count() == 1;
+            pseudo_only &= rule.pseudo_only
+                && rule.declared.iter().any(|name| name == family)
+                && rule.text.matches(family).count() == 1;
+        }
+        if self.loose.contains(family) {
+            used = true;
+            pseudo_only = false;
         }
         used.then_some(pseudo_only)
     }
 }
 
-pub fn rewrite(css: &str, cx: &Context) -> String {
-    let mut faces = Vec::new();
-    let mut at = 0;
-    while let Some(start) = css[at..].find("@font-face{").map(|off| at + off) {
-        let Some(end) = css[start..].find('}').map(|e| start + e + 1) else {
-            break;
-        };
-        faces.push(start..end);
-        at = end;
-    }
-    let rewritten: Vec<(String, Option<String>)> = faces
-        .par_iter()
-        .map(|face| {
-            font_face(&css[face.clone()], cx)
-                .unwrap_or_else(|| (css[face.clone()].to_string(), None))
+struct Chars {
+    icons: HashSet<char>,
+    text: Option<HashSet<char>>,
+}
+
+pub struct Settings<'a> {
+    pub src: &'a str,
+    pub words: &'a Words,
+    pub subset_text_fonts: bool,
+    pub keep_notices: bool,
+}
+
+pub fn rewrite(
+    sheets: &mut [Option<StyleSheet<'_>>],
+    css: &[&str],
+    loose: &[&str],
+    settings: &Settings,
+) -> Vec<Vec<String>> {
+    let faces: Vec<Vec<Option<Face>>> = sheets
+        .par_iter_mut()
+        .map(|sheet| {
+            let mut collect = CollectFaces(Vec::new());
+            if let Some(sheet) = sheet {
+                let _ = sheet.visit(&mut collect);
+            }
+            collect.0
         })
         .collect();
-    let mut out = String::with_capacity(css.len());
-    let mut at = 0;
-    let mut noticed: Vec<&str> = Vec::new();
-    for (face, (text, notice)) in faces.iter().zip(&rewritten) {
-        out.push_str(&css[at..face.start]);
-        if let Some(notice) = notice.as_deref().filter(|n| !noticed.contains(n)) {
-            noticed.push(notice);
-            out.push_str("/*!");
-            out.push_str(notice);
-            out.push_str("*/");
-        }
-        out.push_str(text);
-        at = face.end;
+    if faces.iter().all(Vec::is_empty) {
+        return vec![Vec::new(); sheets.len()];
     }
-    out.push_str(&css[at..]);
-    out
+    let usage = collect_usage(sheets, loose);
+    let chars = collect_chars(css, loose, settings);
+    let decisions: Vec<Vec<Decision>> = faces
+        .par_iter()
+        .map(|sheet_faces| {
+            sheet_faces
+                .par_iter()
+                .map(|face| match face {
+                    Some(face) => decide(face, &usage, &chars, settings),
+                    None => Decision::Keep,
+                })
+                .collect()
+        })
+        .collect();
+    sheets
+        .par_iter_mut()
+        .zip(&decisions)
+        .map(|(sheet, decisions)| {
+            let mut apply = Apply {
+                decisions: decisions.iter(),
+                notices: Vec::new(),
+            };
+            if let Some(sheet) = sheet {
+                let _ = sheet.visit(&mut apply);
+            }
+            apply.notices
+        })
+        .collect()
 }
 
-fn font_face(block: &str, cx: &Context) -> Option<(String, Option<String>)> {
-    let family = declaration(block, "font-family")?.trim_matches(QUOTES);
-    if family.contains('\\') {
-        return None;
+fn collect_usage(sheets: &mut [Option<StyleSheet<'_>>], loose: &[&str]) -> Usage {
+    let rules = sheets
+        .par_iter_mut()
+        .flat_map(|sheet| {
+            let mut collect = CollectRules(Vec::new());
+            if let Some(sheet) = sheet {
+                let _ = sheet.visit(&mut collect);
+            }
+            collect.0
+        })
+        .collect();
+    Usage {
+        rules,
+        loose: loose.join("\n").to_lowercase(),
     }
-    let url_start = block.find("url(")?;
-    let url_end = url_start + block[url_start..].find(')')?;
-    let font = data::decode(block[url_start + 4..url_end].trim_matches(QUOTES))?;
-    let in_markup = cx.words.mentions(family);
-    let Some(pseudo_only) = cx
-        .usage(&family.to_lowercase())
+}
+
+fn collect_chars(css: &[&str], loose: &[&str], settings: &Settings) -> Chars {
+    let mut icons = document_chars(settings.src);
+    for text in css.iter().chain(loose) {
+        icons.extend(content_chars(text));
+    }
+    let text = settings.subset_text_fonts.then(|| {
+        let cased: Vec<char> = icons
+            .iter()
+            .flat_map(|c| c.to_uppercase().chain(c.to_lowercase()))
+            .collect();
+        let western = WESTERN_TEXT
+            .into_iter()
+            .flatten()
+            .filter_map(char::from_u32);
+        icons.iter().copied().chain(western).chain(cased).collect()
+    });
+    Chars { icons, text }
+}
+
+fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Decision {
+    let plain = face
+        .family
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'));
+    let Some(font) = data::decode(&face.uri).filter(|_| plain) else {
+        return Decision::Keep;
+    };
+    let in_markup = settings.words.mentions(&face.family);
+    let Some(pseudo_only) = usage
+        .of(&face.family.to_lowercase())
         .or(in_markup.then_some(false))
     else {
-        return Some((String::new(), None));
+        return Decision::Drop;
     };
     let subset = if pseudo_only && !in_markup {
-        Some(&cx.icon_chars)
+        Some(&chars.icons)
     } else {
-        cx.text_chars.as_ref()
+        chars.text.as_ref()
     };
-    let (woff2, notice) = transcode(&font.bytes, subset, cx.keep_notices)?;
-    let format_end = block[url_end..].find("format(").map_or(url_end + 1, |f| {
-        url_end + f + block[url_end + f..].find(')').map_or(0, |e| e + 1)
-    });
-    let uri = data::encode_base64("font/woff2", &woff2);
-    let rule = format!(
-        "{}url({uri})format(\"woff2\"){}",
-        &block[..url_start],
-        &block[format_end..]
-    );
-    Some((rule, notice))
+    match transcode(&font.bytes, subset, settings.keep_notices) {
+        Some((woff2, notice)) => Decision::Replace {
+            uri: data::encode_base64("font/woff2", &woff2),
+            notice,
+        },
+        None => Decision::Keep,
+    }
 }
 
-fn declaration<'a>(block: &'a str, name: &str) -> Option<&'a str> {
-    let key = format!("{name}:");
-    let start = block.find(&key)? + key.len();
-    let end = block[start..]
-        .find(';')
-        .map_or(block.len() - 1, |e| start + e);
-    Some(block[start..end].trim())
+struct CollectFaces(Vec<Option<Face>>);
+
+impl<'i> Visitor<'i> for CollectFaces {
+    type Error = Infallible;
+
+    fn visit_types(&self) -> VisitTypes {
+        VisitTypes::RULES
+    }
+
+    fn visit_rule(&mut self, rule: &mut CssRule<'i>) -> Result<(), Infallible> {
+        if let CssRule::FontFace(face) = rule {
+            self.0.push(describe(face));
+            return Ok(());
+        }
+        rule.visit_children(self)
+    }
+}
+
+fn describe(face: &FontFaceRule) -> Option<Face> {
+    let family = face.properties.iter().find_map(|property| match property {
+        FontFaceProperty::FontFamily(FontFamily::FamilyName(name)) => {
+            name.to_css_string(PrinterOptions::default()).ok()
+        }
+        _ => None,
+    })?;
+    let uri = face.properties.iter().find_map(|property| match property {
+        FontFaceProperty::Source(sources) => sources.iter().find_map(|source| match source {
+            Source::Url(url) if url.url.url.starts_with("data:") => Some(url.url.url.to_string()),
+            _ => None,
+        }),
+        _ => None,
+    })?;
+    Some(Face {
+        family: family.trim_matches(QUOTES).to_string(),
+        uri,
+    })
+}
+
+struct Apply<'a> {
+    decisions: std::slice::Iter<'a, Decision>,
+    notices: Vec<String>,
+}
+
+impl<'i> Visitor<'i> for Apply<'_> {
+    type Error = Infallible;
+
+    fn visit_types(&self) -> VisitTypes {
+        VisitTypes::RULES
+    }
+
+    fn visit_rule(&mut self, rule: &mut CssRule<'i>) -> Result<(), Infallible> {
+        let CssRule::FontFace(face) = rule else {
+            return rule.visit_children(self);
+        };
+        match self.decisions.next() {
+            Some(Decision::Drop) => *rule = CssRule::Ignored,
+            Some(Decision::Replace { uri, notice }) => {
+                keep_one_source(face, uri);
+                if let Some(notice) = notice.as_ref().filter(|n| !self.notices.contains(n)) {
+                    self.notices.push(notice.clone());
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+fn keep_one_source(face: &mut FontFaceRule<'_>, uri: &str) {
+    for property in &mut face.properties {
+        let FontFaceProperty::Source(sources) = property else {
+            continue;
+        };
+        let mut replaced = false;
+        let kept = std::mem::take(sources)
+            .into_iter()
+            .filter_map(|source| match source {
+                Source::Url(mut url) if !replaced && url.url.url.starts_with("data:") => {
+                    replaced = true;
+                    url.url.url = CowArcStr::from(uri.to_string());
+                    url.format = Some(FontFormat::WOFF2);
+                    url.tech.clear();
+                    Some(Source::Url(url))
+                }
+                Source::Url(_) => None,
+                local => Some(local),
+            })
+            .collect();
+        *sources = kept;
+    }
+}
+
+struct CollectRules(Vec<RuleFacts>);
+
+impl<'i> Visitor<'i> for CollectRules {
+    type Error = Infallible;
+
+    fn visit_types(&self) -> VisitTypes {
+        VisitTypes::RULES
+    }
+
+    fn visit_rule(&mut self, rule: &mut CssRule<'i>) -> Result<(), Infallible> {
+        if let CssRule::Style(style) = rule {
+            self.0.push(facts(style));
+        }
+        rule.visit_children(self)
+    }
+}
+
+fn facts(style: &StyleRule) -> RuleFacts {
+    let block = &style.declarations;
+    let declared = block
+        .declarations
+        .iter()
+        .chain(&block.important_declarations)
+        .filter_map(|property| match property {
+            Property::FontFamily(families) => Some(families),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|family| match family {
+            FontFamily::FamilyName(name) => Some(
+                name.to_css_string(PrinterOptions::default())
+                    .ok()?
+                    .trim_matches(QUOTES)
+                    .to_lowercase(),
+            ),
+            FontFamily::Generic(_) => None,
+        })
+        .collect();
+    RuleFacts {
+        pseudo_only: style.selectors.0.iter().all(|s| {
+            matches!(
+                s.pseudo_element(),
+                Some(PseudoElement::Before | PseudoElement::After)
+            )
+        }),
+        declared,
+        text: block
+            .to_css_string(PrinterOptions::default())
+            .unwrap_or_default()
+            .to_lowercase(),
+    }
 }
 
 fn content_chars(css: &str) -> HashSet<char> {
     let mut chars = HashSet::new();
-    string_literals(&mut Parser::new(&mut ParserInput::new(css)), &mut chars);
+    let mut input = ParserInput::new(css);
+    string_literals(&mut Parser::new(&mut input), &mut chars);
     if css.contains("attr(") || css.contains("counter") {
         chars.extend(' '..='~');
     }
@@ -197,45 +377,6 @@ fn string_literals<'i>(parser: &mut Parser<'i, '_>, chars: &mut HashSet<char>) {
             _ => {}
         }
     }
-}
-
-fn leaf_blocks(css: &str) -> Vec<Block> {
-    let mut blocks = Vec::new();
-    let mut open: Vec<(usize, usize, bool)> = Vec::new();
-    let mut selector_start = 0;
-    let mut quote = None;
-    for (i, c) in css.char_indices() {
-        match (quote, c) {
-            (Some(q), c) if c == q => quote = None,
-            (Some(_), _) => {}
-            (None, '"' | '\'') => quote = Some(c),
-            (None, '{') => {
-                if let Some(parent) = open.last_mut() {
-                    parent.2 = true;
-                }
-                open.push((selector_start, i, false));
-                selector_start = i + 1;
-            }
-            (None, '}') => {
-                if let Some((start, brace, false)) = open.pop() {
-                    blocks.push(Block {
-                        selector: trimmed(css, start..brace),
-                        body: brace + 1..i,
-                    });
-                }
-                selector_start = i + 1;
-            }
-            (None, ';') if open.is_empty() => selector_start = i + 1,
-            _ => {}
-        }
-    }
-    blocks
-}
-
-fn trimmed(text: &str, range: Range<usize>) -> Range<usize> {
-    let slice = &text[range.clone()];
-    let start = range.start + slice.len() - slice.trim_start().len();
-    start..start + slice.trim().len()
 }
 
 fn transcode(
