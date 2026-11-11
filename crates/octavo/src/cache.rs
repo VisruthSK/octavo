@@ -1,5 +1,7 @@
 use std::{fs, path::Path};
 
+pub(crate) const FONTS: &str = "fonts";
+
 const FORMAT: u32 = 1;
 
 pub(crate) fn key(parts: &[&[u8]]) -> String {

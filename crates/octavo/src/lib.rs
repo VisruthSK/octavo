@@ -125,12 +125,13 @@ pub struct Options {
     /// and the copyright and license fields of a subsetted font move into a
     /// comment beside its `@font-face`.
     pub strip_licenses: bool,
-    /// A directory in which fonts converted whole are remembered between
-    /// runs. Documents rendered by the same tool embed the same fonts again
-    /// and again, and converting a whole font is the slowest step in most
-    /// documents. There is one entry per distinct font, named by a hash of
-    /// its bytes; subsetted fonts are cheap and are never stored, so the
-    /// directory does not fill with variants. `None` keeps nothing.
+    /// The root of the cache that remembers work between runs, with one
+    /// subfolder per kind of entry. Today that is `fonts`: fonts converted
+    /// whole, which are the slowest step in most documents and repeat across
+    /// documents rendered by the same tool. There is one file per distinct
+    /// font, named by a hash of its bytes and quality; subsetted fonts are
+    /// cheap and are never stored, so the folder does not fill with variants.
+    /// `None` keeps nothing.
     pub cache_directory: Option<std::path::PathBuf>,
     /// How hard the compressors for fonts, PNG images and the packed blob
     /// work. It is independent of the [`Mode`].
@@ -738,6 +739,45 @@ impl Simplified {
             applied,
             warnings: self.warnings.clone(),
         }
+    }
+
+    /// Produces the final document for `mode`, but only if `accept` approves
+    /// it. A rejected result is replaced by the next safer mode (`Packed`,
+    /// then `Scripts`, then `Safe`), and `None` means every mode was
+    /// rejected, so the caller should keep the original. `accept` sees each
+    /// candidate with the mode that produced it, and the mode returned is the
+    /// one that was accepted.
+    ///
+    /// Use it to put your own check, such as a browser comparison, between
+    /// Octavo and the file it writes.
+    ///
+    /// ```
+    /// use octavo::{simplify, Mode, Options};
+    ///
+    /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
+    /// let mut tried = Vec::new();
+    /// let accepted = simplified.pack_checked(Mode::Packed, |mode, _| {
+    ///     tried.push(mode);
+    ///     mode == Mode::Safe
+    /// });
+    /// assert_eq!(tried, [Mode::Packed, Mode::Scripts, Mode::Safe]);
+    /// assert_eq!(accepted.map(|(mode, _)| mode), Some(Mode::Safe));
+    /// # Ok::<(), octavo::Error>(())
+    /// ```
+    pub fn pack_checked(
+        &self,
+        mode: Mode,
+        mut accept: impl FnMut(Mode, &Output) -> bool,
+    ) -> Option<(Mode, Output)> {
+        let ladder: &[Mode] = match mode {
+            Mode::Packed => &[Mode::Packed, Mode::Scripts, Mode::Safe],
+            Mode::Scripts => &[Mode::Scripts, Mode::Safe],
+            Mode::Safe => &[Mode::Safe],
+        };
+        ladder.iter().find_map(|&step| {
+            let candidate = self.pack(step);
+            accept(step, &candidate).then_some((step, candidate))
+        })
     }
 }
 

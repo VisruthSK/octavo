@@ -12,7 +12,7 @@ use std::{
     fs,
     num::{NonZeroU32, NonZeroUsize},
     path::{Path, PathBuf},
-    process::{self, ExitCode},
+    process::ExitCode,
     time::{Duration, Instant},
 };
 
@@ -55,8 +55,7 @@ Examples:
   octavo deck.html --level safe          keep the page working without JavaScript
   octavo deck.html --lossy-images        smaller, but images are not pixel-exact
   octavo report.html --maximum           the smallest output, however long it takes
-  octavo report.html --audit             show what each step would save
-  octavo report.html --verify 'node check.mjs {original} {optimized}'";
+  octavo report.html --audit             show what each step would save";
 
 fn default_jobs() -> NonZeroUsize {
     std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)
@@ -79,15 +78,7 @@ struct Optimize {
     level: Mode,
     #[arg(
         long,
-        value_name = "COMMAND",
-        help_heading = "Checking",
-        help = "Run COMMAND on each result and keep the result only if it exits with 0. A failing result is replaced by the next level down (packed, then scripts, then safe). In COMMAND, {original} is the path of the input file and {optimized} the path of the result"
-    )]
-    verify: Option<String>,
-    #[arg(
-        long,
-        conflicts_with_all = ["output", "verify"],
-        help_heading = "Checking",
+        conflicts_with = "output",
         help = "Show what each step would save, and write nothing"
     )]
     audit: bool,
@@ -129,9 +120,16 @@ struct Optimize {
         long,
         value_name = "DIRECTORY",
         help_heading = "Fonts",
-        help = "Remember converted fonts here, so later runs skip the slowest step"
+        help = "Where converted fonts are remembered, so later runs skip the slowest step [default: the octavo folder in your user cache directory]"
     )]
     cache_dir: Option<PathBuf>,
+    #[arg(
+        long,
+        conflicts_with = "cache_dir",
+        help_heading = "Fonts",
+        help = "Do not remember converted fonts"
+    )]
+    no_cache: bool,
     #[arg(
         long,
         help_heading = "Compression",
@@ -180,12 +178,8 @@ fn parse_nonzero_side(value: &str) -> Result<NonZeroU32, String> {
     NonZeroU32::new(pixels).ok_or_else(|| "the pixel count must be at least 1".to_string())
 }
 
-fn ladder(level: Mode) -> &'static [Mode] {
-    match level {
-        Mode::Packed => &[Mode::Packed, Mode::Scripts, Mode::Safe],
-        Mode::Scripts => &[Mode::Scripts, Mode::Safe],
-        Mode::Safe => &[Mode::Safe],
-    }
+fn default_cache_dir() -> Option<PathBuf> {
+    dirs::cache_dir().map(|directory| directory.join("octavo"))
 }
 
 fn main() -> ExitCode {
@@ -204,7 +198,6 @@ fn main() -> ExitCode {
             input,
             output,
             level,
-            verify,
             audit: _,
             lossy_images,
             image_quality,
@@ -212,6 +205,7 @@ fn main() -> ExitCode {
             max_image_side,
             strip_licenses,
             cache_dir,
+            no_cache,
             maximum,
             woff2_quality,
             png_preset,
@@ -232,7 +226,11 @@ fn main() -> ExitCode {
             images,
             subset_text_fonts,
             strip_licenses,
-            cache_directory: cache_dir,
+            cache_directory: if no_cache {
+                None
+            } else {
+                cache_dir.or_else(default_cache_dir)
+            },
             compression: if maximum {
                 Compression::Maximum
             } else if woff2_quality.is_some() || png_preset.is_some() || brotli_quality.is_some() {
@@ -245,7 +243,7 @@ fn main() -> ExitCode {
                 Compression::Balanced
             },
         };
-        run(&input, &output, level, verify.as_deref(), options)
+        run(&input, &output, level, options)
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -336,69 +334,36 @@ fn spinner() -> ProgressBar {
     bar
 }
 
-fn run(
-    input: &Path,
-    output: &Path,
-    level: Mode,
-    verify: Option<&str>,
-    options: Options,
-) -> Result<(), String> {
+fn run(input: &Path, output: &Path, level: Mode, options: Options) -> Result<(), String> {
     let started = Instant::now();
     let src = read(input)?;
     let progress = spinner();
     progress.set_message("optimizing");
     let simplified =
         simplify(&src, options).map_err(|error| format!("{}: {error}", input.display()))?;
-    for mode in ladder(level) {
-        progress.set_message(format!("packing ({mode})"));
-        let candidate = simplified.pack(*mode).html;
-        if candidate.len() >= src.len() {
-            continue;
+    progress.set_message(format!("packing ({level})"));
+    let candidate = simplified.pack(level).html;
+    progress.finish_and_clear();
+    warn(simplified.warnings());
+    if candidate.len() >= src.len() {
+        if !same_file(input, output) {
+            write(output, &src)?;
         }
-        let staged = staging_path(output);
-        write(&staged, &candidate)?;
-        if let Some(command) = verify {
-            progress.set_message(format!("verifying ({mode})"));
-            if !passes(command, input, &staged) {
-                let _ = fs::remove_file(&staged);
-                continue;
-            }
-        }
-        fs::rename(&staged, output).map_err(|e| format!("{}: {e}", output.display()))?;
-        progress.finish_and_clear();
-        warn(simplified.warnings());
         println!(
-            "{} {DIM}[{}, {:.1?}]{DIM:#} {}",
-            output.display(),
-            mode,
-            started.elapsed(),
-            summary(src.len(), candidate.len())
+            "{WARN}kept the original{WARN:#} {DIM}({}){DIM:#}",
+            size(src.len())
         );
         return Ok(());
     }
-    progress.finish_and_clear();
-    warn(simplified.warnings());
-    if !same_file(input, output) {
-        write(output, &src)?;
-    }
+    let staged = staging_path(output);
+    write(&staged, &candidate)?;
+    fs::rename(&staged, output).map_err(|e| format!("{}: {e}", output.display()))?;
     println!(
-        "{WARN}kept the original{WARN:#} {DIM}({}){DIM:#}",
-        size(src.len())
+        "{} {DIM}[{}, {:.1?}]{DIM:#} {}",
+        output.display(),
+        level,
+        started.elapsed(),
+        summary(src.len(), candidate.len())
     );
     Ok(())
-}
-
-fn passes(command: &str, original: &Path, optimized: &Path) -> bool {
-    let command = command
-        .replace("{original}", &original.to_string_lossy())
-        .replace("{optimized}", &optimized.to_string_lossy());
-    let (shell, flag) = if cfg!(windows) {
-        ("cmd", "/C")
-    } else {
-        ("sh", "-c")
-    };
-    process::Command::new(shell)
-        .args([flag, &command])
-        .status()
-        .is_ok_and(|s| s.success())
 }

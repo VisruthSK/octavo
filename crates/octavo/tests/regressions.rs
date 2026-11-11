@@ -458,7 +458,7 @@ fn a_cached_font_gives_exactly_the_same_output_as_a_converted_one() {
     let first = simplify(&html, cache_options(&directory)).expect("supported");
     let first = first.pack(Mode::Safe).html;
     assert_eq!(
-        std::fs::read_dir(&directory)
+        std::fs::read_dir(directory.join("fonts"))
             .expect("cache written")
             .count(),
         1
@@ -468,7 +468,7 @@ fn a_cached_font_gives_exactly_the_same_output_as_a_converted_one() {
     assert_eq!(first, uncached);
     assert_eq!(second, uncached);
     assert_eq!(
-        std::fs::read_dir(&directory)
+        std::fs::read_dir(directory.join("fonts"))
             .expect("still one entry")
             .count(),
         1
@@ -485,10 +485,15 @@ fn only_whole_fonts_are_cached_and_subsets_never_add_entries() {
     };
     simplify(&font_page("A"), subset.clone()).expect("supported");
     simplify(&font_page("B"), subset).expect("supported");
-    assert!(!directory.exists() || std::fs::read_dir(&directory).expect("entries").count() == 0);
+    assert!(!directory.join("fonts").exists());
     simplify(&html, cache_options(&directory)).expect("supported");
     simplify(&font_page("B"), cache_options(&directory)).expect("supported");
-    assert_eq!(std::fs::read_dir(&directory).expect("entries").count(), 1);
+    assert_eq!(
+        std::fs::read_dir(directory.join("fonts"))
+            .expect("entries")
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -496,7 +501,7 @@ fn a_damaged_cache_entry_is_ignored_and_replaced() {
     let directory = scratch("font-cache-damaged");
     let html = font_page("A");
     simplify(&html, cache_options(&directory)).expect("supported");
-    let entry = std::fs::read_dir(&directory)
+    let entry = std::fs::read_dir(directory.join("fonts"))
         .expect("entry")
         .next()
         .expect("one")
@@ -550,5 +555,10 @@ fn custom_font_quality_has_its_own_cache_entry() {
         };
         simplify(&html, options).expect("supported");
     }
-    assert_eq!(std::fs::read_dir(&directory).expect("entries").count(), 3);
+    assert_eq!(
+        std::fs::read_dir(directory.join("fonts"))
+            .expect("entries")
+            .count(),
+        3
+    );
 }

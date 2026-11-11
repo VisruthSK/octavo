@@ -48,27 +48,36 @@ fn leftovers(path: &Path) -> Vec<String> {
 }
 
 #[test]
-fn a_failing_verifier_leaves_an_in_place_input_untouched() {
+fn an_input_written_over_itself_shrinks_and_leaves_no_temporary_file() {
     let original = shrinkable();
-    let path = fixture("failing-verifier", &original);
-    optimize(&path, &["--verify", "exit 1"]);
-    assert_eq!(fs::read_to_string(&path).expect("read"), original);
+    let path = fixture("in-place", &original);
+    optimize(&path, &[]);
+    let optimized = fs::read_to_string(&path).expect("read");
+    assert!(optimized.len() < original.len());
     assert!(leftovers(&path).is_empty(), "{:?}", leftovers(&path));
 }
 
 #[test]
-fn the_verifier_sees_the_original_and_the_candidate_as_different_files() {
-    let original = shrinkable();
-    let path = fixture("distinct-files", &original);
-    let differ = if cfg!(windows) {
-        "fc /b {original} {optimized} >nul 2>&1 & (if errorlevel 1 if not errorlevel 2 exit 0) & exit 1"
-    } else {
-        "! cmp -s {original} {optimized}"
-    };
-    optimize(&path, &["--verify", differ]);
-    let optimized = fs::read_to_string(&path).expect("read");
-    assert!(optimized.len() < original.len());
-    assert!(leftovers(&path).is_empty(), "{:?}", leftovers(&path));
+fn the_verify_option_no_longer_exists() {
+    let path = fixture("no-verify", &shrinkable());
+    let output = Command::new(env!("CARGO_BIN_EXE_octavo"))
+        .arg(&path)
+        .args(["--verify", "exit 1"])
+        .output()
+        .expect("run octavo");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--verify"));
+}
+
+#[test]
+fn no_cache_and_a_cache_directory_cannot_be_combined() {
+    let path = fixture("cache-flags", &shrinkable());
+    let output = Command::new(env!("CARGO_BIN_EXE_octavo"))
+        .arg(&path)
+        .args(["--no-cache", "--cache-dir", "somewhere"])
+        .output()
+        .expect("run octavo");
+    assert!(!output.status.success());
 }
 
 #[test]

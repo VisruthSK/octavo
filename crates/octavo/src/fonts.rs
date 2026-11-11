@@ -447,15 +447,17 @@ fn transcode(
     tuning: Tuning,
 ) -> Option<Transcoded> {
     let quality = tuning.woff2_quality.min(11);
-    let (Some(directory), None) = (cache, chars) else {
+    let (Some(root), None) = (cache, chars) else {
         return convert(bytes, chars, notices, quality);
     };
+    let directory = root.join(cache::FONTS);
     let key = cache::key(&[bytes, &[quality]]);
-    if let Some(entry) = cache::load(directory, &key).and_then(|entry| Transcoded::decode(&entry)) {
+    if let Some(entry) = cache::load(&directory, &key).and_then(|entry| Transcoded::decode(&entry))
+    {
         return Some(entry);
     }
     let converted = convert(bytes, chars, notices, quality)?;
-    cache::store(directory, &key, &converted.encode());
+    cache::store(&directory, &key, &converted.encode());
     Some(converted)
 }
 

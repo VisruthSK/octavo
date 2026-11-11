@@ -1,7 +1,7 @@
 mod common;
 
-use common::{optimized, page, safe};
-use octavo::{Mode, Target, Transform};
+use common::{busy_script, optimized, page, safe, simplified};
+use octavo::{Mode, Options, Target, Transform};
 use std::num::NonZeroUsize;
 
 #[test]
@@ -199,4 +199,79 @@ fn code_annotations_keep_tippy_and_popper() {
     )
     .html;
     assert!(out.contains("t=1"));
+}
+
+fn packable() -> String {
+    page(
+        &format!("<script>{}</script>", busy_script("a")),
+        "<p>x</p>",
+    )
+}
+
+#[test]
+fn an_accepted_first_choice_is_returned_untouched() {
+    let simplified = simplified(&packable(), Options::default());
+    let mut tried = Vec::new();
+    let (mode, output) = simplified
+        .pack_checked(Mode::Packed, |mode, _| {
+            tried.push(mode);
+            true
+        })
+        .expect("accepted");
+    assert_eq!((mode, tried), (Mode::Packed, vec![Mode::Packed]));
+    assert_eq!(output.html, simplified.pack(Mode::Packed).html);
+}
+
+#[test]
+fn a_rejected_mode_steps_down_one_level_at_a_time() {
+    let simplified = simplified(&packable(), Options::default());
+    let mut tried = Vec::new();
+    let (mode, output) = simplified
+        .pack_checked(Mode::Packed, |mode, _| {
+            tried.push(mode);
+            mode == Mode::Scripts
+        })
+        .expect("scripts accepted");
+    assert_eq!(tried, [Mode::Packed, Mode::Scripts]);
+    assert_eq!(mode, Mode::Scripts);
+    assert_eq!(output.html, simplified.pack(Mode::Scripts).html);
+}
+
+#[test]
+fn rejecting_every_mode_returns_nothing_after_trying_each_once() {
+    let simplified = simplified(&packable(), Options::default());
+    let mut tried = Vec::new();
+    let result = simplified.pack_checked(Mode::Packed, |mode, _| {
+        tried.push(mode);
+        false
+    });
+    assert!(result.is_none());
+    assert_eq!(tried, [Mode::Packed, Mode::Scripts, Mode::Safe]);
+}
+
+#[test]
+fn modes_riskier_than_the_requested_one_are_never_tried() {
+    let simplified = simplified(&packable(), Options::default());
+    for (start, expected) in [
+        (Mode::Scripts, vec![Mode::Scripts, Mode::Safe]),
+        (Mode::Safe, vec![Mode::Safe]),
+    ] {
+        let mut tried = Vec::new();
+        let _ = simplified.pack_checked(start, |mode, _| {
+            tried.push(mode);
+            false
+        });
+        assert_eq!(tried, expected);
+    }
+}
+
+#[test]
+fn the_check_sees_the_document_that_would_be_written() {
+    let simplified = simplified(&packable(), Options::default());
+    let mut seen = None;
+    let _ = simplified.pack_checked(Mode::Packed, |_, output| {
+        seen = Some(output.html.clone());
+        true
+    });
+    assert_eq!(seen.expect("checked"), simplified.pack(Mode::Packed).html);
 }

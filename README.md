@@ -1,6 +1,6 @@
 # Octavo
 
-Octavo makes Quarto HTML files smaller. Give it a document rendered with `embed-resources: true` and it writes a single, self-contained file that opens offline, looks the same and is usually five to twenty times smaller.
+Octavo makes Quarto HTML files smaller. Give it a document rendered with `embed-resources: true` and it writes a single, self-contained file that opens offline and looks the same. Articles with little else in them shrink ten to twenty-five times. Slide decks full of images shrink to roughly half, because the images are most of the file.
 
 ```sh
 octavo report.html                          # writes report.min.html
@@ -80,8 +80,6 @@ Everything else in the code only knows about HTML, CSS, JavaScript, fonts and im
 
 Output size shrinks in the order `safe`, `scripts`, `packed`: `safe` is the largest and `packed` the smallest.
 
-`--verify "<command>"` runs your command on each candidate and keeps the candidate only if the command exits with 0. In the command, `{original}` is the path of the input file and `{optimized}` is the path of the candidate. A candidate that fails is replaced by the next level down, from `packed` to `scripts` to `safe`, and finally by the original, so a failing result is never written.
-
 ### Compression effort
 
 The level decides what the output depends on. The effort decides how hard the compressors work, and it applies at every level. The default is a balance: output a few percent above the smallest possible, in a fraction of the time. `--maximum` uses the slowest settings everywhere. Three flags set the values yourself, and none can be combined with `--maximum`:
@@ -94,7 +92,7 @@ The level decides what the output depends on. The effort decides how hard the co
 
 On a 288 KB font, WOFF2 quality 9 takes 26 ms and quality 11 takes 293 ms for 9 percent more bytes, which is a small share of a whole document. That is why the default is 9.
 
-`--cache-dir <directory>` remembers fonts converted whole, one file per distinct font, named by a hash of its bytes and quality. Documents from the same theme embed the same fonts, so later runs skip the slowest step. Subsetted fonts are never stored.
+Fonts converted whole are remembered in your user cache directory (`~/.cache/octavo` on Linux, `~/Library/Caches/octavo` on macOS, `%LOCALAPPDATA%octavo` on Windows), in a `fonts` subfolder with one file per distinct font, named by a hash of its bytes and quality. Anything else Octavo remembers later gets its own subfolder beside it. Documents from the same theme embed the same fonts, so later runs skip the slowest step. Subsetted fonts are never stored. `--cache-dir <directory>` chooses another place and `--no-cache` turns the cache off.
 
 ### What Octavo refuses
 
@@ -151,7 +149,7 @@ for warning in &out.warnings {
 }
 ```
 
-`simplify` runs the stages that do not depend on a mode, and `Simplified::pack` finishes the result for each mode. The command line uses this to build its fallback ladder without repeating the expensive work.
+`simplify` runs the stages that do not depend on a mode, and `Simplified::pack` finishes the result for each mode. `Simplified::pack_checked` tries a mode, hands the result to a check you supply, and steps down to the next safer mode when the check says no, so a browser comparison or any other test can sit between Octavo and the file it writes.
 
 `Options` carries the choices that change the result, and `Compression` sets the effort:
 
