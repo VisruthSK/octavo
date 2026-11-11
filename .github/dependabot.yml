@@ -5,6 +5,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: cssparser
+      - dependency-name: gamut-core
 
   - package-ecosystem: github-actions
     directory: /
