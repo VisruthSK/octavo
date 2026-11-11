@@ -1,5 +1,799 @@
 [
   {
+    "id": "css-class-added-by-classlist-add",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".added-at-runtime{margin-left:1px}"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 255,
+    "sha256": "c44ad8f6b2e2d3b7fa747b698e5e64acf6e62a7cb2b738c7c33130d9250eec6a"
+  },
+  {
+    "id": "css-class-built-by-concatenation",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".col-md-6{margin-left:1px}"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 241,
+    "sha256": "5ee0e5a20f1911d7dfaad618b920c68a8cf88769a58035b2624bd329b79c5dd9"
+  },
+  {
+    "id": "css-class-built-in-a-template-literal",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".row-7{margin-left:1px}"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 233,
+    "sha256": "3af6b4c13e4f5108d08353986442b69150fc492791d3523bc7189a927bd5d012"
+  },
+  {
+    "id": "css-class-named-by-a-dataset-value",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".dataset-state{margin-left:1px}"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 250,
+    "sha256": "6b4db90eec7c5cce8fbf8d49325fa3213bf309b82104d92229b865852c848474"
+  },
+  {
+    "id": "css-class-reachable-only-from-markup",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".from-markup{margin-left:1px}"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 206,
+    "sha256": "320e60de62a6ca655314ea15e935fb950d7412ef2c78c78ea28caed4863c3e3f"
+  },
+  {
+    "id": "css-class-set-with-set-attribute",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".set-by-attribute{margin-left:1px}"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 263,
+    "sha256": "809e07c095897a363220eb3f17657fa35b781f3700f47ed6de339f1115dd39b5"
+  },
+  {
+    "id": "css-container-query-block-survives",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@container (width>=400px){.live{margin-left:1px}}"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 222,
+    "sha256": "3f1f0829cf20227aaf3caead7005eefb199acc689c80792910bbfd47bce31d99"
+  },
+  {
+    "id": "css-custom-property-used-only-by-a-script-survives",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "--read-at-runtime:2"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 284,
+    "sha256": "c874dda23693e36e8f5d3c697f600c9adeafa1b4a40f4d295392fce92d349a6a"
+  },
+  {
+    "id": "css-custom-property-used-only-by-another-property-survives",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "--base:3",
+        "--alias:var(--base)"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 245,
+    "sha256": "482bf0945f411ff031dba9eb5896de855b9c63d537a4c8a34a4f244996083fc3"
+  },
+  {
+    "id": "css-duplicate-rule-is-merged",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".live{margin-left:9px}"
+      ],
+      "removes": [
+        ".live{margin-left:1px}"
+      ]
+    },
+    "bytes": 229,
+    "sha256": "e38538658437ad03e5e1ffc0526b4625d9496fa42e22906e5103ab8977a017c9"
+  },
+  {
+    "id": "css-empty-container-block-disappears",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        "@container",
+        ".nowhere{"
+      ]
+    },
+    "bytes": 187,
+    "sha256": "18ebb4e415907904b0a43434161f99ad72c1380ff1d65ced49ea87276ac41291"
+  },
+  {
+    "id": "css-empty-media-block-disappears",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        "@media print",
+        ".nowhere{"
+      ]
+    },
+    "bytes": 171,
+    "sha256": "2d77f9d8e175b65fbfa33543a9e326e4a0e0bd9a81715ff2a071a5d297cdcd17"
+  },
+  {
+    "id": "css-empty-rule-is-removed",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        ".live{}",
+        ".witness{"
+      ]
+    },
+    "bytes": 192,
+    "sha256": "1527bf8f7e3dc432c355c4b423b8d6e0c4dc161665477b78c3ae206ff183d064"
+  },
+  {
+    "id": "css-empty-supports-block-disappears",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        "@supports",
+        ".nowhere{"
+      ]
+    },
+    "bytes": 183,
+    "sha256": "cf1250c62b362db8327fc5a98fd142b7e8ed9fdcb081a751d4c8cc76e635a0ce"
+  },
+  {
+    "id": "css-escaped-class-nothing-uses-is-removed",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        ".x\\79 z",
+        ".witness{"
+      ]
+    },
+    "bytes": 196,
+    "sha256": "49f66bb431212f24d3e440198c78dfaeffa0cbbd33c3dd2465e012219c4be9c7"
+  },
+  {
+    "id": "css-font-face-for-an-unused-family-is-dropped",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".live{margin-left:1px}"
+      ],
+      "removes": [
+        "@font-face"
+      ]
+    },
+    "bytes": 231,
+    "sha256": "10eee0c249074537bd31934ddfd520f7712f223dda856ab085e0afc1a9e63edf"
+  },
+  {
+    "id": "css-font-face-used-by-a-rule-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@font-face{font-family:Kept",
+        ".live{font-family:Kept}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 271,
+    "sha256": "debffa6bfdf3441f86f135f4652e0903a8896a24a9d59988fff8f13a391bf885"
+  },
+  {
+    "id": "css-huge-generated-stylesheet-is-pruned",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".kept-0{margin-left:1px}"
+      ],
+      "removes": [
+        ".gen-0{",
+        ".gen-3999{"
+      ]
+    },
+    "bytes": 106691,
+    "sha256": "326ea43a1b05928bb5ad37bb8466a75b8acabb1554dccde9e742b57bd430037e"
+  },
+  {
+    "id": "css-id-nothing-mentions-is-removed",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        "#never-mentioned",
+        ".witness{"
+      ]
+    },
+    "bytes": 205,
+    "sha256": "63f9953db11593ffe87e39f60d03484c9da56a065e62baf9d925f69746a502dd"
+  },
+  {
+    "id": "css-id-reachable-only-from-a-script-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "#runtime-id{margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 254,
+    "sha256": "aaa233a361174b45c313db6fb3605b0c603da16978a97f471f41040e876fe1ea"
+  },
+  {
+    "id": "css-import-of-a-data-url-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@import",
+        "data:text/css,"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 251,
+    "sha256": "84f7b697c45a3d75ec54d79793d0552b999a12b049152c05914b135af8a0084a"
+  },
+  {
+    "id": "css-important-custom-property-keeps-its-priority",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "--x:red!important"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 234,
+    "sha256": "a3bf982357c1e850a873aa90a4dd766be81d333e66d785d95f4919d3c5cc3768"
+  },
+  {
+    "id": "css-important-declaration-survives",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".live{margin-left:1px!important}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 218,
+    "sha256": "28047f0387066e65cbef32fbb8de2c58136bed9ea2473b7f2df18816fa0f5324"
+  },
+  {
+    "id": "css-invalid-stylesheet-is-left-untouched",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@@@ {{{ not css"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 187,
+    "sha256": "bd9977436b6334d7d987d19f18c291210b6a49131cb7b3971ba7c995026015ef"
+  },
+  {
+    "id": "css-keyframes-are-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@keyframes spin{"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 217,
+    "sha256": "86b3331385eb237fabf78a0145f528e538b077e5d92d9dc0c8d66c888bac89d3"
+  },
+  {
+    "id": "css-layer-order-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@layer base{.live{margin-left:1px}}",
+        "@layer theme{}"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 219,
+    "sha256": "a21f8a4151f12bd214df79e6ffd13a81c589292fa7475333d3116814638684a9"
+  },
+  {
+    "id": "css-legal-comment-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "/*! keep this notice */",
+        ".live{margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 230,
+    "sha256": "cb766933369b36a51b648b3554cbfac61189593287b7638f56caf3cec7fd9e1b"
+  },
+  {
+    "id": "css-lone-webkit-backdrop-filter-stops-the-stylesheet",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "-webkit-backdrop-filter:blur(5px)",
+        ".nowhere{margin-left:2px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 250,
+    "sha256": "4f6f888ff11cb981c93f7ff3f18820eea526ef520aa35770d66bf1de272a9ce2"
+  },
+  {
+    "id": "css-media-block-survives-when-a-rule-survives",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@media screen{.live{margin-left:1px}}"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 207,
+    "sha256": "abd482a74e91ad786b7ec268fd6e60f280e01bdaf345530bb390d6794fce903c"
+  },
+  {
+    "id": "css-nested-rules-are-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".live{margin-left:1px;& .cell{margin-left:2px}}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 252,
+    "sha256": "19f23aaf01dbc1916df9595c78a6fb050b1a5bb9a783dc97fac4ed317237bcd8"
+  },
+  {
+    "id": "css-plain-comment-is-removed",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".live{margin-left:1px}"
+      ],
+      "removes": [
+        "/* drop this note */",
+        ".witness{"
+      ]
+    },
+    "bytes": 227,
+    "sha256": "c64e497657b3913d8cfd85b6a1e0ce68e394131537a6a9787132cc621aa8ee45"
+  },
+  {
+    "id": "css-print-only-rule-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@media print{.live{margin-left:1px}}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 221,
+    "sha256": "cfcfd7f6b125fcbf6c44ebe81f3425015c4916ae629501ddb64f089216ae8491"
+  },
+  {
+    "id": "css-property-rule-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@property --brand{"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 244,
+    "sha256": "08efdf87cceec7b5a19f2ee5b834c20ce0057616c6a92b4d6934966d61e210d6"
+  },
+  {
+    "id": "css-rule-inside-an-inline-svg-is-not-pruned",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".svg-only{fill:red}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 208,
+    "sha256": "5de1e5a8a6580ce4a394f963c0bdffca8415ac7e86a821538b36fab4536dde1a"
+  },
+  {
+    "id": "css-rule-with-a-has-selector-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".live:has(.cell){margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 238,
+    "sha256": "e71e163a0ed570c17d608291e8ef100ce6f0169bd710c012d49f17a55c12993b"
+  },
+  {
+    "id": "css-rule-with-a-not-selector-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ":not(.never){margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 201,
+    "sha256": "730290c38dfaea6fd208f0005ed4cdc56fd7bb1123f415f246136f0c5704be29"
+  },
+  {
+    "id": "css-rule-with-a-where-selector-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ":where(.live,.never){margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 222,
+    "sha256": "3f8d0d392a125553640536f4a9f0bdfee2200bf5b07ae91cbef3291dbf0623c1"
+  },
+  {
+    "id": "css-rule-with-an-attribute-selector-is-kept",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "[data-marker]{margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 202,
+    "sha256": "835a748612364e7186e7904d7f5e9dfa524a0a9081566fd6e7a26f032345c639"
+  },
+  {
+    "id": "css-rule-with-an-is-selector-keeps-a-reachable-branch",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ":is(.live,.never){margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 219,
+    "sha256": "7d4021b88bbb2e55d41e9e8d0fea715c6c15da5ea30f0a7f48e8049b19e74d83"
+  },
+  {
+    "id": "css-selector-list-keeps-only-reachable-members",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".live{margin-left:1px}"
+      ],
+      "removes": [
+        ".never{"
+      ]
+    },
+    "bytes": 214,
+    "sha256": "2c803a74003fbc6d8680e7908dec93ec37c5ed143d0f7d7ce7ac7dbf9450061c"
+  },
+  {
+    "id": "css-shadowed-rule-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "#live{margin-left:1px}",
+        ".live{margin-left:9px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 239,
+    "sha256": "10752277766ca3cc6c070be28238d9fc7b0bd9f434f6e37570dc475f5f607d11"
+  },
+  {
+    "id": "css-supports-block-survives",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "@supports (display:grid){.live{margin-left:1px}}"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 218,
+    "sha256": "7b763c37befcd9b7fe58fa1565d950f18d0ba159a4e32827571d9ec4fb34d327"
+  },
+  {
+    "id": "css-tag-selector-for-a-tag-in-the-markup-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "aside{margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 202,
+    "sha256": "58dbf281962f3644456a3e6d01793efdc20173cc106f46e3696de4bc79fef376"
+  },
+  {
+    "id": "css-tag-selector-for-an-absent-tag-is-removed",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        "marquee{",
+        ".witness{"
+      ]
+    },
+    "bytes": 196,
+    "sha256": "c82028df708137ff99be55d4327d1da29759cf30f55a6573a8e868d5b966b357"
+  },
+  {
+    "id": "css-unicode-escape-in-a-class-name-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".abc{margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 208,
+    "sha256": "d8a6a9587ece9478d0b5768cb53449881613c87609479224ac33072c1e5bb9b6"
+  },
+  {
+    "id": "css-unused-custom-property-is-removed",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".live{margin-left:1px}"
+      ],
+      "removes": [
+        "--never-used"
+      ]
+    },
+    "bytes": 228,
+    "sha256": "1ab2e615b2103fa060f8dfdc24b626979e5d5335835b20ad011d4ae9f2eb8269"
+  },
+  {
+    "id": "css-vendor-prefixed-property-is-kept",
+    "category": "css",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "-webkit-transform:rotate(3deg)"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 207,
+    "sha256": "51186525bab96db6d12808e9f130a6d7a7174ce8577d176d6eaf99dd57564e65"
+  },
+  {
     "id": "linked-stylesheet-is-rejected",
     "category": "validation",
     "tier": "smoke",
@@ -21,6 +815,757 @@
     },
     "bytes": 66,
     "sha256": "c4adb522ac1bab11a4501f55ccf0349273c181b2ccbf5fd1e635a99fd49665ee"
+  },
+  {
+    "id": "parsing-angle-bracket-inside-an-attribute",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "title=\"a > b\""
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 184,
+    "sha256": "c382fa35764a9245ebbc81d1fce076d675d662c9f27444523a0b5effd3f94458"
+  },
+  {
+    "id": "parsing-bidi-control-characters",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "‮"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 179,
+    "sha256": "9855c0e0d88c5bccfb7b5af8ccefe2b625be646defe296deefb0938b6f85138e"
+  },
+  {
+    "id": "parsing-boolean-and-empty-attributes",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "type=\"checkbox\" checked disabled"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 189,
+    "sha256": "722d5d4fbed21227786ef60e439e629f414e1f1463182c16fd6e99ac117c95fc"
+  },
+  {
+    "id": "parsing-byte-order-mark",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "﻿"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 160,
+    "sha256": "18f0e0aa55c56bc880ecb76ba8e649020f0214fc48e87a7c386dca8757cd0045"
+  },
+  {
+    "id": "parsing-cdata-in-html-is-not-markup",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "var x = 1;"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 203,
+    "sha256": "d5072a7b0c37fbd093e7bec0a018672c94c008728b6204394f0781cc288117d2"
+  },
+  {
+    "id": "parsing-cdata-in-svg-is-not-markup",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "var x = 1;"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 201,
+    "sha256": "675afc1ef49145339f516056f91f0b3a79558fc892bcabcd92b47c2364b58a71"
+  },
+  {
+    "id": "parsing-comment-with-every-kind-of-tag",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<!-- <script>alert(1)</script> <style>.x{color:red}</style> <svg><circle r=\"1\"/></svg>",
+        "<!DOCTYPE html> -->"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 393,
+    "sha256": "10999a26235c029687587e12af99d6d4e92a80437f275c90f9a0b8ad6f4e8dde"
+  },
+  {
+    "id": "parsing-conditional-comment-is-left-alone",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<!--[if lt IE 9]><p class=\"old\">old</p><![endif]-->"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 212,
+    "sha256": "115e64a5a5d6df22a57e8c940066a1c519ce9bc86cae8b63fb4dad02913a48a4"
+  },
+  {
+    "id": "parsing-crlf-line-endings",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<p>line</p>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 182,
+    "sha256": "df452fc6f30226d76fcac7d583207f2ec1246d78b22344aada54a92cc667f913"
+  },
+  {
+    "id": "parsing-document-without-html-element-is-rejected",
+    "category": "parsing",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-html"
+    },
+    "bytes": 79,
+    "sha256": "f0edb343a86ea999f9fdbf017416d2f05735d211b3d551f608e54846136eafb9"
+  },
+  {
+    "id": "parsing-downlevel-revealed-comment-is-left-alone",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<![if !IE]><p class=\"rev\">rev</p><![endif]>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 204,
+    "sha256": "e8a35115b784356e692eeecc39550eb9bbda114dd8c594f82e7879a052610670"
+  },
+  {
+    "id": "parsing-duplicated-ids",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "id=\"dup\""
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 193,
+    "sha256": "b3553471c11efac8514bfeaf57eb50f83a5147ba2f04e2bfea046b8c87c6332d"
+  },
+  {
+    "id": "parsing-emoji-and-non-ascii-text",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "héllo ✓ 🎉 Ωmega"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 178,
+    "sha256": "e3ed84a2ba5844212f836e67fea0e773c37be24c01a6dc3bb8bad0eb12ca4155"
+  },
+  {
+    "id": "parsing-empty-file-is-rejected",
+    "category": "parsing",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-html"
+    },
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "id": "parsing-enormous-attribute-value",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data-blob=\"BIGNAME-"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 100178,
+    "sha256": "64d48bf0f9337dc88698cad867935d7776a24cf740e5cf09f496f8c714045b4b"
+  },
+  {
+    "id": "parsing-entity-laden-attribute-values",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "class=\"a&amp;b\"",
+        "title=\"&lt;div&gt;\""
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 193,
+    "sha256": "883ff63325789bcf589ecaa29f96bce7bd85e5f238920bf37e939cf4b7dc0198"
+  },
+  {
+    "id": "parsing-fragment-without-html-is-rejected",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-html"
+    },
+    "bytes": 35,
+    "sha256": "839e8d90e0be0fcb018c7e6f2ba301bccfd788d49e20d621e356e0bd603e752e"
+  },
+  {
+    "id": "parsing-html-word-inside-a-script-is-not-a-document",
+    "category": "parsing",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-html"
+    },
+    "bytes": 34,
+    "sha256": "ca881155f03079934513883499cb5046a4baf3dea6259574f22326c093e53806"
+  },
+  {
+    "id": "parsing-hundred-thousand-elements-not-rendered",
+    "category": "parsing",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 700149,
+    "sha256": "14a33f94f24c2e264e152260eace1dc716c388b04e5e3ba0a3ea9af256fad739"
+  },
+  {
+    "id": "parsing-iframe-content-is-not-markup",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<iframe><script>var x = 1;</script></iframe>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 193,
+    "sha256": "e277b23602023d24cae545c067892a03d341e1deb62939cf266e9be0c225ab78"
+  },
+  {
+    "id": "parsing-mixed-case-tags-are-understood",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "var x=1;"
+      ],
+      "removes": [
+        "var x = 1;",
+        ".witness{"
+      ]
+    },
+    "bytes": 176,
+    "sha256": "87fd984c3c39ac7ad9713057f0f815b4c6cf27c0293f6da6ccb9096fedc5437a"
+  },
+  {
+    "id": "parsing-mixed-line-endings",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<p>line</p>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 172,
+    "sha256": "9d01867791488611cafd752902847b2888b96ba31d55e23433d9f394d31b3eda"
+  },
+  {
+    "id": "parsing-noscript-content-is-not-markup",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<noscript><style>.off{margin-left:1px}</style></noscript>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 206,
+    "sha256": "8774128b9cfd75a467a48ca4cf5091a58f12f57d71dca69738692c6807f059b6"
+  },
+  {
+    "id": "parsing-plaintext-content-is-not-markup",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "var x = 1;"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 200,
+    "sha256": "837c7c83679a9c05bfbd9d28a08ed64387e93e64314a5ca9a16ae57afc9980e1"
+  },
+  {
+    "id": "parsing-script-text-that-looks-like-markup",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<div class='x'>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 197,
+    "sha256": "94d97bf796b93b70eae971d6907b718c6ecc81528f34b0f2bcdf662865681eac"
+  },
+  {
+    "id": "parsing-script-with-a-close-tag-in-a-string",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "</div>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 183,
+    "sha256": "c19893b646881942c390c3feb885d8ae240ae0e7be3b44d912d33581c20d25e4"
+  },
+  {
+    "id": "parsing-script-with-an-escaped-close-tag",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<\\/script>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 187,
+    "sha256": "561a189630eef4ebbcc47878264a51eb1deaa35b984ec2068afc58b3da7bbe40"
+  },
+  {
+    "id": "parsing-self-closing-tags",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<br/>",
+        "<hr />"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 223,
+    "sha256": "56a64f0640707f8f2b1cb0f754a2f9e2bd87e2893c26e736d3b2764c28fcbf51"
+  },
+  {
+    "id": "parsing-single-quoted-attribute-values",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".single{margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 211,
+    "sha256": "0f61b7083607dc8690cd70dacdd28c54b953e6c298fc3a94c31573da76a9a8f3"
+  },
+  {
+    "id": "parsing-stray-angle-brackets",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "1 < 2 and 3 > 2 and 4<5"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 179,
+    "sha256": "1ef0fe6876c861e074f9d86a25ea241fe62169535f131f9fa698df5373efdec0"
+  },
+  {
+    "id": "parsing-style-text-that-looks-like-markup",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".shown{content:\"<script>\"}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 212,
+    "sha256": "7444a1d7acd76214d6d11257c46026ccc5166ca5da955e21a428b2cd3ab5c9c3"
+  },
+  {
+    "id": "parsing-svg-content-is-not-markup",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".svg-only{fill:red}",
+        "var x = 1;"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 235,
+    "sha256": "56ff91eb986381e0908882476b9054e9311bcd38c96159607b1a92bc1ae30b2e"
+  },
+  {
+    "id": "parsing-tags-with-odd-whitespace",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "var x=1;"
+      ],
+      "removes": [
+        "var x = 1;",
+        ".witness{"
+      ]
+    },
+    "bytes": 212,
+    "sha256": "c96ec244de534415919b6fbaac91a2ac22411c76290136d2eaec70691851613a"
+  },
+  {
+    "id": "parsing-template-content-is-not-markup",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<template><script>var x = 1;</script><style>.tpl{margin-left:1px}</style></template>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 233,
+    "sha256": "08a91a30d583e4c3faf5f48ad0e28cab8b36da0f266dcafe37d315b33a9a27ba"
+  },
+  {
+    "id": "parsing-textarea-content-is-not-markup",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<textarea><script>if (a < b) {}</script></textarea>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 200,
+    "sha256": "6c47e7ba135da212efe300c8fa0e9d247aa3fde03d073cfa1b60f3dc2e87b636"
+  },
+  {
+    "id": "parsing-three-thousand-deep-nesting",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "deep"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 33153,
+    "sha256": "56d0fa1ec6bae09264406b45c954f24dc9cc9a00feb2921ada61f7de10824c4d"
+  },
+  {
+    "id": "parsing-title-content-is-not-markup",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<title>a < b & c</title>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 181,
+    "sha256": "3c5224670348321663874bbf01ae92343800d0e6bda39181cda7cb1ab395b256"
+  },
+  {
+    "id": "parsing-two-html-elements",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<p>one</p>",
+        "<p>two</p>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 205,
+    "sha256": "f520a522027ebee880e365ff2c4507e6f0340924dbefea05038906eb0ae59135"
+  },
+  {
+    "id": "parsing-unquoted-attribute-values",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".plain{margin-left:1px}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 207,
+    "sha256": "4124a75ad2e1f9394e88858c9acd48317113dd50cb8d4674eaf65576990e171e"
+  },
+  {
+    "id": "parsing-unterminated-comment-at-end-of-file",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<!-- never closed"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 179,
+    "sha256": "5bc638501c3d09c94525a1690457443d288bfde55e12a7443f0513674caf96a8"
+  },
+  {
+    "id": "parsing-unterminated-script-at-end-of-file",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "var x=1;"
+      ],
+      "removes": [
+        "var x = 1;",
+        ".witness{"
+      ]
+    },
+    "bytes": 180,
+    "sha256": "16be65ea9f4e42f1309178af0a3a3cd6b2c37e85d95ef919c03c814d8b093f7a"
+  },
+  {
+    "id": "parsing-unterminated-style-at-end-of-file",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".a{color:red}"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 187,
+    "sha256": "f212d7118751b37302d70445c49d4ebe72beb640b141926ff60b7205ba5d7d87"
+  },
+  {
+    "id": "parsing-unterminated-tag-at-end-of-file",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<p>before</p>",
+        "<div class=\"open\""
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 179,
+    "sha256": "2cdedda7cf79cb742e683887c1a92052ea216d3ee217b0038aa5ef7428ed9e5f"
+  },
+  {
+    "id": "parsing-very-long-line",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "LONGSTART-"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 300166,
+    "sha256": "fc0ce3094913dc306fd9cfeeec56b208faae04317a6908fdc9a2389a093e7a82"
+  },
+  {
+    "id": "parsing-xmp-content-is-not-markup",
+    "category": "parsing",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<xmp><script>var x = 1;</script></xmp>"
+      ],
+      "removes": [
+        ".witness{"
+      ]
+    },
+    "bytes": 187,
+    "sha256": "69706a1098abbf4791c6fc4726371a42bfe1f3a89c62ba7740bde2e9404aab69"
   },
   {
     "id": "plain-text-is-rejected",
