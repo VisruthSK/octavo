@@ -1,10 +1,128 @@
-use crate::{ascii::starts_with_ignore_case, doc::Doc, html::Element};
+use crate::{
+    ascii::starts_with_ignore_case,
+    doc::Doc,
+    html::{AttrName, Element},
+};
 use indexmap::IndexSet;
+use std::fmt;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Origin {
+    Local,
+    Remote,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Url {
+    text: String,
+    origin: Origin,
+}
+
+impl Url {
+    fn parse(text: &str) -> Option<Url> {
+        if text.is_empty() {
+            return None;
+        }
+        let origin = match Scheme::of(text) {
+            Some(scheme) if scheme.is_inline() => return None,
+            Some(scheme) if scheme.is_remote() => Origin::Remote,
+            _ => Origin::Local,
+        };
+        Some(Url {
+            text: text.to_string(),
+            origin,
+        })
+    }
+
+    pub fn origin(&self) -> Origin {
+        self.origin
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+}
+
+impl fmt::Display for Url {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(&self.text)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Scheme {
+    Data,
+    Blob,
+    About,
+    Fragment,
+    Http,
+    Https,
+    ProtocolRelative,
+}
+
+impl Scheme {
+    const ALL: [Scheme; 7] = [
+        Scheme::Data,
+        Scheme::Blob,
+        Scheme::About,
+        Scheme::Fragment,
+        Scheme::Http,
+        Scheme::Https,
+        Scheme::ProtocolRelative,
+    ];
+
+    fn prefix(self) -> &'static str {
+        match self {
+            Scheme::Data => "data:",
+            Scheme::Blob => "blob:",
+            Scheme::About => "about:",
+            Scheme::Fragment => "#",
+            Scheme::Http => "http:",
+            Scheme::Https => "https:",
+            Scheme::ProtocolRelative => "//",
+        }
+    }
+
+    fn of(text: &str) -> Option<Scheme> {
+        Scheme::ALL
+            .into_iter()
+            .find(|scheme| starts_with_ignore_case(text, scheme.prefix()))
+    }
+
+    fn is_inline(self) -> bool {
+        matches!(
+            self,
+            Scheme::Data | Scheme::Blob | Scheme::About | Scheme::Fragment
+        )
+    }
+
+    fn is_remote(self) -> bool {
+        matches!(
+            self,
+            Scheme::Http | Scheme::Https | Scheme::ProtocolRelative
+        )
+    }
+}
 
 #[derive(Default)]
 pub struct Links {
-    pub local: IndexSet<String>,
-    pub remote: IndexSet<String>,
+    urls: IndexSet<Url>,
+}
+
+impl Links {
+    pub fn local(&self) -> impl Iterator<Item = &Url> {
+        self.urls.iter().filter(|url| url.origin() == Origin::Local)
+    }
+
+    pub fn remote(&self) -> impl Iterator<Item = &Url> {
+        self.urls
+            .iter()
+            .filter(|url| url.origin() == Origin::Remote)
+    }
+
+    pub fn is_self_contained(&self) -> bool {
+        self.local().next().is_none()
+    }
 }
 
 pub fn is_html(src: &str) -> bool {
@@ -13,36 +131,21 @@ pub fn is_html(src: &str) -> bool {
 }
 
 pub fn links(doc: &Doc) -> Links {
-    let mut links = Links::default();
-    for tag in doc.tags.iter().filter(|t| !t.in_svg) {
+    let mut urls = IndexSet::new();
+    for tag in doc.tags().iter().filter(|t| !t.in_svg) {
         let url = match tag.element {
-            Element::Script | Element::Img => tag.attr("src"),
-            Element::Link if tag.attr("rel").is_some_and(is_stylesheet) => tag.attr("href"),
-            _ => None,
+            Element::Script | Element::Img => tag.attr(AttrName::Src),
+            Element::Link if tag.rel().is_some_and(|rel| rel.is_stylesheet()) => {
+                tag.attr(AttrName::Href)
+            }
+            Element::Link | Element::Style | Element::Svg => None,
         };
-        let Some(url) = url.map(str::trim).filter(|url| !url.is_empty()) else {
+        let Some(url) = url.map(str::trim) else {
             continue;
         };
-        if ["data:", "blob:", "about:", "#"]
-            .iter()
-            .any(|p| starts_with_ignore_case(url, p))
-        {
-            continue;
+        if let Some(url) = Url::parse(url) {
+            urls.insert(url);
         }
-        let remote = ["http:", "https:", "//"]
-            .iter()
-            .any(|p| starts_with_ignore_case(url, p));
-        let list = if remote {
-            &mut links.remote
-        } else {
-            &mut links.local
-        };
-        list.insert(url.to_string());
     }
-    links
-}
-
-fn is_stylesheet(rel: &str) -> bool {
-    rel.split_whitespace()
-        .any(|word| word.eq_ignore_ascii_case("stylesheet"))
+    Links { urls }
 }

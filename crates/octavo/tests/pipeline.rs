@@ -1,7 +1,7 @@
 mod common;
 
 use common::{optimized, page, safe};
-use octavo::{Mode, Transform};
+use octavo::{Mode, Target, Transform};
 
 #[test]
 fn unreachable_rules_are_removed_and_reachable_kept() {
@@ -96,7 +96,7 @@ fn identical_resources_share_one_blob() {
     assert!(out
         .applied
         .iter()
-        .any(|a| a.transform == Transform::Packed && a.target == "1 resources"));
+        .any(|a| a.transform == Transform::Packed && a.target == Target::Resources(1)));
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use crate::{
     doc::{Doc, Edit},
-    html::{Element, Tag},
-    Transform,
+    html::{AttrName, Element, Tag},
+    Licenses, Target, Transform,
 };
 use oxc::{
     allocator::Allocator,
@@ -14,14 +14,7 @@ use oxc::{
 use rayon::prelude::*;
 use std::ops::Range;
 
-const CLASSIC_TYPES: [&str; 4] = [
-    "",
-    "text/javascript",
-    "application/javascript",
-    "text/ecmascript",
-];
-
-#[derive(PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScriptKind {
     Classic,
     Module,
@@ -30,41 +23,37 @@ pub enum ScriptKind {
 }
 
 impl ScriptKind {
-    pub fn of(tag: &Tag) -> Self {
-        match tag
-            .attr("type")
-            .unwrap_or("")
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            kind if CLASSIC_TYPES.contains(&kind) => ScriptKind::Classic,
+    pub fn parse(value: &str) -> ScriptKind {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "text/javascript" | "application/javascript" | "text/ecmascript" => {
+                ScriptKind::Classic
+            }
             "module" => ScriptKind::Module,
             "importmap" | "speculationrules" => ScriptKind::Special,
             _ => ScriptKind::Data,
         }
     }
+
+    pub fn of(tag: &Tag) -> ScriptKind {
+        ScriptKind::parse(tag.attr(AttrName::Type).unwrap_or(""))
+    }
 }
 
-pub fn is_classic_type(value: &str) -> bool {
-    CLASSIC_TYPES.contains(&value.trim().to_ascii_lowercase().as_str())
-}
-
-pub fn stage(doc: &Doc, removed: &[Range<usize>], keep_licenses: bool) -> Vec<Edit> {
-    doc.tags
+pub fn stage(doc: &Doc, removed: &[Range<usize>], licenses: Licenses) -> Vec<Edit> {
+    doc.tags()
         .par_iter()
         .filter(|t| t.element == Element::Script && !t.in_svg && !removed.contains(&t.span))
-        .filter_map(|tag| rewrite(doc, tag, keep_licenses))
+        .filter_map(|tag| rewrite(doc, tag, licenses))
         .filter(Edit::shrinks)
         .collect()
 }
 
-pub fn minify(code: &str, module: bool, keep_licenses: bool) -> Option<String> {
+pub fn minify(code: &str, kind: ScriptKind, licenses: Licenses) -> Option<String> {
     let allocator = Allocator::default();
-    let source_type = if module {
-        SourceType::mjs()
-    } else {
-        SourceType::default().with_script(true)
+    let source_type = match kind {
+        ScriptKind::Classic => SourceType::default().with_script(true),
+        ScriptKind::Module => SourceType::mjs(),
+        ScriptKind::Special | ScriptKind::Data => return None,
     };
     let parsed = Parser::new(&allocator, code, source_type).parse();
     if !parsed.diagnostics.is_empty() {
@@ -82,7 +71,7 @@ pub fn minify(code: &str, module: bool, keep_licenses: bool) -> Option<String> {
     let codegen = CodegenOptions {
         minify: true,
         comments: CommentOptions {
-            legal: if keep_licenses {
+            legal: if licenses == Licenses::Keep {
                 LegalComment::Inline
             } else {
                 LegalComment::None
@@ -100,14 +89,17 @@ pub fn minify(code: &str, module: bool, keep_licenses: bool) -> Option<String> {
     )
 }
 
-fn rewrite(doc: &Doc, tag: &Tag, keep_licenses: bool) -> Option<Edit> {
-    let module = match ScriptKind::of(tag) {
-        ScriptKind::Classic => false,
-        ScriptKind::Module => true,
-        _ => return None,
+fn rewrite(doc: &Doc, tag: &Tag, licenses: Licenses) -> Option<Edit> {
+    let (kind, label) = match ScriptKind::of(tag) {
+        ScriptKind::Classic => (ScriptKind::Classic, "script"),
+        ScriptKind::Module => (ScriptKind::Module, "module"),
+        ScriptKind::Special | ScriptKind::Data => return None,
     };
-    let source = tag.attr("src");
-    if source.is_some() && !(module && source?.starts_with("data:") && unique_source(doc, source?))
+    let source = tag.attr(AttrName::Src);
+    if source.is_some()
+        && !(kind == ScriptKind::Module
+            && source?.starts_with("data:")
+            && unique_source(doc, source?))
     {
         return None;
     }
@@ -115,16 +107,13 @@ fn rewrite(doc: &Doc, tag: &Tag, keep_licenses: bool) -> Option<Edit> {
     if looks_minified(&code) || source.is_some() && !self_contained(&code) {
         return None;
     }
-    let mut text = minify(&code, module, keep_licenses)?;
+    let mut text = minify(&code, kind, licenses)?;
     if text.contains("</script") {
         text = text.replace("</script", r"<\/script");
     }
-    let target = tag
-        .attr("id")
-        .unwrap_or(if module { "module" } else { "script" })
-        .to_string();
+    let target = Target::Resource(tag.attr(AttrName::Id).unwrap_or(label).to_string());
     Some(if source.is_some() {
-        let open = tag.open_tag(|name, value| (name != "src").then(|| value.to_string()));
+        let open = tag.open_tag(|name, value| (name != &AttrName::Src).then(|| value.to_string()));
         Edit {
             span: tag.span.clone(),
             text: format!("{open}{text}</script>"),
@@ -142,9 +131,9 @@ fn rewrite(doc: &Doc, tag: &Tag, keep_licenses: bool) -> Option<Edit> {
 }
 
 fn unique_source(doc: &Doc, source: &str) -> bool {
-    doc.tags
+    doc.tags()
         .iter()
-        .filter(|t| t.attr("src") == Some(source))
+        .filter(|t| t.attr(AttrName::Src) == Some(source))
         .count()
         == 1
 }

@@ -1,8 +1,9 @@
 use crate::{
     ascii::contains_ignore_case,
-    data,
-    html::{Element, Tag},
+    data::{self, Mime},
+    html::{AttrName, Attribute, Element, Rel, Scanned, Tag},
     js::{self, ScriptKind},
+    Licenses,
 };
 use base91::{
     codemap::{xml_friendly::ENCODE_MAP, XmlFriendly},
@@ -31,7 +32,12 @@ enum Kind {
 struct Candidate<'a> {
     kind: Kind,
     text: Cow<'a, str>,
-    attrs: Vec<(String, String)>,
+    attrs: Vec<Attribute>,
+}
+
+struct Site {
+    span: Range<usize>,
+    call: String,
 }
 
 pub struct Packed {
@@ -39,18 +45,19 @@ pub struct Packed {
     pub blobs: usize,
 }
 
-pub fn run(src: &str, tags: &[Tag], styles: bool) -> Option<Packed> {
+pub fn run(scanned: &Scanned, styles: bool) -> Option<Packed> {
+    let src = scanned.html();
     if contains_ignore_case(src, "content-security-policy") {
         return None;
     }
     let mut blobs = Blobs::default();
-    let mut sites: Vec<(Range<usize>, String)> = Vec::new();
-    for tag in tags.iter().filter(|t| !t.in_svg) {
+    let mut sites: Vec<Site> = Vec::new();
+    for tag in scanned.tags().iter().filter(|t| !t.in_svg) {
         if let Some(c) = candidate(src, tag, styles) {
-            sites.push((
-                tag.span.clone(),
-                call_site(blobs.add(c.text), c.kind, &c.attrs),
-            ));
+            sites.push(Site {
+                span: tag.span.clone(),
+                call: call_site(blobs.add(c.text), c.kind, &c.attrs),
+            });
         }
     }
     if sites.is_empty() {
@@ -59,15 +66,15 @@ pub fn run(src: &str, tags: &[Tag], styles: bool) -> Option<Packed> {
     let loader = blobs.loader();
     let mut out = String::with_capacity(src.len());
     let mut at = 0;
-    for (n, (span, call)) in sites.iter().enumerate() {
-        out.push_str(&src[at..span.start]);
+    for (n, site) in sites.iter().enumerate() {
+        out.push_str(&src[at..site.span.start]);
         if n == 0 {
             out.push_str("<script>");
             out.push_str(&loader);
             out.push_str("</script>");
         }
-        out.push_str(call);
-        at = span.end;
+        out.push_str(&site.call);
+        at = site.span.end;
     }
     out.push_str(&src[at..]);
     Some(Packed {
@@ -79,7 +86,7 @@ pub fn run(src: &str, tags: &[Tag], styles: bool) -> Option<Packed> {
 fn candidate<'a>(src: &'a str, tag: &Tag, styles: bool) -> Option<Candidate<'a>> {
     let (kind, text) = match tag.element {
         Element::Script
-            if tag.attr("src").is_none()
+            if tag.attr(AttrName::Src).is_none()
                 && matches!(ScriptKind::of(tag), ScriptKind::Classic | ScriptKind::Data) =>
         {
             (Kind::Script, Cow::Borrowed(&src[tag.body.clone()?]))
@@ -88,11 +95,13 @@ fn candidate<'a>(src: &'a str, tag: &Tag, styles: bool) -> Option<Candidate<'a>>
             (Kind::Fragment, Cow::Borrowed(&src[tag.span.clone()]))
         }
         Element::Style if styles => (Kind::Style, Cow::Borrowed(&src[tag.body.clone()?])),
-        Element::Link if styles && tag.attr("rel") == Some("stylesheet") => (
+        Element::Link if styles && matches!(tag.rel(), Some(Rel::Stylesheet)) => (
             Kind::Link,
-            Cow::Owned(String::from_utf8(data::decode(tag.attr("href")?)?.bytes).ok()?),
+            Cow::Owned(String::from_utf8(data::decode(tag.attr(AttrName::Href)?)?.bytes).ok()?),
         ),
-        _ => return None,
+        Element::Script | Element::Style | Element::Link | Element::Svg | Element::Img => {
+            return None
+        }
     };
     let minimum = if matches!(kind, Kind::Fragment) {
         MIN_FRAGMENT
@@ -100,21 +109,21 @@ fn candidate<'a>(src: &'a str, tag: &Tag, styles: bool) -> Option<Candidate<'a>>
         MIN_BLOB
     };
     if text.len() < minimum
-        || tag.attrs.iter().any(|(_, v)| v.contains('&'))
+        || tag.attrs.iter().any(|attr| attr.value.contains('&'))
         || !restorable(kind, &text)
     {
         return None;
     }
-    let redundant = |name: &str, value: &str| match kind {
-        Kind::Script => name == "type" && js::is_classic_type(value),
-        Kind::Style => name == "type" && value == "text/css",
-        Kind::Link => name == "href",
+    let redundant = |name: &AttrName, value: &str| match kind {
+        Kind::Script => *name == AttrName::Type && ScriptKind::parse(value) == ScriptKind::Classic,
+        Kind::Style => *name == AttrName::Type && Mime::parse(value) == Mime::TextCss,
+        Kind::Link => *name == AttrName::Href,
         Kind::Fragment => true,
     };
     let attrs = tag
         .attrs
         .iter()
-        .filter(|(k, v)| !redundant(k, v))
+        .filter(|attr| !redundant(&attr.name, &attr.value))
         .cloned()
         .collect();
     Some(Candidate { kind, text, attrs })
@@ -139,8 +148,11 @@ fn has_event_handler(text: &str) -> bool {
     })
 }
 
-fn call_site(index: usize, kind: Kind, attrs: &[(String, String)]) -> String {
-    let attrs: BTreeMap<_, _> = attrs.iter().cloned().collect();
+fn call_site(index: usize, kind: Kind, attrs: &[Attribute]) -> String {
+    let attrs: BTreeMap<&str, &str> = attrs
+        .iter()
+        .map(|attr| (attr.name.as_str(), attr.value.as_str()))
+        .collect();
     let extra = match (kind, attrs.is_empty()) {
         (Kind::Script, true) => String::new(),
         (_, true) => format!(",{}", kind as u8),
@@ -215,7 +227,8 @@ fn assemble(unpack: &str, sizes: &[String]) -> String {
             &serde_json::to_string(&alphabet).expect("strings serialize"),
         )
         .replace("UNPACK", unpack);
-    js::minify(&source, false, false).expect("loader template is valid JavaScript")
+    js::minify(&source, ScriptKind::Classic, Licenses::Strip)
+        .expect("loader template is valid JavaScript")
 }
 
 fn literal(data: &[u8]) -> String {

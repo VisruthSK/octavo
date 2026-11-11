@@ -3,7 +3,7 @@ use anstyle::{AnsiColor, Style};
 use bytesize::ByteSize;
 use clap::{builder::Styles, value_parser, Parser, Subcommand, ValueEnum};
 use indicatif::{ProgressBar, ProgressStyle};
-use octavo::{optimize, simplify, ImageEncoding, ImageFormat, Mode, Options, Transform};
+use octavo::{optimize, simplify, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform};
 use std::{
     collections::BTreeMap,
     fs,
@@ -116,24 +116,27 @@ enum Level {
 }
 
 impl Level {
-    fn ladder(self) -> &'static [Mode] {
+    fn ladder(self) -> &'static [(Level, Mode)] {
         match self {
             Level::Packed => &[
-                Mode::Packed { styles: true },
-                Mode::Packed { styles: false },
-                Mode::Safe,
+                (Level::Packed, Mode::Packed { styles: true }),
+                (Level::Scripts, Mode::Packed { styles: false }),
+                (Level::Safe, Mode::Safe),
             ],
-            Level::Scripts => &[Mode::Packed { styles: false }, Mode::Safe],
-            Level::Safe => &[Mode::Safe],
+            Level::Scripts => &[
+                (Level::Scripts, Mode::Packed { styles: false }),
+                (Level::Safe, Mode::Safe),
+            ],
+            Level::Safe => &[(Level::Safe, Mode::Safe)],
         }
     }
-}
 
-fn label(mode: Mode) -> &'static str {
-    match mode {
-        Mode::Safe => "safe",
-        Mode::Packed { styles: false } => "scripts",
-        Mode::Packed { styles: true } => "packed",
+    fn label(self) -> &'static str {
+        match self {
+            Level::Safe => "safe",
+            Level::Scripts => "scripts",
+            Level::Packed => "packed",
+        }
     }
 }
 
@@ -154,7 +157,9 @@ fn main() -> ExitCode {
             let images = lossy_images.map(|format| {
                 let encoding = ImageEncoding::new(format.into());
                 ImageEncoding {
-                    quality: image_quality.unwrap_or(encoding.quality),
+                    quality: image_quality
+                        .and_then(Quality::new)
+                        .unwrap_or(encoding.quality),
                     max_side: max_image_side
                         .map_or(encoding.max_side, |side| (side > 0).then_some(side)),
                     ..encoding
@@ -200,25 +205,35 @@ fn size(bytes: usize) -> String {
     ByteSize(bytes as u64).to_string()
 }
 
+#[derive(Default)]
+struct Savings {
+    count: usize,
+    before: usize,
+    after: usize,
+}
+
 fn audit(input: &Path) -> Result<(), String> {
     let src = read(input)?;
     let out = optimize(&src, Mode::Packed { styles: true })
         .map_err(|error| format!("{}: {error}", input.display()))?;
-    let mut totals: BTreeMap<Transform, (usize, usize, usize)> = BTreeMap::new();
+    let mut totals: BTreeMap<Transform, Savings> = BTreeMap::new();
     for step in &out.applied {
         let total = totals.entry(step.transform).or_default();
-        *total = (total.0 + 1, total.1 + step.before, total.2 + step.after);
+        total.count += 1;
+        total.before += step.before;
+        total.after += step.after;
     }
     println!(
         "{DIM}{:<18} {:>5} {:>10} {:>10} {:>10}{DIM:#}",
         "transformation", "count", "before", "after", "saved"
     );
-    for (name, (count, before, after)) in totals {
+    for (name, total) in totals {
         println!(
-            "{name:<18} {count:>5} {:>10} {:>10} {GOOD}{:>10}{GOOD:#}",
-            size(before),
-            size(after),
-            size(before.saturating_sub(after)),
+            "{name:<18} {:>5} {:>10} {:>10} {GOOD}{:>10}{GOOD:#}",
+            total.count,
+            size(total.before),
+            size(total.after),
+            size(total.before.saturating_sub(total.after)),
         );
     }
     println!("{}", summary(src.len(), out.html.len()));
@@ -261,8 +276,8 @@ fn run(
     progress.set_message("optimizing");
     let simplified =
         simplify(&src, options).map_err(|error| format!("{}: {error}", input.display()))?;
-    for mode in level.ladder() {
-        progress.set_message(format!("packing ({})", label(*mode)));
+    for (level, mode) in level.ladder() {
+        progress.set_message(format!("packing ({})", level.label()));
         let candidate = simplified.pack(*mode).html;
         if candidate.len() >= src.len() {
             continue;
@@ -270,7 +285,7 @@ fn run(
         let staged = staging_path(output);
         write(&staged, &candidate)?;
         if let Some(command) = verify {
-            progress.set_message(format!("verifying ({})", label(*mode)));
+            progress.set_message(format!("verifying ({})", level.label()));
             if !passes(command, input, &staged) {
                 let _ = fs::remove_file(&staged);
                 continue;
@@ -282,7 +297,7 @@ fn run(
         println!(
             "{} {DIM}[{}, {:.1?}]{DIM:#} {}",
             output.display(),
-            label(*mode),
+            level.label(),
             started.elapsed(),
             summary(src.len(), candidate.len())
         );

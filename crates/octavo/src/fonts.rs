@@ -1,4 +1,8 @@
-use crate::{data, words::Words};
+use crate::{
+    data::{self, Mime},
+    words::Words,
+    Licenses,
+};
 use cssparser::{ParseError, Parser, ParserInput, Token};
 use lightningcss::{
     properties::{font::FontFamily, Property},
@@ -69,7 +73,7 @@ pub struct Settings<'a> {
     pub src: &'a str,
     pub words: &'a Words,
     pub subset_text_fonts: bool,
-    pub keep_notices: bool,
+    pub notices: Licenses,
 }
 
 pub fn rewrite(
@@ -177,9 +181,9 @@ fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Dec
     } else {
         chars.text.as_ref()
     };
-    match transcode(&font.bytes, subset, settings.keep_notices) {
+    match transcode(&font.bytes, subset, settings.notices) {
         Some((woff2, notice)) => Decision::Replace {
-            uri: data::encode_base64("font/woff2", &woff2),
+            uri: data::encode_base64(Mime::FontWoff2, &woff2),
             notice,
         },
         None => Decision::Keep,
@@ -248,7 +252,7 @@ impl<'i> Visitor<'i> for Apply<'_> {
                     self.notices.push(notice.clone());
                 }
             }
-            _ => {}
+            Some(Decision::Keep) | None => {}
         }
         Ok(())
     }
@@ -382,14 +386,20 @@ fn string_literals<'i>(parser: &mut Parser<'i, '_>, chars: &mut HashSet<char>) {
 fn transcode(
     bytes: &[u8],
     chars: Option<&HashSet<char>>,
-    keep_notice: bool,
+    notices: Licenses,
 ) -> Option<(Vec<u8>, Option<String>)> {
     let sfnt: Cow<[u8]> = match bytes.get(..4)? {
         b"wOFF" => Cow::Owned(wuff::decompress_woff1(bytes).ok()?),
         b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
         _ => Cow::Borrowed(bytes),
     };
-    let notice = chars.and_then(|_| keep_notice.then(|| notice(&sfnt)).flatten());
+    let notice = chars.and_then(|_| {
+        if notices == Licenses::Keep {
+            notice(&sfnt)
+        } else {
+            None
+        }
+    });
     let sfnt = match chars {
         Some(chars) => Cow::Owned(fontcull::subset_font_data(&sfnt, chars, &[]).ok()?),
         None => sfnt,

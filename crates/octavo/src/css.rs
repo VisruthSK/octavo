@@ -1,10 +1,10 @@
 use crate::{
-    data,
+    data::{self, Mime},
     doc::{Doc, Edit},
     fonts,
-    html::{Element, Tag},
+    html::{AttrName, Element, Rel, Tag},
     words::Words,
-    Transform,
+    Licenses, Target, Transform,
 };
 use cssparser::{Parser, ParserInput, Token};
 use lightningcss::{
@@ -31,16 +31,11 @@ struct Shielded {
     notices: String,
 }
 
-fn shield(
-    source: &str,
-    words: &Words,
-    referenced: &HashSet<&str>,
-    keep_licenses: bool,
-) -> Shielded {
+fn shield(source: &str, words: &Words, referenced: &HashSet<&str>, licenses: Licenses) -> Shielded {
     let (css, saved) = shield_custom_properties(source, &|name| {
         words.has("--") || referenced.contains(name) || words.has(name)
     });
-    let notices = if keep_licenses {
+    let notices = if licenses == Licenses::Keep {
         legal_comments(source)
     } else {
         String::new()
@@ -273,9 +268,9 @@ fn variable_references(css: &str) -> impl Iterator<Item = &str> {
     })
 }
 
-pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, keep_licenses: bool) -> Vec<Edit> {
+pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, licenses: Licenses) -> Vec<Edit> {
     let sources: Vec<(&Tag, Cow<str>)> = doc
-        .tags
+        .tags()
         .iter()
         .filter(|t| !t.in_svg)
         .filter_map(|tag| Some((tag, stylesheet(doc, tag)?)))
@@ -292,17 +287,17 @@ pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, keep_licenses: b
         .collect();
     let shielded: Vec<Shielded> = unique
         .par_iter()
-        .map(|source| shield(source, words, &referenced, keep_licenses))
+        .map(|source| shield(source, words, &referenced, licenses))
         .collect();
     let mut sheets: Vec<Option<StyleSheet>> = shielded
         .par_iter()
         .map(|shielded| prune(&shielded.css, words))
         .collect();
     let embedded = doc
-        .tags
+        .tags()
         .iter()
         .filter(|t| t.in_svg && t.element == Element::Style)
-        .filter_map(|t| Some(&doc.src[t.body.clone()?]));
+        .filter_map(|t| Some(&doc.src()[t.body.clone()?]));
     let loose: Vec<&str> = shielded
         .iter()
         .flat_map(|s| s.saved.iter().map(String::as_str))
@@ -310,10 +305,10 @@ pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, keep_licenses: b
         .collect();
     let css: Vec<&str> = shielded.iter().map(|s| s.css.as_str()).collect();
     let settings = fonts::Settings {
-        src: doc.src,
+        src: doc.src(),
         words,
         subset_text_fonts,
-        keep_notices: keep_licenses,
+        notices: licenses,
     };
     let notices = fonts::rewrite(&mut sheets, &css, &loose, &settings);
     let printed: Vec<Option<String>> = sheets
@@ -330,14 +325,14 @@ pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, keep_licenses: b
             let (span, text) = match tag.body.clone() {
                 Some(body) => (body, css.clone()),
                 None => {
-                    let href = data::encode_text("text/css", css);
+                    let href = data::encode_text(Mime::TextCss, css);
                     (
                         tag.span.clone(),
-                        tag.open_tag(|n, v| {
-                            Some(if n == "href" {
+                        tag.open_tag(|name, value| {
+                            Some(if *name == AttrName::Href {
                                 href.clone()
                             } else {
-                                v.to_string()
+                                value.to_string()
                             })
                         }),
                     )
@@ -347,7 +342,11 @@ pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, keep_licenses: b
                 span,
                 text,
                 transform: Transform::PrunedStylesheet,
-                target: tag.attr("id").unwrap_or(tag.element.name()).to_string(),
+                target: Target::Resource(
+                    tag.attr(AttrName::Id)
+                        .unwrap_or(tag.element.name())
+                        .to_string(),
+                ),
             })
         })
         .filter(Edit::shrinks)
@@ -356,12 +355,12 @@ pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, keep_licenses: b
 
 fn stylesheet<'a>(doc: &'a Doc, tag: &Tag) -> Option<Cow<'a, str>> {
     match tag.element {
-        Element::Style => Some(Cow::Borrowed(&doc.src[tag.body.clone()?])),
-        Element::Link if tag.attr("rel") == Some("stylesheet") => {
-            String::from_utf8(data::decode(tag.attr("href")?)?.bytes)
+        Element::Style => Some(Cow::Borrowed(&doc.src()[tag.body.clone()?])),
+        Element::Link if matches!(tag.rel(), Some(Rel::Stylesheet)) => {
+            String::from_utf8(data::decode(tag.attr(AttrName::Href)?)?.bytes)
                 .ok()
                 .map(Cow::Owned)
         }
-        _ => None,
+        Element::Link | Element::Script | Element::Img | Element::Svg => None,
     }
 }

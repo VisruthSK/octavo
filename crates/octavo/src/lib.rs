@@ -33,7 +33,7 @@ mod pack;
 mod quarto;
 mod words;
 
-use doc::{apply, Doc, Edit};
+use doc::{Doc, Edit, Edits};
 use std::{fmt, ops::Range};
 
 /// How aggressively a document is rewritten.
@@ -75,6 +75,25 @@ pub struct Options {
     pub strip_licenses: bool,
 }
 
+/// The quality of a re-encoded image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Quality(u8);
+
+impl Quality {
+    const AVIF: Quality = Quality(60);
+    const WEBP: Quality = Quality(80);
+
+    /// Creates a quality, if it is from 1 to 100.
+    pub fn new(quality: u8) -> Option<Self> {
+        (1..=100).contains(&quality).then_some(Quality(quality))
+    }
+
+    /// The quality as a number.
+    pub fn get(self) -> u8 {
+        self.0
+    }
+}
+
 /// A lossy image format.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImageFormat {
@@ -89,8 +108,8 @@ pub enum ImageFormat {
 pub struct ImageEncoding {
     /// The format to encode to.
     pub format: ImageFormat,
-    /// Quality from 1 to 100.
-    pub quality: u8,
+    /// The quality of the re-encoded image, from 1 to 100.
+    pub quality: Quality,
     /// Shrink images whose longest side is larger than this many pixels,
     /// keeping the aspect ratio. Layout is unchanged while the page never
     /// shows the image larger than this.
@@ -102,8 +121,8 @@ impl ImageEncoding {
     /// 3840 pixel cap on the longest side.
     pub fn new(format: ImageFormat) -> Self {
         let quality = match format {
-            ImageFormat::Avif => 60,
-            ImageFormat::Webp => 80,
+            ImageFormat::Avif => Quality::AVIF,
+            ImageFormat::Webp => Quality::WEBP,
         };
         ImageEncoding {
             format,
@@ -143,13 +162,33 @@ impl fmt::Display for Transform {
     }
 }
 
+/// What a transformation changed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// A bundled library, named by the global it defined.
+    Library(String),
+    /// A resource of the document, named by its `id` or by its element name.
+    Resource(String),
+    /// Resources compressed into one blob.
+    Resources(usize),
+}
+
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Target::Library(name) | Target::Resource(name) => f.pad(name),
+            Target::Resources(count) => write!(f, "{count} resources"),
+        }
+    }
+}
+
 /// One transformation and the bytes it saved.
 #[derive(Clone, Debug)]
 pub struct Applied {
     /// What kind of change this was.
     pub transform: Transform,
-    /// The resource it changed.
-    pub target: String,
+    /// What it changed.
+    pub target: Target,
     /// Size before, in bytes.
     pub before: usize,
     /// Size after, in bytes.
@@ -223,24 +262,24 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     }
     let doc = Doc::new(src);
     let links = check::links(&doc);
-    if !links.local.is_empty() {
-        return Err(Error::NotSelfContained(links.local.into_iter().collect()));
+    if !links.is_self_contained() {
+        return Err(Error::NotSelfContained(
+            links.local().map(|url| url.as_str().to_string()).collect(),
+        ));
     }
+    let licenses = if options.strip_licenses {
+        Licenses::Strip
+    } else {
+        Licenses::Keep
+    };
     let removals = quarto::stage(&doc);
     let removed: Vec<Range<usize>> = removals.iter().map(|edit| edit.span.clone()).collect();
     let words = doc.words(&removed);
     let (scripts, (styles, images)) = rayon::join(
-        || js::stage(&doc, &removed, !options.strip_licenses),
+        || js::stage(&doc, &removed, licenses),
         || {
             rayon::join(
-                || {
-                    css::stage(
-                        &doc,
-                        &words,
-                        options.subset_text_fonts,
-                        !options.strip_licenses,
-                    )
-                },
+                || css::stage(&doc, &words, options.subset_text_fonts, licenses),
                 || images::stage(&doc, options.images),
             )
         },
@@ -260,17 +299,14 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             after: edit.text.len(),
         })
         .collect();
-    let html = apply(src, edits);
-    let tags = html::scan(&html);
+    let html = Edits::new(edits).apply(src);
     Ok(Simplified {
-        html,
+        scanned: html::Scanned::new(html),
         applied,
         warnings: links
-            .remote
-            .iter()
+            .remote()
             .map(|url| format!("loads {url} when opened, so the page does not work offline"))
             .collect(),
-        tags,
     })
 }
 
@@ -280,10 +316,9 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
 /// separate: try several modes on one `Simplified` without redoing the rest.
 #[derive(Clone, Debug)]
 pub struct Simplified {
-    html: String,
+    scanned: html::Scanned,
     applied: Vec<Applied>,
     warnings: Vec<String>,
-    tags: Vec<html::Tag>,
 }
 
 impl Simplified {
@@ -297,7 +332,7 @@ impl Simplified {
     /// when packing would not make it smaller.
     pub fn pack(&self, mode: Mode) -> Output {
         let unpacked = || Output {
-            html: self.html.clone(),
+            html: self.scanned.html().to_string(),
             applied: self.applied.clone(),
             warnings: self.warnings.clone(),
         };
@@ -305,15 +340,15 @@ impl Simplified {
             return unpacked();
         };
         let Some(packed) =
-            pack::run(&self.html, &self.tags, styles).filter(|p| p.html.len() < self.html.len())
+            pack::run(&self.scanned, styles).filter(|p| p.html.len() < self.scanned.html().len())
         else {
             return unpacked();
         };
         let mut applied = self.applied.clone();
         applied.push(Applied {
             transform: Transform::Packed,
-            target: format!("{} resources", packed.blobs),
-            before: self.html.len(),
+            target: Target::Resources(packed.blobs),
+            before: self.scanned.html().len(),
             after: packed.html.len(),
         });
         Output {
@@ -322,4 +357,10 @@ impl Simplified {
             warnings: self.warnings.clone(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Licenses {
+    Keep,
+    Strip,
 }
