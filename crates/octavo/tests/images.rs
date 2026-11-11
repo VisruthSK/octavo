@@ -120,22 +120,26 @@ fn lossy_mode_re_encodes_photographic_pngs_in_the_requested_format() {
         (ImageFormat::Avif, "image/avif"),
         (ImageFormat::Webp, "image/webp"),
     ] {
-        let out = simplified(&src, lossy(format, None)).html;
+        let out = simplified(&src, lossy(format, None)).pack(Mode::Safe).html;
         assert!(
             out.contains(&format!("data:{mime};base64,")),
             "{mime}: {out:.200}"
         );
         assert!(out.len() < src.len());
     }
-    let lossless = simplified(&src, Options::default()).html;
+    let lossless = simplified(&src, Options::default()).pack(Mode::Safe).html;
     assert!(!lossless.contains("data:image/avif"));
 }
 
 #[test]
 fn oversized_images_shrink_without_touching_the_tag() {
     let src = page("src", &photographic_png());
-    let full = simplified(&src, lossy(ImageFormat::Webp, None)).html;
-    let shrunk = simplified(&src, lossy(ImageFormat::Webp, Some(24))).html;
+    let full = simplified(&src, lossy(ImageFormat::Webp, None))
+        .pack(Mode::Safe)
+        .html;
+    let shrunk = simplified(&src, lossy(ImageFormat::Webp, Some(24)))
+        .pack(Mode::Safe)
+        .html;
     assert!(shrunk.len() < full.len());
     assert!(shrunk.contains("<img class=\"figure\" src=\"data:image/webp;base64,"));
     assert!(!shrunk.contains("width=") && !shrunk.contains("height="));

@@ -1,9 +1,9 @@
-use std::borrow::Cow;
-
 use crate::{
     doc::{Doc, Edit},
-    html::Tag,
+    html::{Element, Tag},
+    Transform,
 };
+use std::borrow::Cow;
 
 struct Library {
     global: &'static str,
@@ -61,9 +61,10 @@ pub fn stage(doc: &Doc) -> Vec<Edit> {
     let scripts: Vec<(&Tag, Cow<str>)> = doc
         .tags
         .iter()
-        .filter(|t| t.name == "script")
+        .filter(|t| t.element == Element::Script)
         .filter_map(|t| doc.script_text(t).map(|text| (t, text)))
         .collect();
+    let markup = doc.markup();
     let mut dead: Vec<(&Library, &Tag)> = Vec::new();
     for lib in &LIBRARIES {
         let alive =
@@ -80,7 +81,7 @@ pub fn stage(doc: &Doc) -> Vec<Edit> {
             .iter()
             .copied()
             .flatten()
-            .any(|word| doc.markup().any_starting_with(word));
+            .any(|word| markup.any_starting_with(word));
         let referenced = scripts.iter().any(|(other, text)| {
             alive(other, &dead)
                 && other.span != tag.span
@@ -105,7 +106,7 @@ pub fn stage(doc: &Doc) -> Vec<Edit> {
             } else {
                 String::new()
             },
-            transform: "dead-library",
+            transform: Transform::DeadLibrary,
             target: lib.global.to_string(),
         })
         .collect()

@@ -1,14 +1,15 @@
 use crate::{
     data,
-    html::{self, Tag},
+    html::{self, Element, Tag},
     words::Words,
+    Transform,
 };
-use std::{borrow::Cow, ops::Range, sync::OnceLock};
+use std::{borrow::Cow, ops::Range};
 
 pub struct Edit {
     pub span: Range<usize>,
     pub text: String,
-    pub transform: &'static str,
+    pub transform: Transform,
     pub target: String,
 }
 
@@ -21,8 +22,6 @@ impl Edit {
 pub struct Doc<'a> {
     pub src: &'a str,
     pub tags: Vec<Tag>,
-    words: OnceLock<Words>,
-    markup: OnceLock<Words>,
 }
 
 impl<'a> Doc<'a> {
@@ -30,29 +29,27 @@ impl<'a> Doc<'a> {
         Doc {
             src,
             tags: html::scan(src),
-            words: OnceLock::new(),
-            markup: OnceLock::new(),
         }
     }
 
-    pub fn words(&self) -> &Words {
-        self.words.get_or_init(|| {
-            let mut words = self.collect(|t| t.name == "style" || t.name == "link");
-            for decoded in self
-                .tags
-                .iter()
-                .filter_map(|t| t.attr("src"))
-                .filter_map(data::decode)
-            {
-                words.add_text(&String::from_utf8_lossy(&decoded.bytes));
-            }
-            words
-        })
+    pub fn words(&self, removed: &[Range<usize>]) -> Words {
+        let gone = |tag: &Tag| removed.contains(&tag.span);
+        let mut words =
+            self.collect(|t| matches!(t.element, Element::Style | Element::Link) || gone(t));
+        for decoded in self
+            .tags
+            .iter()
+            .filter(|t| !gone(t))
+            .filter_map(|t| t.attr("src"))
+            .filter_map(data::decode)
+        {
+            words.add_text(&String::from_utf8_lossy(&decoded.bytes));
+        }
+        words
     }
 
-    pub fn markup(&self) -> &Words {
-        self.markup
-            .get_or_init(|| self.collect(|t| matches!(t.name, "script" | "style" | "link")))
+    pub fn markup(&self) -> Words {
+        self.collect(|t| matches!(t.element, Element::Script | Element::Style | Element::Link))
     }
 
     pub fn script_text(&self, tag: &Tag) -> Option<Cow<'_, str>> {

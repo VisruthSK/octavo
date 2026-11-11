@@ -18,7 +18,7 @@
 //! ```
 //!
 //! To try several [`Mode`]s on one document, run [`simplify`] once and call
-//! [`Output::pack`] for each mode.
+//! [`Simplified::pack`] for each mode.
 
 mod ascii;
 mod check;
@@ -34,7 +34,7 @@ mod quarto;
 mod words;
 
 use doc::{apply, Doc, Edit};
-use std::fmt;
+use std::{fmt, ops::Range};
 
 /// How aggressively a document is rewritten.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,11 +113,41 @@ impl ImageEncoding {
     }
 }
 
+/// The kind of change a stage made.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Transform {
+    /// A Quarto runtime library the document never uses was removed.
+    DeadLibrary,
+    /// A script was minified.
+    MinifiedScript,
+    /// A stylesheet lost unreachable rules and was minified.
+    PrunedStylesheet,
+    /// A PNG was recompressed losslessly.
+    RecompressedPng,
+    /// An image was re-encoded in a lossy format.
+    ReencodedImage,
+    /// Resources were compressed into one blob.
+    Packed,
+}
+
+impl fmt::Display for Transform {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            Transform::DeadLibrary => "dead-library",
+            Transform::MinifiedScript => "script-minified",
+            Transform::PrunedStylesheet => "stylesheet-pruned",
+            Transform::RecompressedPng => "png-recompressed",
+            Transform::ReencodedImage => "image-reencoded",
+            Transform::Packed => "packed",
+        })
+    }
+}
+
 /// One transformation and the bytes it saved.
 #[derive(Clone, Debug)]
 pub struct Applied {
-    /// Name of the transformation, such as `css-reachability`.
-    pub transform: &'static str,
+    /// What kind of change this was.
+    pub transform: Transform,
     /// The resource it changed.
     pub target: String,
     /// Size before, in bytes.
@@ -182,70 +212,106 @@ pub fn optimize(src: &str, mode: Mode) -> Result<Output, Error> {
 
 /// Runs the stages that do not depend on a [`Mode`].
 ///
-/// Call [`Output::pack`] on the result for each mode to try.
+/// Call [`Simplified::pack`] on the result for each mode to try.
 ///
 /// # Errors
 ///
 /// Fails if `src` is not an HTML document or is not self-contained.
-pub fn simplify(src: &str, options: Options) -> Result<Output, Error> {
+pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     if !check::is_html(src) {
         return Err(Error::NotHtml);
     }
-    let links = check::links(&Doc::new(src));
+    let doc = Doc::new(src);
+    let links = check::links(&doc);
     if !links.local.is_empty() {
-        return Err(Error::NotSelfContained(links.local));
+        return Err(Error::NotSelfContained(links.local.into_iter().collect()));
     }
-    let mut output = Output {
-        html: src.to_string(),
-        applied: Vec::new(),
+    let removals = quarto::stage(&doc);
+    let removed: Vec<Range<usize>> = removals.iter().map(|edit| edit.span.clone()).collect();
+    let words = doc.words(&removed);
+    let (scripts, (styles, images)) = rayon::join(
+        || js::stage(&doc, &removed, !options.strip_licenses),
+        || {
+            rayon::join(
+                || {
+                    css::stage(
+                        &doc,
+                        &words,
+                        options.subset_text_fonts,
+                        !options.strip_licenses,
+                    )
+                },
+                || images::stage(&doc, options.images),
+            )
+        },
+    );
+    let edits: Vec<Edit> = removals
+        .into_iter()
+        .chain(scripts)
+        .chain(styles)
+        .chain(images)
+        .collect();
+    let applied = edits
+        .iter()
+        .map(|edit| Applied {
+            transform: edit.transform,
+            target: edit.target.clone(),
+            before: edit.span.len(),
+            after: edit.text.len(),
+        })
+        .collect();
+    let html = apply(src, edits);
+    let tags = html::scan(&html);
+    Ok(Simplified {
+        html,
+        applied,
         warnings: links
             .remote
             .iter()
             .map(|url| format!("loads {url} when opened, so the page does not work offline"))
             .collect(),
-    };
-    output.run(quarto::stage);
-    output.run(|doc| {
-        let (scripts, (styles, images)) = rayon::join(
-            || js::stage(doc, !options.strip_licenses),
-            || {
-                rayon::join(
-                    || css::stage(doc, options.subset_text_fonts, !options.strip_licenses),
-                    || images::stage(doc, options.images),
-                )
-            },
-        );
-        scripts.into_iter().chain(styles).chain(images).collect()
-    });
-    Ok(output)
+        tags,
+    })
 }
 
-impl Output {
-    fn run(&mut self, stage: impl FnOnce(&Doc) -> Vec<Edit>) {
-        let edits = stage(&Doc::new(&self.html));
-        self.applied.extend(edits.iter().map(|e| Applied {
-            transform: e.transform,
-            target: e.target.clone(),
-            before: e.span.len(),
-            after: e.text.len(),
-        }));
-        self.html = apply(&self.html, edits);
+/// A document after the stages that do not depend on a [`Mode`].
+///
+/// Packing is the only step left, and it is the expensive one, so it is kept
+/// separate: try several modes on one `Simplified` without redoing the rest.
+#[derive(Clone, Debug)]
+pub struct Simplified {
+    html: String,
+    applied: Vec<Applied>,
+    warnings: Vec<String>,
+    tags: Vec<html::Tag>,
+}
+
+impl Simplified {
+    /// Things worth knowing about the input, such as resources it loads from
+    /// the network. The same list appears on every [`Output`].
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
     }
 
-    /// Packs this output according to `mode`, keeping it unchanged when
-    /// packing would not make it smaller.
+    /// Produces the final document for `mode`, keeping the unpacked document
+    /// when packing would not make it smaller.
     pub fn pack(&self, mode: Mode) -> Output {
+        let unpacked = || Output {
+            html: self.html.clone(),
+            applied: self.applied.clone(),
+            warnings: self.warnings.clone(),
+        };
         let Mode::Packed { styles } = mode else {
-            return self.clone();
+            return unpacked();
         };
         let Some(packed) =
-            pack::run(&Doc::new(&self.html), styles).filter(|p| p.html.len() < self.html.len())
+            pack::run(&self.html, &self.tags, styles).filter(|p| p.html.len() < self.html.len())
         else {
-            return self.clone();
+            return unpacked();
         };
         let mut applied = self.applied.clone();
         applied.push(Applied {
-            transform: "pack",
+            transform: Transform::Packed,
             target: format!("{} resources", packed.blobs),
             before: self.html.len(),
             after: packed.html.len(),

@@ -1,4 +1,7 @@
+use crate::ascii::starts_with_ignore_case;
 use std::collections::HashSet;
+
+const MAX_WORD: usize = 128;
 
 #[derive(Default)]
 pub struct Words {
@@ -9,38 +12,43 @@ pub struct Words {
 impl Words {
     pub fn add_text(&mut self, text: &str) {
         let separators = |c: char| c.is_whitespace() || "\"'`<>=(){}[],;".contains(c);
-        for token in text.split(separators).filter(|t| t.len() <= 128) {
-            self.insert(token);
-        }
-        for token in text
-            .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
-            .filter(|t| t.len() <= 128)
-        {
-            if token.len() >= 3 && token.ends_with(['-', '_']) {
-                self.prefixes.insert(token.to_string());
+        let not_word = |c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-'));
+        for token in text.split(separators) {
+            if starts_with_ignore_case(token, "data:") {
+                continue;
             }
             self.insert(token);
+            for word in token.split(not_word) {
+                if word.len() >= 3 && word.ends_with(['-', '_']) && !self.prefixes.contains(word) {
+                    self.prefixes.insert(word.to_string());
+                }
+                self.insert(word);
+            }
         }
     }
 
     fn insert(&mut self, token: &str) {
-        if token.is_empty() {
+        if token.is_empty() || token.len() > MAX_WORD {
             return;
-        }
-        if token.chars().any(char::is_uppercase) {
-            self.remember(token.to_lowercase());
         }
         if !self.set.contains(token) {
             self.set.insert(token.to_string());
         }
-    }
-
-    fn remember(&mut self, word: String) {
-        self.set.insert(word);
+        if token.chars().any(char::is_uppercase) {
+            let lower = token.to_lowercase();
+            if !self.set.contains(&lower) {
+                self.set.insert(lower);
+            }
+        }
     }
 
     pub fn has(&self, word: &str) -> bool {
-        self.set.contains(word) || self.prefixes.iter().any(|p| word.starts_with(p.as_str()))
+        self.set.contains(word)
+            || (3..=word.len()).any(|end| {
+                word.is_char_boundary(end)
+                    && matches!(word.as_bytes()[end - 1], b'-' | b'_')
+                    && self.prefixes.contains(&word[..end])
+            })
     }
 
     pub fn has_tag(&self, tag: &str) -> bool {

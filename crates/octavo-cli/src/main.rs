@@ -3,7 +3,7 @@ use anstyle::{AnsiColor, Style};
 use bytesize::ByteSize;
 use clap::{builder::Styles, value_parser, Parser, Subcommand, ValueEnum};
 use indicatif::{ProgressBar, ProgressStyle};
-use octavo::{optimize, simplify, ImageEncoding, ImageFormat, Mode, Options};
+use octavo::{optimize, simplify, ImageEncoding, ImageFormat, Mode, Options, Transform};
 use std::{
     collections::BTreeMap,
     fs,
@@ -194,7 +194,7 @@ fn audit(input: &Path) -> Result<(), String> {
     let src = read(input)?;
     let out = optimize(&src, Mode::Packed { styles: true })
         .map_err(|error| format!("{}: {error}", input.display()))?;
-    let mut totals: BTreeMap<&str, (usize, usize, usize)> = BTreeMap::new();
+    let mut totals: BTreeMap<Transform, (usize, usize, usize)> = BTreeMap::new();
     for step in &out.applied {
         let total = totals.entry(step.transform).or_default();
         *total = (total.0 + 1, total.1 + step.before, total.2 + step.after);
@@ -265,7 +265,7 @@ fn run(
             }
         }
         progress.finish_and_clear();
-        warn(&simplified.warnings);
+        warn(simplified.warnings());
         println!(
             "{} {DIM}[{}, {:.1?}]{DIM:#} {}",
             output.display(),
@@ -276,7 +276,7 @@ fn run(
         return Ok(());
     }
     progress.finish_and_clear();
-    warn(&simplified.warnings);
+    warn(simplified.warnings());
     write(output, &src)?;
     println!(
         "{WARN}kept the original{WARN:#} {DIM}({}){DIM:#}",

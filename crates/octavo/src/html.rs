@@ -1,7 +1,51 @@
 use std::ops::Range;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Element {
+    Script,
+    Style,
+    Link,
+    Img,
+    Svg,
+}
+
+impl Element {
+    const ALL: [Element; 5] = [
+        Element::Script,
+        Element::Style,
+        Element::Link,
+        Element::Img,
+        Element::Svg,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Element::Script => "script",
+            Element::Style => "style",
+            Element::Link => "link",
+            Element::Img => "img",
+            Element::Svg => "svg",
+        }
+    }
+
+    fn parse(written: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|element| element.name().eq_ignore_ascii_case(written))
+    }
+
+    fn holds_raw_text(self) -> bool {
+        matches!(self, Element::Script | Element::Style)
+    }
+}
+
+const OTHER_RAW_TEXT: [&str; 8] = [
+    "textarea", "title", "noscript", "template", "iframe", "noembed", "noframes", "xmp",
+];
+
+#[derive(Clone, Debug)]
 pub struct Tag {
-    pub name: &'static str,
+    pub element: Element,
     pub span: Range<usize>,
     pub attrs: Vec<(String, String)>,
     pub body: Option<Range<usize>>,
@@ -24,19 +68,9 @@ impl Tag {
                 rewrite(name, value).map(|v| format!(" {name}=\"{}\"", v.replace('"', "&quot;")))
             })
             .collect();
-        format!("<{}{attrs}>", self.name)
+        format!("<{}{attrs}>", self.element.name())
     }
 }
-
-const RAW_TEXT: [&str; 10] = [
-    "script", "style", "textarea", "title", "noscript", "template", "iframe", "noembed",
-    "noframes", "xmp",
-];
-const TRACKED: [&str; 4] = ["script", "style", "link", "img"];
-const ELEMENTS: [&str; 13] = [
-    "script", "style", "link", "img", "svg", "textarea", "title", "noscript", "template", "iframe",
-    "noembed", "noframes", "xmp",
-];
 
 struct Svg {
     start: usize,
@@ -73,22 +107,22 @@ pub fn scan(src: &str) -> Vec<Tag> {
             continue;
         }
         let written = &src[name_start..name_start + name_len];
-        let known = ELEMENTS
+        let element = Element::parse(written);
+        let opaque = OTHER_RAW_TEXT
             .iter()
-            .copied()
-            .find(|element| element.eq_ignore_ascii_case(written));
+            .any(|name| name.eq_ignore_ascii_case(written));
         let (attrs, tag_end, self_closing) =
-            parse_attrs(src, name_start + name_len, known.is_some());
-        let Some(name) = known else {
+            parse_attrs(src, name_start + name_len, element.is_some());
+        if element.is_none() && !opaque {
             i = tag_end;
             continue;
-        };
-        if name == "svg" {
+        }
+        if element == Some(Element::Svg) {
             if closing {
                 svg_depth = svg_depth.saturating_sub(1);
                 if let (0, Some(open)) = (svg_depth, svg.take()) {
                     tags.push(Tag {
-                        name,
+                        element: Element::Svg,
                         span: open.start..tag_end,
                         attrs: open.attrs,
                         body: Some(open.body_start..i),
@@ -112,14 +146,14 @@ pub fn scan(src: &str) -> Vec<Tag> {
         }
         let mut span = i..tag_end;
         let mut body = None;
-        if RAW_TEXT.contains(&name) {
-            let close = find_close(src, tag_end, name);
+        if opaque || element.is_some_and(Element::holds_raw_text) {
+            let close = find_close(src, tag_end, written);
             body = Some(tag_end..close);
             span.end = src[close..].find('>').map_or(src.len(), |e| close + e + 1);
         }
-        if TRACKED.contains(&name) {
+        if let Some(element) = element {
             tags.push(Tag {
-                name,
+                element,
                 span: span.clone(),
                 attrs,
                 body,

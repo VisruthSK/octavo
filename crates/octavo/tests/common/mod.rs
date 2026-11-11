@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use octavo::{optimize, simplify, Mode, Options, Output};
+use octavo::{optimize, simplify, Mode, Options, Output, Simplified};
 
 pub fn page(head: &str, body: &str) -> String {
     format!("<!DOCTYPE html><html><head>{head}</head><body>{body}</body></html>")
@@ -18,7 +18,7 @@ pub fn optimized(src: &str, mode: Mode) -> Output {
     optimize(src, mode).expect("a supported document")
 }
 
-pub fn simplified(src: &str, options: Options) -> Output {
+pub fn simplified(src: &str, options: Options) -> Simplified {
     simplify(src, options).expect("a supported document")
 }
 

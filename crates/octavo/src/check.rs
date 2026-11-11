@@ -1,9 +1,10 @@
-use crate::{ascii::starts_with_ignore_case, doc::Doc};
+use crate::{ascii::starts_with_ignore_case, doc::Doc, html::Element};
+use indexmap::IndexSet;
 
 #[derive(Default)]
 pub struct Links {
-    pub local: Vec<String>,
-    pub remote: Vec<String>,
+    pub local: IndexSet<String>,
+    pub remote: IndexSet<String>,
 }
 
 pub fn is_html(src: &str) -> bool {
@@ -14,9 +15,9 @@ pub fn is_html(src: &str) -> bool {
 pub fn links(doc: &Doc) -> Links {
     let mut links = Links::default();
     for tag in doc.tags.iter().filter(|t| !t.in_svg) {
-        let url = match tag.name {
-            "script" | "img" => tag.attr("src"),
-            "link" if tag.attr("rel").is_some_and(is_stylesheet) => tag.attr("href"),
+        let url = match tag.element {
+            Element::Script | Element::Img => tag.attr("src"),
+            Element::Link if tag.attr("rel").is_some_and(is_stylesheet) => tag.attr("href"),
             _ => None,
         };
         let Some(url) = url.map(str::trim).filter(|url| !url.is_empty()) else {
@@ -36,9 +37,7 @@ pub fn links(doc: &Doc) -> Links {
         } else {
             &mut links.local
         };
-        if !list.iter().any(|seen| seen == url) {
-            list.push(url.to_string());
-        }
+        list.insert(url.to_string());
     }
     links
 }

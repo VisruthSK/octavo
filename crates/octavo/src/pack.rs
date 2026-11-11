@@ -1,8 +1,7 @@
 use crate::{
     ascii::contains_ignore_case,
     data,
-    doc::Doc,
-    html::Tag,
+    html::{Element, Tag},
     js::{self, ScriptKind},
 };
 use base91::{
@@ -17,16 +16,16 @@ use std::{borrow::Cow, collections::BTreeMap, ops::Range, sync::OnceLock};
 const MIN_BLOB: usize = 256;
 const MIN_FRAGMENT: usize = 1024;
 const BROTLI_THRESHOLD: usize = 1 << 17;
-const THOROUGH_LIMIT: usize = 3 << 19;
 const LOADER: &str = include_str!("../../../loader/loader.js");
 const BROTLI_DECODER: &str = include_str!("../../../loader/brotli.js");
 
 #[derive(Clone, Copy)]
+#[repr(u8)]
 enum Kind {
-    Script,
-    Style,
-    Link,
-    Fragment,
+    Script = 0,
+    Style = 1,
+    Link = 2,
+    Fragment = 3,
 }
 
 struct Candidate<'a> {
@@ -40,14 +39,14 @@ pub struct Packed {
     pub blobs: usize,
 }
 
-pub fn run(doc: &Doc, styles: bool) -> Option<Packed> {
-    if contains_ignore_case(doc.src, "content-security-policy") {
+pub fn run(src: &str, tags: &[Tag], styles: bool) -> Option<Packed> {
+    if contains_ignore_case(src, "content-security-policy") {
         return None;
     }
     let mut blobs = Blobs::default();
     let mut sites: Vec<(Range<usize>, String)> = Vec::new();
-    for tag in doc.tags.iter().filter(|t| !t.in_svg) {
-        if let Some(c) = candidate(doc.src, tag, styles) {
+    for tag in tags.iter().filter(|t| !t.in_svg) {
+        if let Some(c) = candidate(src, tag, styles) {
             sites.push((
                 tag.span.clone(),
                 call_site(blobs.add(c.text), c.kind, &c.attrs),
@@ -58,10 +57,10 @@ pub fn run(doc: &Doc, styles: bool) -> Option<Packed> {
         return None;
     }
     let loader = blobs.loader();
-    let mut out = String::with_capacity(doc.src.len());
+    let mut out = String::with_capacity(src.len());
     let mut at = 0;
     for (n, (span, call)) in sites.iter().enumerate() {
-        out.push_str(&doc.src[at..span.start]);
+        out.push_str(&src[at..span.start]);
         if n == 0 {
             out.push_str("<script>");
             out.push_str(&loader);
@@ -70,7 +69,7 @@ pub fn run(doc: &Doc, styles: bool) -> Option<Packed> {
         out.push_str(call);
         at = span.end;
     }
-    out.push_str(&doc.src[at..]);
+    out.push_str(&src[at..]);
     Some(Packed {
         html: out,
         blobs: blobs.texts.len(),
@@ -78,16 +77,18 @@ pub fn run(doc: &Doc, styles: bool) -> Option<Packed> {
 }
 
 fn candidate<'a>(src: &'a str, tag: &Tag, styles: bool) -> Option<Candidate<'a>> {
-    let (kind, text) = match tag.name {
-        "script"
+    let (kind, text) = match tag.element {
+        Element::Script
             if tag.attr("src").is_none()
                 && matches!(ScriptKind::of(tag), ScriptKind::Classic | ScriptKind::Data) =>
         {
             (Kind::Script, Cow::Borrowed(&src[tag.body.clone()?]))
         }
-        "svg" | "img" if styles => (Kind::Fragment, Cow::Borrowed(&src[tag.span.clone()])),
-        "style" if styles => (Kind::Style, Cow::Borrowed(&src[tag.body.clone()?])),
-        "link" if styles && tag.attr("rel") == Some("stylesheet") => (
+        Element::Svg | Element::Img if styles => {
+            (Kind::Fragment, Cow::Borrowed(&src[tag.span.clone()]))
+        }
+        Element::Style if styles => (Kind::Style, Cow::Borrowed(&src[tag.body.clone()?])),
+        Element::Link if styles && tag.attr("rel") == Some("stylesheet") => (
             Kind::Link,
             Cow::Owned(String::from_utf8(data::decode(tag.attr("href")?)?.bytes).ok()?),
         ),
@@ -236,7 +237,7 @@ fn deflate(data: &[u8]) -> Vec<u8> {
 
 fn brotli(data: &[u8]) -> Vec<u8> {
     let params = BrotliEncoderParams {
-        quality: if data.len() <= THOROUGH_LIMIT { 11 } else { 9 },
+        quality: 9,
         lgwin: 24,
         size_hint: data.len(),
         ..Default::default()

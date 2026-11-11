@@ -1,7 +1,8 @@
 use crate::{
     data::{self, DataUri},
     doc::{Doc, Edit},
-    ImageEncoding, ImageFormat,
+    html::Element,
+    ImageEncoding, ImageFormat, Transform,
 };
 use fast_image_resize::{images::Image, FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
 use gamut_core::{Dimensions, EncodeImage, ImageRef, Rgb8, Rgba8};
@@ -12,38 +13,69 @@ use oxipng::{Options as PngOptions, StripChunks};
 use ravif::Encoder;
 use rayon::prelude::*;
 use rgb::FromSlice;
-use std::{io::Cursor, sync::Mutex};
+use std::io::Cursor;
 
 const MAX_LOSSLESS_PIXELS: u64 = 40_000_000;
 const MAX_LOSSY_PIXELS: u64 = 200_000_000;
 const THOROUGH_PIXELS: u64 = 2_000_000;
 const HEAVY_PIXELS: u64 = 8_000_000;
 
-static HEAVY: Mutex<()> = Mutex::new(());
+struct Decoded {
+    image: DataUri,
+    pixels: u64,
+}
 
 pub fn stage(doc: &Doc, lossy: Option<ImageEncoding>) -> Vec<Edit> {
-    let convert = |uri: &str| {
-        lossy
-            .and_then(|encoding| encode(uri, encoding))
-            .or_else(|| recompress(uri))
-            .unwrap_or_else(|| uri.to_string())
-    };
-    doc.tags
-        .par_iter()
-        .filter(|t| t.name == "img" && !t.in_svg)
-        .map(|tag| Edit {
+    let tags: Vec<_> = doc
+        .tags
+        .iter()
+        .filter(|t| t.element == Element::Img && !t.in_svg)
+        .collect();
+    let uris: Vec<(usize, &str, &str)> = tags
+        .iter()
+        .enumerate()
+        .flat_map(|(at, tag)| {
+            tag.attrs
+                .iter()
+                .filter(|(name, _)| matches!(name.as_str(), "src" | "data-src"))
+                .map(move |(name, uri)| (at, name.as_str(), uri.as_str()))
+        })
+        .collect();
+    let mut starts = vec![0; tags.len() + 1];
+    for (owner, _, _) in &uris {
+        starts[owner + 1] += 1;
+    }
+    for at in 0..tags.len() {
+        starts[at + 1] += starts[at];
+    }
+    let decoded: Vec<Option<Decoded>> = uris.par_iter().map(|(_, _, uri)| decode(uri)).collect();
+    let (heavy, light): (Vec<usize>, Vec<usize>) = (0..uris.len())
+        .partition(|&i| decoded[i].as_ref().is_some_and(|d| d.pixels > HEAVY_PIXELS));
+    let convert = |i: usize| (i, decoded[i].as_ref().and_then(|d| reencode(d, lossy)));
+    let (light_done, heavy_done): (Vec<_>, Vec<_>) = rayon::join(
+        || light.par_iter().map(|&i| convert(i)).collect(),
+        || heavy.iter().map(|&i| convert(i)).collect(),
+    );
+    let mut converted: Vec<Option<String>> = vec![None; uris.len()];
+    for (i, uri) in light_done.into_iter().chain(heavy_done) {
+        converted[i] = uri;
+    }
+    tags.iter()
+        .enumerate()
+        .map(|(at, tag)| Edit {
             span: tag.span.clone(),
             text: tag.open_tag(|name, value| {
-                Some(if matches!(name, "src" | "data-src") {
-                    convert(value)
-                } else {
-                    value.to_string()
-                })
+                let source = uris[starts[at]..starts[at + 1]]
+                    .iter()
+                    .position(|(_, attr, _)| *attr == name)
+                    .map(|offset| starts[at] + offset);
+                let replacement = source.and_then(|i| converted[i].take());
+                Some(replacement.unwrap_or_else(|| value.to_string()))
             }),
             transform: if lossy.is_some() {
-                "images-lossy"
+                Transform::ReencodedImage
             } else {
-                "png-lossless"
+                Transform::RecompressedPng
             },
             target: tag.attr("id").unwrap_or("img").to_string(),
         })
@@ -51,34 +83,52 @@ pub fn stage(doc: &Doc, lossy: Option<ImageEncoding>) -> Vec<Edit> {
         .collect()
 }
 
-fn embedded(uri: &str, mimes: &[&str], max_pixels: u64) -> Option<(DataUri, u64)> {
-    let source = data::decode(uri).filter(|d| mimes.contains(&d.mime.as_str()))?;
-    let (width, height) = image::ImageReader::new(Cursor::new(&source.bytes))
+fn decode(uri: &str) -> Option<Decoded> {
+    let image =
+        data::decode(uri).filter(|d| matches!(d.mime.as_str(), "image/png" | "image/jpeg"))?;
+    let (width, height) = image::ImageReader::new(Cursor::new(&image.bytes))
         .with_guessed_format()
         .ok()?
         .into_dimensions()
         .ok()?;
-    let pixels = u64::from(width) * u64::from(height);
-    (pixels <= max_pixels).then_some((source, pixels))
+    Some(Decoded {
+        image,
+        pixels: u64::from(width) * u64::from(height),
+    })
 }
 
-fn recompress(uri: &str) -> Option<String> {
-    let (source, pixels) = embedded(uri, &["image/png"], MAX_LOSSLESS_PIXELS)?;
-    let preset = if pixels <= THOROUGH_PIXELS { 4 } else { 2 };
+fn reencode(decoded: &Decoded, lossy: Option<ImageEncoding>) -> Option<String> {
+    lossy
+        .and_then(|encoding| encode(decoded, encoding))
+        .or_else(|| recompress(decoded))
+}
+
+fn recompress(decoded: &Decoded) -> Option<String> {
+    if decoded.image.mime != "image/png" || decoded.pixels > MAX_LOSSLESS_PIXELS {
+        return None;
+    }
+    let preset = if decoded.pixels <= THOROUGH_PIXELS {
+        4
+    } else {
+        2
+    };
     let options = PngOptions {
         strip: StripChunks::Safe,
         ..PngOptions::from_preset(preset)
     };
-    let smaller = oxipng::optimize_from_memory(&source.bytes, &options)
+    let smaller = oxipng::optimize_from_memory(&decoded.image.bytes, &options)
         .ok()
-        .filter(|better| better.len() < source.bytes.len())?;
+        .filter(|better| better.len() < decoded.image.bytes.len())?;
     Some(data::encode_base64("image/png", &smaller))
 }
 
-fn encode(uri: &str, lossy: ImageEncoding) -> Option<String> {
-    let (source, pixels) = embedded(uri, &["image/png", "image/jpeg"], MAX_LOSSY_PIXELS)?;
-    let _one_at_a_time = (pixels > HEAVY_PIXELS).then(|| HEAVY.lock());
-    let mut image = image::load_from_memory(&source.bytes).ok()?.into_rgba8();
+fn encode(decoded: &Decoded, lossy: ImageEncoding) -> Option<String> {
+    if decoded.pixels > MAX_LOSSY_PIXELS {
+        return None;
+    }
+    let mut image = image::load_from_memory(&decoded.image.bytes)
+        .ok()?
+        .into_rgba8();
     let mut resized = false;
     if let Some(side) = lossy
         .max_side
@@ -92,7 +142,7 @@ fn encode(uri: &str, lossy: ImageEncoding) -> Option<String> {
         ImageFormat::Avif => ("image/avif", avif(&image, lossy.quality, pixels)?),
         ImageFormat::Webp => ("image/webp", webp(&image, lossy.quality)?),
     };
-    (resized || bytes.len() * 10 < source.bytes.len() * 9)
+    (resized || bytes.len() * 10 < decoded.image.bytes.len() * 9)
         .then(|| data::encode_base64(mime, &bytes))
 }
 

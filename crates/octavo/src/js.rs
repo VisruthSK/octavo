@@ -1,6 +1,7 @@
 use crate::{
     doc::{Doc, Edit},
-    html::Tag,
+    html::{Element, Tag},
+    Transform,
 };
 use oxc::{
     allocator::Allocator,
@@ -11,6 +12,7 @@ use oxc::{
     span::SourceType,
 };
 use rayon::prelude::*;
+use std::ops::Range;
 
 const CLASSIC_TYPES: [&str; 4] = [
     "",
@@ -48,10 +50,10 @@ pub fn is_classic_type(value: &str) -> bool {
     CLASSIC_TYPES.contains(&value.trim().to_ascii_lowercase().as_str())
 }
 
-pub fn stage(doc: &Doc, keep_licenses: bool) -> Vec<Edit> {
+pub fn stage(doc: &Doc, removed: &[Range<usize>], keep_licenses: bool) -> Vec<Edit> {
     doc.tags
         .par_iter()
-        .filter(|t| t.name == "script" && !t.in_svg)
+        .filter(|t| t.element == Element::Script && !t.in_svg && !removed.contains(&t.span))
         .filter_map(|tag| rewrite(doc, tag, keep_licenses))
         .filter(Edit::shrinks)
         .collect()
@@ -126,14 +128,14 @@ fn rewrite(doc: &Doc, tag: &Tag, keep_licenses: bool) -> Option<Edit> {
         Edit {
             span: tag.span.clone(),
             text: format!("{open}{text}</script>"),
-            transform: "js-minify",
+            transform: Transform::MinifiedScript,
             target,
         }
     } else {
         Edit {
             span: tag.body.clone()?,
             text,
-            transform: "js-minify",
+            transform: Transform::MinifiedScript,
             target,
         }
     })
