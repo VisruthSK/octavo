@@ -235,3 +235,15 @@ fn unprefixed_backdrop_filter_survives_next_to_its_prefixed_twin() {
     );
     assert!(out.contains("-webkit-backdrop-filter:blur(5px)"));
 }
+
+#[test]
+fn only_textual_data_counts_as_words_the_page_can_use() {
+    let hidden_in_pixels = data_uri("image/png", b"onlyinbinary");
+    let hidden_in_text = data_uri("text/plain", b"onlyintext");
+    let out = safe(&page(
+        "<style>.onlyinbinary{color:red}.onlyintext{color:blue}</style>",
+        &format!("<img src=\"{hidden_in_pixels}\"><img src=\"{hidden_in_text}\">"),
+    ));
+    assert!(!out.contains(".onlyinbinary"), "{out}");
+    assert!(out.contains(".onlyintext{"), "{out}");
+}

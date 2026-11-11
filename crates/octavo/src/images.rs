@@ -13,7 +13,7 @@ use oxipng::{Options as PngOptions, StripChunks};
 use ravif::Encoder;
 use rayon::prelude::*;
 use rgb::FromSlice;
-use std::io::Cursor;
+use std::{cmp::Reverse, io::Cursor};
 
 const MAX_LOSSLESS_PIXELS: u64 = 40_000_000;
 const MAX_LOSSY_PIXELS: u64 = 200_000_000;
@@ -75,16 +75,19 @@ pub fn stage(doc: &Doc, lossy: Option<ImageEncoding>) -> Vec<Edit> {
         starts[at + 1] += starts[at];
     }
     let decoded: Vec<Option<Decoded>> = uris.par_iter().map(|uri| decode(uri.value)).collect();
-    let (heavy, light): (Vec<usize>, Vec<usize>) = (0..uris.len())
-        .partition(|&i| decoded[i].as_ref().is_some_and(|d| d.pixels > HEAVY_PIXELS));
-    let convert = |i: usize| (i, decoded[i].as_ref().and_then(|d| reencode(d, lossy)));
-    let (light_done, heavy_done): (Vec<_>, Vec<_>) = rayon::join(
-        || light.par_iter().map(|&i| convert(i)).collect(),
-        || heavy.iter().map(|&i| convert(i)).collect(),
-    );
+    let mut largest_first: Vec<usize> = (0..uris.len()).filter(|&i| decoded[i].is_some()).collect();
+    largest_first.sort_by_key(|&i| Reverse(decoded[i].as_ref().map_or(0, |d| d.pixels)));
+    let finished: Vec<(usize, String)> = largest_first
+        .par_iter()
+        .with_max_len(1)
+        .filter_map(|&i| {
+            let decoded = decoded[i].as_ref()?;
+            reencode(decoded, lossy).map(|uri| (i, uri))
+        })
+        .collect();
     let mut converted: Vec<Option<String>> = vec![None; uris.len()];
-    for (i, uri) in light_done.into_iter().chain(heavy_done) {
-        converted[i] = uri;
+    for (i, uri) in finished {
+        converted[i] = Some(uri);
     }
     tags.iter()
         .enumerate()

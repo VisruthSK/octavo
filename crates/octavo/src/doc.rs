@@ -77,14 +77,14 @@ impl<'a> Doc<'a> {
         let gone = |tag: &Tag| removed.contains(&tag.span);
         let mut words =
             self.collect(|t| matches!(t.element, Element::Style | Element::Link) || gone(t));
-        for decoded in self
+        for text in self
             .tags
             .iter()
             .filter(|t| !gone(t))
             .filter_map(|t| t.attr(AttrName::Src))
-            .filter_map(data::decode)
+            .filter_map(data::decode_text)
         {
-            words.add_text(&String::from_utf8_lossy(&decoded.bytes));
+            words.add_text(&text);
         }
         words
     }

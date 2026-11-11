@@ -29,6 +29,29 @@ impl Mime {
         }
     }
 
+    pub fn is_text(&self) -> bool {
+        match self {
+            Mime::TextCss => true,
+            Mime::ImagePng
+            | Mime::ImageJpeg
+            | Mime::ImageAvif
+            | Mime::ImageWebp
+            | Mime::FontWoff2 => false,
+            Mime::Other(name) => {
+                name.starts_with("text/")
+                    || name.ends_with("+json")
+                    || name.ends_with("+xml")
+                    || matches!(
+                        name.as_str(),
+                        "application/json"
+                            | "application/xml"
+                            | "application/javascript"
+                            | "application/ecmascript"
+                    )
+            }
+        }
+    }
+
     pub fn parse(value: &str) -> Mime {
         match value {
             "text/css" => Mime::TextCss,
@@ -53,13 +76,25 @@ pub struct DataUri {
     pub bytes: Vec<u8>,
 }
 
+fn mime_of(url: &DataUrl) -> Mime {
+    let mime = url.mime_type();
+    Mime::parse(&format!("{}/{}", mime.type_, mime.subtype))
+}
+
 pub fn decode(uri: &str) -> Option<DataUri> {
     let url = DataUrl::process(uri).ok()?;
-    let mime = url.mime_type();
     Some(DataUri {
-        mime: Mime::parse(&format!("{}/{}", mime.type_, mime.subtype)),
+        mime: mime_of(&url),
         bytes: url.decode_to_vec().ok()?.0,
     })
+}
+
+pub fn decode_text(uri: &str) -> Option<String> {
+    let url = DataUrl::process(uri).ok()?;
+    if !mime_of(&url).is_text() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&url.decode_to_vec().ok()?.0).into_owned())
 }
 
 pub fn encode_text(mime: Mime, text: &str) -> String {
