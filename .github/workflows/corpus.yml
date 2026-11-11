@@ -57,7 +57,9 @@ jobs:
         with:
           path: corpus/.cache
           key: corpus-${{ hashFiles('corpus/sources.json') }}
-      - run: node corpus/upstream.mjs --jobs 2
+      - run: |
+          if [ "$TIER" = smoke ]; then cap="--cap 6"; fi
+          node corpus/upstream.mjs --jobs 2 $cap
       - run: node verify/corpus.mjs --tier "$TIER" --browser --jobs 2
       - uses: actions/upload-artifact@v4
         if: always()
