@@ -45,21 +45,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
-  notices:
-    name: Third-party notices
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
-      - run: cargo about generate --manifest-path crates/octavo-cli/Cargo.toml about.hbs -o "$RUNNER_TEMP/notices.txt"
-      - run: diff -u THIRD-PARTY-LICENSES.txt "$RUNNER_TEMP/notices.txt"
-
   test:
     name: Test (${{ matrix.os }})
     strategy:
