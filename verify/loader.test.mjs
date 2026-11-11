@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 import { deflateRawSync, brotliCompressSync } from "node:zlib";
 import { randomBytes } from "node:crypto";
 
-const loader = readFileSync(new URL("../loader/loader.js", import.meta.url), "utf8");
-const brotliDecoder = readFileSync(new URL("../loader/brotli.js", import.meta.url), "utf8");
+const loader = readFileSync(new URL("../crates/octavo/loader/loader.js", import.meta.url), "utf8");
+const brotliDecoder = readFileSync(new URL("../crates/octavo/loader/brotli.js", import.meta.url), "utf8");
 function unpack(texts, codec) {
   const all = texts.join("");
   const bytes = Buffer.from(all, "utf8");

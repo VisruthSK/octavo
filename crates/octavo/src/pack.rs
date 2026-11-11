@@ -17,8 +17,8 @@ use std::{borrow::Cow, collections::BTreeMap, num::NonZeroUsize, ops::Range, syn
 const MIN_BLOB: usize = 256;
 const MIN_FRAGMENT: usize = 1024;
 const BROTLI_THRESHOLD: usize = 1 << 17;
-const LOADER: &str = include_str!("../../../loader/loader.js");
-const BROTLI_DECODER: &str = include_str!("../../../loader/brotli.js");
+const LOADER: &str = include_str!("../loader/loader.js");
+const BROTLI_DECODER: &str = include_str!("../loader/brotli.js");
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
