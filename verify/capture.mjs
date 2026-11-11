@@ -152,25 +152,41 @@ async function forcedStates(page) {
   return states;
 }
 
-async function settle(page, { quiet = 200, limit = 3000 } = {}) {
-  const read = () => page.evaluate(() => `${document.documentElement.outerHTML.length}:${scrollX}:${scrollY}`);
-  const deadline = Date.now() + limit;
-  let last = await read();
-  let since = Date.now();
-  while (Date.now() < deadline && Date.now() - since < quiet) {
-    await page.waitForTimeout(50);
-    const now = await read();
-    if (now !== last) [last, since] = [now, Date.now()];
-  }
+async function settle(page, { quiet = 100, limit = 3000 } = {}) {
+  await page.evaluate(
+    ({ quiet, limit }) =>
+      new Promise((resolve) => {
+        let timer;
+        const finish = () => {
+          clearTimeout(timer);
+          mutations.disconnect();
+          resizes.disconnect();
+          removeEventListener("scroll", bump);
+          resolve();
+        };
+        const bump = () => {
+          clearTimeout(timer);
+          timer = setTimeout(finish, quiet);
+        };
+        const mutations = new MutationObserver(bump);
+        mutations.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+        const resizes = new ResizeObserver(bump);
+        resizes.observe(document.documentElement);
+        addEventListener("scroll", bump, { passive: true });
+        setTimeout(finish, limit);
+        bump();
+      }),
+    { quiet, limit },
+  );
 }
 
 async function settledAccessibilityTree(page) {
   let previous = null;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     const current = await page.locator("body").ariaSnapshot({ timeout: 5000 }).catch(() => "");
     if (current === previous) break;
     previous = current;
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(100);
   }
   return previous;
 }

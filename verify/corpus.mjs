@@ -129,13 +129,21 @@ const results = await pool(work, jobs, async ({ row, level }) => {
 });
 
 if (browser) {
-  const { verify } = await import("./verify.mjs");
-  for (const result of results.filter((entry) => entry.browser)) {
-    const report = (await verify(result.input, result.output)).filter(
-      ({ scenario }) => !(result.level === "packed" && scenario === "no-js"),
+  const { verify, closeBrowser, pages } = await import("./verify.mjs");
+  const documents = [...Map.groupBy(results.filter((entry) => entry.browser), (entry) => entry.input).values()];
+  await pool(documents, pages, async (entries) => {
+    const reports = await verify(
+      entries[0].input,
+      entries.map((entry) => entry.output),
     );
-    for (const { scenario, issues } of report) for (const issue of issues) result.problems.push(`${scenario}: ${issue}`);
-  }
+    for (const [at, entry] of entries.entries()) {
+      for (const { scenario, issues } of reports[at]) {
+        if (entry.level === "packed" && scenario === "no-js") continue;
+        for (const issue of issues) entry.problems.push(`${scenario}: ${issue}`);
+      }
+    }
+  });
+  await closeBrowser();
 }
 
 const measured = results.filter((entry) => !entry.excluded);

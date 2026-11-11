@@ -1,26 +1,30 @@
 name: Corpus
 
 on:
-  pull_request:
-    paths:
+  push:
+    branches: [main]
+    paths: &paths
       - "crates/**"
       - "corpus/**"
       - "verify/**"
       - "Cargo.lock"
+      - ".github/workflows/corpus.yml"
+  pull_request:
+    paths: *paths
   schedule:
     - cron: "0 6 * * 1"
   workflow_call:
   workflow_dispatch:
     inputs:
       tier:
-        description: Which documents to run, or select to rebuild corpus/selection.json from every upstream document
+        description: smoke is a quick stratified sample, full is every document, select rebuilds corpus/selection.json from every upstream document
         type: choice
         options: [smoke, full, select]
         default: smoke
 
 concurrency:
-  group: corpus-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: corpus-${{ github.workflow }}-${{ github.event_name }}-${{ inputs.tier || 'auto' }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -28,13 +32,37 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  OCTAVO_PAGES: 1
-  TIER: ${{ github.event_name == 'pull_request' && 'smoke' || github.event.inputs.tier || 'full' }}
 
 jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tier: ${{ steps.plan.outputs.tier }}
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REQUESTED: ${{ inputs.tier }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            tier="$REQUESTED"
+          elif [ "$EVENT" = pull_request ] || { [ "$EVENT" = push ] && [ "$REF_TYPE" = branch ]; }; then
+            tier=smoke
+          else
+            tier=full
+          fi
+          if [ "$tier" = full ]; then shards='[1,2,3,4,5,6]'; else shards='[1,2]'; fi
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          echo "shards=$shards" >> "$GITHUB_OUTPUT"
+
   select:
     name: Select upstream documents
-    if: github.event.inputs.tier == 'select'
+    needs: plan
+    if: needs.plan.outputs.tier == 'select'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
@@ -54,14 +82,20 @@ jobs:
           path: corpus/selection.json
 
   corpus:
-    name: Corpus (${{ github.event_name == 'pull_request' && 'smoke' || github.event.inputs.tier || 'full' }}, shard ${{ strategy.job-index }})
-    if: github.event.inputs.tier != 'select'
+    name: Corpus (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
+    needs: plan
+    if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 30 || 240 }}
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ github.event_name == 'pull_request' && fromJSON('[1]') || fromJSON('[1,2,3,4,5,6]') }}
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    env:
+      TIER: ${{ needs.plan.outputs.tier }}
+      SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+      CARGO_PROFILE_RELEASE_LTO: "off"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -88,9 +122,9 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: corpus/.cache
-          key: corpus-${{ hashFiles('corpus/sources.json', 'corpus/selection.json') }}
-      - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --jobs 2 --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
+          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json') }}
+      - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
