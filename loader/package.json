@@ -1,0 +1,7 @@
+{
+  "name": "octavo-loader",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node build-brotli.mjs" },
+  "devDependencies": { "brotli": "2.1.0", "esbuild": "0.25.9" }
+}

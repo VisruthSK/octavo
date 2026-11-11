@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = ["crates/octavo"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+authors = ["Visruth Srimath Kandali"]
+repository = "https://github.com/VisruthSK/octavo"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"

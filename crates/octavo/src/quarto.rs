@@ -1,0 +1,121 @@
+use std::borrow::Cow;
+
+use crate::{
+    doc::{Doc, Edit},
+    html::Tag,
+};
+
+struct Library {
+    global: &'static str,
+    signature: &'static str,
+    needed_by: &'static [&'static [&'static str]],
+    stubbed: bool,
+}
+
+const NOTE_LINKS: &[&str] = &[
+    "doc-noteref",
+    "quarto-xref",
+    "doc-biblioref",
+    "code-annotation",
+];
+const BOOTSTRAP_API: &[&str] = &["data-bs-", "code-copy-button"];
+
+const LIBRARIES: [Library; 5] = [
+    Library {
+        global: "tippy",
+        signature: "require(\"@popperjs/core\")",
+        needed_by: &[NOTE_LINKS],
+        stubbed: true,
+    },
+    Library {
+        global: "bootstrap",
+        signature: "Bootstrap v5",
+        needed_by: &[BOOTSTRAP_API],
+        stubbed: false,
+    },
+    Library {
+        global: "Popper",
+        signature: "@popperjs/core v",
+        needed_by: &[NOTE_LINKS, BOOTSTRAP_API],
+        stubbed: false,
+    },
+    Library {
+        global: "ClipboardJS",
+        signature: "clipboard.js v",
+        needed_by: &[&["code-copy-button"]],
+        stubbed: true,
+    },
+    Library {
+        global: "AnchorJS",
+        signature: "AnchorJS - v",
+        needed_by: &[&["anchored"]],
+        stubbed: true,
+    },
+];
+
+const NULL_OBJECT: &str = "let n=new Proxy(function(){},{get:(_,k)=>k==Symbol.toPrimitive?()=>\"\":n,apply:()=>n,construct:()=>n});";
+const BANNER_BYTES: usize = 300;
+const MIN_LIBRARY_BYTES: usize = 2000;
+
+pub fn stage(doc: &Doc) -> Vec<Edit> {
+    let scripts: Vec<(&Tag, Cow<str>)> = doc
+        .tags
+        .iter()
+        .filter(|t| t.name == "script")
+        .filter_map(|t| doc.script_text(t).map(|text| (t, text)))
+        .collect();
+    let mut dead: Vec<(&Library, &Tag)> = Vec::new();
+    for lib in &LIBRARIES {
+        let alive =
+            |tag: &Tag, dead: &[(&Library, &Tag)]| dead.iter().all(|(_, d)| d.span != tag.span);
+        let Some((tag, _)) = scripts.iter().find(|(t, text)| {
+            alive(t, &dead)
+                && text.len() > MIN_LIBRARY_BYTES
+                && banner(text).contains(lib.signature)
+        }) else {
+            continue;
+        };
+        let wanted = lib
+            .needed_by
+            .iter()
+            .copied()
+            .flatten()
+            .any(|word| doc.markup().any_starting_with(word));
+        let referenced = scripts.iter().any(|(other, text)| {
+            alive(other, &dead)
+                && other.span != tag.span
+                && !is_runtime(other)
+                && text.contains(lib.global)
+        });
+        if !wanted && !referenced {
+            dead.push((lib, tag));
+        }
+    }
+    let stubs: Vec<&(&Library, &Tag)> = dead.iter().filter(|(lib, _)| lib.stubbed).collect();
+    let stub_at = stubs.iter().map(|(_, tag)| tag.span.start).min();
+    let assignments: String = stubs
+        .iter()
+        .map(|(lib, _)| format!("window.{}=n;", lib.global))
+        .collect();
+    dead.iter()
+        .map(|(lib, tag)| Edit {
+            span: tag.span.clone(),
+            text: if Some(tag.span.start) == stub_at {
+                format!("<script>{{{NULL_OBJECT}{assignments}}}</script>")
+            } else {
+                String::new()
+            },
+            transform: "dead-library",
+            target: lib.global.to_string(),
+        })
+        .collect()
+}
+
+fn banner(text: &str) -> &str {
+    &text[..text.floor_char_boundary(BANNER_BYTES)]
+}
+
+fn is_runtime(tag: &Tag) -> bool {
+    tag.attr("id")
+        .is_some_and(|id| id.starts_with("quarto-html-"))
+}
