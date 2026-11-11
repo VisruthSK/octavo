@@ -1,0 +1,3917 @@
+[
+  {
+    "id": "quarto-cli-ast-test-pandoc-native-raw-in-meta",
+    "format": "html",
+    "group": "ast",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "ast/test-pandoc-native-raw-in-meta.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203735,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-callouts",
+    "format": "html",
+    "group": "callouts.qmd",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "callouts.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1209977,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "callout"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-crossrefs-all",
+    "format": "html",
+    "group": "crossrefs",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "crossrefs/all.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2068677,
+      "scriptBytes": 244655,
+      "styleBytes": 344853,
+      "imageBytes": 768528,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "mathjax",
+        "math",
+        "crossRefs",
+        "table"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-crossrefs-all-docx",
+    "format": "html",
+    "group": "crossrefs",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "crossrefs/all-docx.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1496459,
+      "scriptBytes": 244655,
+      "styleBytes": 343514,
+      "imageBytes": 204156,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "mathjax",
+        "math",
+        "crossRefs",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-crossrefs-options",
+    "format": "html",
+    "group": "crossrefs",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "crossrefs/options.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1417986,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 212724,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-crossrefs-syntax",
+    "format": "html",
+    "group": "crossrefs",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "crossrefs/syntax.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1408915,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 204156,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "crossRefs"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-crossrefs-theorem-types",
+    "format": "html",
+    "group": "crossrefs",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "crossrefs/theorem-types.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1291461,
+      "scriptBytes": 244655,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "mathjax",
+        "math",
+        "crossRefs"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-date-fr",
+    "format": "html",
+    "group": "date",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "date/fr.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204145,
+      "scriptBytes": 159189,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-directives-pagebreak-minimal",
+    "format": "html",
+    "group": "directives",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "directives/pagebreak/minimal.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204406,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-doc-layout-title-block-none",
+    "format": "html",
+    "group": "doc-layout",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "doc-layout/title-block-none.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1200382,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "footnotes",
+        "toc"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-doc-layout-title-block-orcid",
+    "format": "html",
+    "group": "doc-layout",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "doc-layout/title-block-orcid.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1208005,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 3368,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-extensions-lexcorp-lexcorp",
+    "format": "slides",
+    "group": "extensions",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "extensions/lexcorp/lexcorp.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3706030,
+      "scriptBytes": 349397,
+      "styleBytes": 76587,
+      "imageBytes": 227194,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-extensions-owned-local-template",
+    "format": "html",
+    "group": "extensions",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "extensions/owned-local/template.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203880,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-extensions-revealjs-bundle-preso",
+    "format": "slides",
+    "group": "extensions",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "extensions/revealjs/bundle/preso.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3481143,
+      "scriptBytes": 352202,
+      "styleBytes": 76931,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-globs-a",
+    "format": "html",
+    "group": "globs",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "globs/a.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203842,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-inspect-not-a-project-doc",
+    "format": "html",
+    "group": "inspect",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "inspect/not-a-project/doc.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203821,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-jats-empty",
+    "format": "html",
+    "group": "jats",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "jats/empty.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204259,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-manual-preview-14533-format-change-detection",
+    "format": "html",
+    "group": "manual",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "manual/preview/14533-format-change-detection.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1205861,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-manual-publish-connect-cloud-revealjs-slides-slides",
+    "format": "slides",
+    "group": "manual",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "manual/publish-connect-cloud/revealjs-slides/slides.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3481410,
+      "scriptBytes": 349398,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-metadata-merge-cli-cli-metadata-file",
+    "format": "html",
+    "group": "metadata-merge-cli",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "metadata-merge-cli/cli-metadata-file.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204317,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-minimal",
+    "format": "html",
+    "group": "minimal.qmd",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "minimal.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1057,
+      "scriptBytes": 0,
+      "styleBytes": 482,
+      "imageBytes": 0,
+      "fontBytes": 0,
+      "svgs": 0,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-dashboard-axe-accessibility-pages",
+    "format": "dashboard",
+    "group": "playwright",
+    "category": "quarto-cli-dashboard",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/dashboard/axe-accessibility-pages.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3339138,
+      "scriptBytes": 768218,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 8,
+      "markers": [
+        "dashboard",
+        "navbar",
+        "video",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-dashboard-code-annotation-highlight",
+    "format": "dashboard",
+    "group": "playwright",
+    "category": "quarto-cli-dashboard",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/dashboard/code-annotation-highlight.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2758955,
+      "scriptBytes": 214670,
+      "styleBytes": 344853,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 4,
+      "markers": [
+        "dashboard",
+        "navbar"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-dashboard-hash-navigation",
+    "format": "dashboard",
+    "group": "playwright",
+    "category": "quarto-cli-dashboard",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/dashboard/hash-navigation.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2756748,
+      "scriptBytes": 214702,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 5,
+      "markers": [
+        "dashboard",
+        "navbar",
+        "footnotes"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-html-axe-standard-best-practice",
+    "format": "html",
+    "group": "playwright",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/html/axe-standard-best-practice.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1797054,
+      "scriptBytes": 712725,
+      "styleBytes": 343514,
+      "imageBytes": 15748,
+      "fontBytes": 240384,
+      "svgs": 3,
+      "markers": [
+        "video",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-playwright-html-default-border-color",
+    "format": "html",
+    "group": "playwright",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/html/default-border-color.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1214905,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 5572,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "tabset",
+        "callout",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-html-hover-popups-dismiss",
+    "format": "html",
+    "group": "playwright",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/html/hover-popups-dismiss.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1198019,
+      "scriptBytes": 149169,
+      "styleBytes": 345141,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "crossRefs",
+        "citations",
+        "footnotes"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-html-scrollable-regions",
+    "format": "html",
+    "group": "playwright",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/html/scrollable-regions.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1214176,
+      "scriptBytes": 159195,
+      "styleBytes": 344853,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "tabset",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-html-tabsets-tabby-keyboard",
+    "format": "html",
+    "group": "playwright",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/html/tabsets/tabby-keyboard.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 127304,
+      "scriptBytes": 96764,
+      "styleBytes": 4701,
+      "imageBytes": 284,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "tabset"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-announcements-fragment-in-url",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/announcements-fragment-in-url.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478201,
+      "scriptBytes": 349397,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-axe-code-line-numbers",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/axe-code-line-numbers.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 4057612,
+      "scriptBytes": 902876,
+      "styleBytes": 80250,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 3,
+      "markers": [
+        "slides",
+        "mathjax",
+        "video",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-brand-single",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/brand/single.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477117,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-callouts-callout-code-last",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/callouts/callout-code-last.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3484364,
+      "scriptBytes": 349398,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "callout",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-callouts-custom-colors",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/callouts/custom-colors.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3484329,
+      "scriptBytes": 349398,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "callout",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-callouts-dracula-theme-tweaks",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/callouts/dracula-theme-tweaks.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3479454,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "callout",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-code-annotation-highlight",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/code-annotation-highlight.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3490741,
+      "scriptBytes": 355858,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-code-font-size",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/code-font-size.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3483229,
+      "scriptBytes": 349398,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "callout",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-hover-popups-dismiss",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/hover-popups-dismiss.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478192,
+      "scriptBytes": 349398,
+      "styleBytes": 76876,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "citations",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-hover-popups-dismiss-menu-no-keyboard",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/hover-popups-dismiss-menu-no-keyboard.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478315,
+      "scriptBytes": 349433,
+      "styleBytes": 76876,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "citations",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-image-announcements",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/image-announcements.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 6296073,
+      "scriptBytes": 3116068,
+      "styleBytes": 76894,
+      "imageBytes": 51722,
+      "fontBytes": 0,
+      "svgs": 7,
+      "markers": [
+        "slides",
+        "mermaid",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-light-dark-content",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/light-dark-content.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478054,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-links-id",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/links-id.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 4096587,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 618698,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "math",
+        "crossRefs",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-logo-footer",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/logo-footer.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3493665,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 16894,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-menu-button-label",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/menu-button-label.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477488,
+      "scriptBytes": 349409,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-menu-delay-init",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/menu-delay-init.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477570,
+      "scriptBytes": 349415,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-menu-focus-order",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/menu-focus-order.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3479769,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-multiplex",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/multiplex.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3548776,
+      "scriptBytes": 420098,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-offscreen-slides-focus",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/offscreen-slides-focus.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478706,
+      "scriptBytes": 349580,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-scroll-view-activate",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/scroll-view-activate.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477839,
+      "scriptBytes": 349589,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-speaker-view-a11y",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/speaker-view-a11y.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478380,
+      "scriptBytes": 349398,
+      "styleBytes": 77087,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-revealjs-tabset-focus-order",
+    "format": "slides",
+    "group": "playwright",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "playwright/revealjs/tabset-focus-order.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3484033,
+      "scriptBytes": 349775,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "tabset",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-render-output-dir-test",
+    "format": "html",
+    "group": "render-output-dir",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "render-output-dir/test.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203908,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-reveal-aside-footnotes",
+    "format": "slides",
+    "group": "reveal",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "reveal/aside-footnotes.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478235,
+      "scriptBytes": 349398,
+      "styleBytes": 76837,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "footnotes",
+        "table"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-reveal-fragments",
+    "format": "slides",
+    "group": "reveal",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "reveal/fragments.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477646,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-reveal-mini-absolute",
+    "format": "html",
+    "group": "reveal",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "reveal/mini/absolute.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3519291,
+      "scriptBytes": 349400,
+      "styleBytes": 76587,
+      "imageBytes": 42666,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-reveal-mini-auto-animate",
+    "format": "html",
+    "group": "reveal",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "reveal/mini/auto-animate.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477692,
+      "scriptBytes": 349400,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-reveal-mini-auto-animate-code",
+    "format": "slides",
+    "group": "reveal",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "reveal/mini/auto-animate-code.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3482411,
+      "scriptBytes": 349399,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-reveal-mini-auto-animate-movement",
+    "format": "slides",
+    "group": "reveal",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "reveal/mini/auto-animate-movement.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477589,
+      "scriptBytes": 349399,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-reveal-mini-auto-animate-stack",
+    "format": "slides",
+    "group": "reveal",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "reveal/mini/auto-animate-stack.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478589,
+      "scriptBytes": 349400,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-reveal-mini-fragments-nested",
+    "format": "slides",
+    "group": "reveal",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "reveal/mini/fragments-nested.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477652,
+      "scriptBytes": 349400,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-reveal-mini-stack",
+    "format": "slides",
+    "group": "reveal",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "reveal/mini/stack.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3546654,
+      "scriptBytes": 349400,
+      "styleBytes": 76587,
+      "imageBytes": 70054,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-reveal-mini-zoom",
+    "format": "slides",
+    "group": "reveal",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "reveal/mini/zoom.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3519744,
+      "scriptBytes": 349400,
+      "styleBytes": 76587,
+      "imageBytes": 43154,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-scholar-test",
+    "format": "html",
+    "group": "scholar",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "scholar/test.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1208838,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-self-contained-simple",
+    "format": "html",
+    "group": "self-contained",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "self-contained/simple.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203698,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2022-10-11-issue-2765",
+    "format": "html",
+    "group": "smoke-all/2022",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2022/10/11/issue-2765.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203612,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-01-23-reveal-config-quote-4063",
+    "format": "slides",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/01/23/reveal-config-quote-4063.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477382,
+      "scriptBytes": 349402,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-03-08-issue-4710",
+    "format": "html",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/03/08/issue-4710.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1254360,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 49820,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "crossRefs"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-03-08-revealjs-hash-number",
+    "format": "slides",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/03/08/revealjs-hash-number.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477494,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-03-08-revealjs-hash-number-pandoc-style",
+    "format": "slides",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/03/08/revealjs-hash-number-pandoc-style.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3475794,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-04-04-issue-5084",
+    "format": "html",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/04/04/issue-5084.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1209430,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 5524,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-05-24-unshortcode",
+    "format": "html",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/05/24/unshortcode.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1344351,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 140128,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-06-07-issue-5783",
+    "format": "slides",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/06/07/issue-5783.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3480475,
+      "scriptBytes": 349398,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-10-02-6568",
+    "format": "html",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/10/02/6568.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1225946,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 21976,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-10-02-6853",
+    "format": "slides",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/10/02/6853.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477837,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "callout",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-11-10-7905",
+    "format": "html",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/11/10/7905.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203999,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 2,
+      "markers": [
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-11-28-6866",
+    "format": "slides",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/11/28/6866.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477537,
+      "scriptBytes": 349398,
+      "styleBytes": 76606,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-12-04-annotate-decorated",
+    "format": "slides",
+    "group": "smoke-all/2023",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2023/12/04/annotate-decorated.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3491879,
+      "scriptBytes": 357576,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-03-27-9117-issue",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/03/27/9117--issue.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477337,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-05-03-9548",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/05/03/9548.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 4023392,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-05-16-9701",
+    "format": "html",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/05/16/9701.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 4807299,
+      "scriptBytes": 159195,
+      "styleBytes": 3946454,
+      "imageBytes": 0,
+      "fontBytes": 3707452,
+      "svgs": 1,
+      "markers": [
+        "callout"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-06-12-8498",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/06/12/8498.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477677,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-08-27-issue-9821",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/08/27/issue-9821.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477783,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "callout",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-08-30-7715",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/08/30/7715.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477810,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-09-13-issue-10340",
+    "format": "dashboard",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-dashboard",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/09/13/issue-10340.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2838416,
+      "scriptBytes": 299413,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 4,
+      "markers": [
+        "dashboard",
+        "math",
+        "navbar"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-09-24-issue-10870",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/09/24/issue-10870.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3479803,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-09-26-issue-10894-1",
+    "format": "html",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/09/26/issue-10894-1.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204450,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "crossRefs",
+        "callout"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-09-26-issue-10894-2",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/09/26/issue-10894-2.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477743,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "crossRefs",
+        "callout",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-10-03-logo-reveal-revealjs-logo",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/10/03/logo_reveal/revealjs-logo.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3482512,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 6002,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-10-22-11146",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/10/22/11146.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478031,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table",
+        "toc"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-10-23-7142-below",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/10/23/7142/below.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3488849,
+      "scriptBytes": 355858,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-10-23-7142-hover",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/10/23/7142/hover.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3490338,
+      "scriptBytes": 357503,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-10-23-7142-select",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/10/23/7142/select.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3490411,
+      "scriptBytes": 357576,
+      "styleBytes": 79131,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-10-29-9803",
+    "format": "slides",
+    "group": "smoke-all/2024",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2024/10/29/9803.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3513304,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 36694,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2025-04-11-issue-11338",
+    "format": "dashboard",
+    "group": "smoke-all/2025",
+    "category": "quarto-cli-dashboard",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2025/04/11/issue-11338.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2751920,
+      "scriptBytes": 214638,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 3,
+      "markers": [
+        "dashboard",
+        "navbar"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2025-04-14-11665",
+    "format": "html",
+    "group": "smoke-all/2025",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2025/04/14/11665.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2512162,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2025-05-13-issue-12727",
+    "format": "html",
+    "group": "smoke-all/2025",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2025/05/13/issue-12727.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1208635,
+      "scriptBytes": 159195,
+      "styleBytes": 344853,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "tabset"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2025-05-18-issue12766-2",
+    "format": "html",
+    "group": "smoke-all/2025",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2025/05/18/issue12766-2.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2286563,
+      "scriptBytes": 1241817,
+      "styleBytes": 343522,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 3,
+      "markers": [
+        "mathjax",
+        "math",
+        "crossRefs"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2025-05-18-issue12766-3",
+    "format": "html",
+    "group": "smoke-all/2025",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2025/05/18/issue12766-3.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1206683,
+      "scriptBytes": 162044,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "mathjax",
+        "math",
+        "crossRefs"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2025-05-18-issue12766-4",
+    "format": "html",
+    "group": "smoke-all/2025",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2025/05/18/issue12766-4.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2938091,
+      "scriptBytes": 433603,
+      "styleBytes": 1803281,
+      "imageBytes": 0,
+      "fontBytes": 1675888,
+      "svgs": 2,
+      "markers": [
+        "mathjax",
+        "math",
+        "crossRefs"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2025-09-03-issue-12630",
+    "format": "html",
+    "group": "smoke-all/2025",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2025/09/03/issue-12630.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1832687,
+      "scriptBytes": 741447,
+      "styleBytes": 389501,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "video"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2025-12-09-13775-html-variants",
+    "format": "html",
+    "group": "smoke-all/2025",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2025/12/09/13775-html-variants.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1207218,
+      "scriptBytes": 159195,
+      "styleBytes": 344853,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "footnotes"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-02-04-issue-13992-figure",
+    "format": "html",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/02/04/issue-13992-figure.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203977,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "crossRefs"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-05-01-issue-14468-axe-brand",
+    "format": "html",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/05/01/issue-14468-axe-brand.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3089256,
+      "scriptBytes": 712673,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 3,
+      "markers": [
+        "video",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-05-01-issue-14468-axe-revealjs",
+    "format": "slides",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/05/01/issue-14468-axe-revealjs.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 4055147,
+      "scriptBytes": 902876,
+      "styleBytes": 77706,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 3,
+      "markers": [
+        "slides",
+        "mathjax",
+        "video",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-07-13-issue-14684",
+    "format": "html",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/07/13/issue-14684.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204976,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "toc"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-07-13-issue-14684-dashboard",
+    "format": "dashboard",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-dashboard",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/07/13/issue-14684-dashboard.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2756003,
+      "scriptBytes": 214702,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 5,
+      "markers": [
+        "dashboard",
+        "navbar"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-09-22-issue-14770-code-preview-title",
+    "format": "html",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/09/22/issue-14770/code-preview-title.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1206990,
+      "scriptBytes": 159195,
+      "styleBytes": 344853,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "iframe"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-09-28-issue-14952",
+    "format": "slides",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/09/28/issue-14952.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477559,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-02-katex-method-object",
+    "format": "html",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/10/02/katex-method-object.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1206879,
+      "scriptBytes": 162042,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "mathjax",
+        "math"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-16-citation-title-html-markup",
+    "format": "html",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/10/16/citation-title/html-markup.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1291550,
+      "scriptBytes": 244655,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "mathjax",
+        "math"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-19-14249",
+    "format": "slides",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/10/19/14249.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478177,
+      "scriptBytes": 349423,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-19-issue-14882-revealjs",
+    "format": "slides",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/10/19/issue-14882-revealjs.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3476732,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-19-issue-14882-revealjs-mainfont",
+    "format": "slides",
+    "group": "smoke-all/2026",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/2026/10/19/issue-14882-revealjs-mainfont.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3476879,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-accessibility-axe-dashboard",
+    "format": "dashboard",
+    "group": "smoke-all/accessibility",
+    "category": "quarto-cli-dashboard",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/accessibility/axe-dashboard.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3334116,
+      "scriptBytes": 768128,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 6,
+      "markers": [
+        "dashboard",
+        "navbar",
+        "video",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-accessibility-axe-disabled-revealjs",
+    "format": "slides",
+    "group": "smoke-all/accessibility",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/accessibility/axe-disabled-revealjs.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477756,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-accessibility-axe-html",
+    "format": "html",
+    "group": "smoke-all/accessibility",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/accessibility/axe-html.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1780868,
+      "scriptBytes": 712653,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 3,
+      "markers": [
+        "video",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-accessibility-axe-revealjs",
+    "format": "slides",
+    "group": "smoke-all/accessibility",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/accessibility/axe-revealjs.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 4054851,
+      "scriptBytes": 902856,
+      "styleBytes": 77706,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 3,
+      "markers": [
+        "slides",
+        "mathjax",
+        "video",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-article-layout-margin-location-reference-location-margin",
+    "format": "html",
+    "group": "smoke-all/article-layout",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/article-layout/margin-location/reference-location-margin.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204966,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "callout",
+        "footnotes"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-brand-logo-theme-dark-mode-yes-dark-logo",
+    "format": "dashboard",
+    "group": "smoke-all/brand",
+    "category": "quarto-cli-dashboard",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/brand/logo/theme-dark-mode-yes-dark-logo.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3098674,
+      "scriptBytes": 224238,
+      "styleBytes": 343514,
+      "imageBytes": 31496,
+      "fontBytes": 240384,
+      "svgs": 4,
+      "markers": [
+        "dashboard",
+        "navbar",
+        "darkToggle"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-brand-minimal-brand",
+    "format": "html",
+    "group": "smoke-all/brand",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/brand/minimal-brand.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1327,
+      "scriptBytes": 0,
+      "styleBytes": 719,
+      "imageBytes": 0,
+      "fontBytes": 0,
+      "svgs": 0,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-brand-typography-load-fonts-without-use",
+    "format": "html",
+    "group": "smoke-all/brand",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/brand/typography/load-fonts-without-use.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 5629081,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-callouts-a11y-issue-726",
+    "format": "html",
+    "group": "smoke-all/callouts",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/callouts/a11y/issue-726.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204228,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "callout"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-code-annotations-code-annotations-language-support",
+    "format": "html",
+    "group": "smoke-all/code-annotations",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/code-annotations/code-annotations-language-support.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1274086,
+      "scriptBytes": 159195,
+      "styleBytes": 344853,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "mermaid"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-conditional-content-when-format",
+    "format": "html",
+    "group": "smoke-all/conditional-content",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/conditional-content/when-format.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203899,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-confluence-5815-confluence-links-to-file-attachments-not-supported",
+    "format": "html",
+    "group": "smoke-all/confluence",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/confluence/5815-confluence-links-to-file-attachments-not-supported.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204007,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-contents-shortcode-from-code-cell",
+    "format": "html",
+    "group": "smoke-all/contents-shortcode",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/contents-shortcode/from-code-cell.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1206203,
+      "scriptBytes": 159195,
+      "styleBytes": 344853,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "callout"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-crossrefs-float-docx-docx-float-4",
+    "format": "html",
+    "group": "smoke-all/crossrefs",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/crossrefs/float/docx/docx-float-4.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1782843,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 577768,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "crossRefs"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-crossrefs-float-fig-cap",
+    "format": "html",
+    "group": "smoke-all/crossrefs",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/crossrefs/float/fig-cap.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1782643,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 577768,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-crossrefs-float-revealjs-rawtablecaption",
+    "format": "slides",
+    "group": "smoke-all/crossrefs",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/crossrefs/float/revealjs/rawtablecaption.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478271,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "crossRefs",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-crossrefs-float-revealjs-revealjs-float-1",
+    "format": "slides",
+    "group": "smoke-all/crossrefs",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/crossrefs/float/revealjs/revealjs-float-1.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3478700,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "crossRefs",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-dark-mode-color-scheme-toggle-dashboard",
+    "format": "dashboard",
+    "group": "smoke-all/dark-mode",
+    "category": "quarto-cli-dashboard",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/dark-mode/color-scheme-toggle-dashboard.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3670171,
+      "scriptBytes": 224270,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 5,
+      "markers": [
+        "dashboard",
+        "navbar",
+        "darkToggle"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-dark-mode-color-scheme-toggle-fallback",
+    "format": "html",
+    "group": "smoke-all/dark-mode",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/dark-mode/color-scheme-toggle-fallback.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3425199,
+      "scriptBytes": 168763,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "darkToggle"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-dark-mode-toggle-theme-dark-with-ignored-dark-brand",
+    "format": "html",
+    "group": "smoke-all/dark-mode",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/dark-mode/toggle-theme-dark-with-ignored-dark-brand.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 6557521,
+      "scriptBytes": 168763,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "darkToggle"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-dashboard-3-valuebox-static",
+    "format": "dashboard",
+    "group": "smoke-all/dashboard",
+    "category": "quarto-cli-dashboard",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/dashboard/3-valuebox-static.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 5091378,
+      "scriptBytes": 214766,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 3,
+      "markers": [
+        "dashboard",
+        "navbar"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-fenced-div-reader-fixes-test-1",
+    "format": "html",
+    "group": "smoke-all/fenced-div-reader-fixes",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/fenced-div-reader-fixes/test-1.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204486,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-issues-3473-toc-side-body-left-body",
+    "format": "html",
+    "group": "smoke-all/issues",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/issues/3473-toc-side-body/left-body.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1211452,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "sidebar",
+        "toc"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-lightbox-8697",
+    "format": "html",
+    "group": "smoke-all/lightbox",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/lightbox/8697.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3824032,
+      "scriptBytes": 216141,
+      "styleBytes": 357901,
+      "imageBytes": 2547412,
+      "fontBytes": 240384,
+      "svgs": 4,
+      "markers": [
+        "lightbox",
+        "video"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-smoke-all-lightbox-pandoc-figure",
+    "format": "html",
+    "group": "smoke-all/lightbox",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/lightbox/pandoc-figure.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2081975,
+      "scriptBytes": 216141,
+      "styleBytes": 357901,
+      "imageBytes": 806312,
+      "fontBytes": 240384,
+      "svgs": 4,
+      "markers": [
+        "lightbox",
+        "video"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-mermaid-backticks",
+    "format": "html",
+    "group": "smoke-all/mermaid",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/mermaid/backticks.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3973305,
+      "scriptBytes": 2925838,
+      "styleBytes": 345125,
+      "imageBytes": 2288,
+      "fontBytes": 240384,
+      "svgs": 3,
+      "markers": [
+        "mermaid",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-metadata-merge-metadata-files",
+    "format": "html",
+    "group": "smoke-all/metadata-merge",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/metadata-merge/metadata-files.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204565,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-metadata-merge-revealjs-controls-auto",
+    "format": "slides",
+    "group": "smoke-all/metadata-merge",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/metadata-merge/revealjs-controls-auto.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477709,
+      "scriptBytes": 349397,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-pdf-standard-alt-test",
+    "format": "html",
+    "group": "smoke-all/pdf-standard",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/pdf-standard/alt-test.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1205123,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 1068,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-rawblock-features-pandoc-reader",
+    "format": "html",
+    "group": "smoke-all/rawblock-features",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/rawblock-features/pandoc-reader.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1203878,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-revealjs-callout-id",
+    "format": "slides",
+    "group": "smoke-all/revealjs",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/revealjs/callout-id.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3480871,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "crossRefs",
+        "callout",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-revealjs-scroll-view-scroll-view-absent",
+    "format": "slides",
+    "group": "smoke-all/revealjs",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/revealjs/scroll-view/scroll-view-absent.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477611,
+      "scriptBytes": 349398,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-revealjs-scroll-view-scroll-view-activation-width",
+    "format": "slides",
+    "group": "smoke-all/revealjs",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/revealjs/scroll-view/scroll-view-activation-width.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477832,
+      "scriptBytes": 349591,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-revealjs-scroll-view-scroll-view-config",
+    "format": "slides",
+    "group": "smoke-all/revealjs",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/revealjs/scroll-view/scroll-view-config.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477805,
+      "scriptBytes": 349584,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-revealjs-scroll-view-scroll-view-defaults",
+    "format": "slides",
+    "group": "smoke-all/revealjs",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/revealjs/scroll-view/scroll-view-defaults.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477814,
+      "scriptBytes": 349589,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-revealjs-scroll-view-scroll-view-progress-true",
+    "format": "slides",
+    "group": "smoke-all/revealjs",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/revealjs/scroll-view/scroll-view-progress-true.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 3477822,
+      "scriptBytes": 349587,
+      "styleBytes": 76587,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-revealjs-syntax-highlighting-idiomatic-warning",
+    "format": "slides",
+    "group": "smoke-all/revealjs",
+    "category": "quarto-cli-slides",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/revealjs/syntax-highlighting/idiomatic-warning.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 4413952,
+      "scriptBytes": 1260427,
+      "styleBytes": 77491,
+      "imageBytes": 1146,
+      "fontBytes": 0,
+      "svgs": 1,
+      "markers": [
+        "slides",
+        "mathjax",
+        "iframe",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-shortcodes-brand-logo-dark",
+    "format": "html",
+    "group": "smoke-all/shortcodes",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/shortcodes/brand-logo-dark.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 4523612,
+      "scriptBytes": 168763,
+      "styleBytes": 343514,
+      "imageBytes": 2003360,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "darkToggle"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-shortcodes-brand-logo-unified-brand",
+    "format": "html",
+    "group": "smoke-all/shortcodes",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/shortcodes/brand-logo-unified-brand.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 7850782,
+      "scriptBytes": 168763,
+      "styleBytes": 343514,
+      "imageBytes": 5330904,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "darkToggle"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-shortcodes-brand-logo-unified-brand-nodark",
+    "format": "html",
+    "group": "smoke-all/shortcodes",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/shortcodes/brand-logo-unified-brand-nodark.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 5176057,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 2665452,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-table-appearance",
+    "format": "html",
+    "group": "smoke-all/table",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "smoke-all/table/appearance.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1211000,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "crossRefs",
+        "table"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-syntax-test",
+    "format": "html",
+    "group": "Syntax Test.qmd",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "Syntax Test.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1358797,
+      "scriptBytes": 159195,
+      "styleBytes": 344853,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-templates-title-partial-html",
+    "format": "html",
+    "group": "templates",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "templates/title-partial-html.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204785,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-test-singleformat-html",
+    "format": "html",
+    "group": "test-singleformat-html.qmd",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "test-singleformat-html.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204194,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-text-highlighting-github-dark",
+    "format": "html",
+    "group": "text-highlighting",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "text-highlighting/github-dark.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 2016564,
+      "scriptBytes": 244655,
+      "styleBytes": 344853,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "mathjax",
+        "math",
+        "toc"
+      ]
+    },
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-text-highlighting-user-simple",
+    "format": "html",
+    "group": "text-highlighting",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "text-highlighting/user-simple.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1292091,
+      "scriptBytes": 244655,
+      "styleBytes": 344853,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": [
+        "mathjax",
+        "math",
+        "toc"
+      ]
+    },
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-yaml-yaml-parse-dashes",
+    "format": "html",
+    "group": "yaml",
+    "category": "quarto-cli-html",
+    "source": {
+      "name": "quarto-cli",
+      "path": "yaml/yaml-parse-dashes.qmd"
+    },
+    "quarto": "1.11.9",
+    "features": {
+      "bytes": 1204066,
+      "scriptBytes": 159195,
+      "styleBytes": 343514,
+      "imageBytes": 0,
+      "fontBytes": 240384,
+      "svgs": 1,
+      "markers": []
+    },
+    "tier": "full"
+  }
+]
