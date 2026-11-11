@@ -9,6 +9,10 @@ cargo-dist-version = "0.33.0"
 ci = "github"
 # The installers to generate for each app
 installers = []
+# Files to include in each archive besides the licenses and README
+include = ["THIRD-PARTY-LICENSES.txt"]
+# Workflow edits (such as Dependabot action bumps) are expected
+allow-dirty = ["ci"]
 github-attestations = true
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = [

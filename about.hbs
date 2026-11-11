@@ -1,0 +1,19 @@
+Third-party software in octavo
+
+Octavo is licensed under MIT OR Apache-2.0. The octavo binary links the
+libraries below, each under its own license. For libraries under the Mozilla
+Public License 2.0, the source code is available at the repository listed
+beside the library.
+
+{{#each licenses}}
+================================================================================
+{{{name}}}
+
+Used by:
+{{#each used_by}}
+  - {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}} ({{{crate.repository}}}){{/if}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}
