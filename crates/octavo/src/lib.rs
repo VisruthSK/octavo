@@ -21,6 +21,7 @@
 //! [`Simplified::pack`] for each mode.
 
 mod ascii;
+mod cache;
 mod check;
 mod css;
 mod data;
@@ -105,7 +106,7 @@ impl FromStr for Mode {
 /// let options = Options::default();
 /// assert!(options.images.is_none() && !options.subset_text_fonts && !options.strip_licenses);
 /// ```
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Options {
     /// Re-encode embedded PNG and JPEG images when that makes them smaller.
     /// `None` keeps them as they are, recompressed losslessly.
@@ -124,6 +125,81 @@ pub struct Options {
     /// and the copyright and license fields of a subsetted font move into a
     /// comment beside its `@font-face`.
     pub strip_licenses: bool,
+    /// A directory in which fonts converted whole are remembered between
+    /// runs. Documents rendered by the same tool embed the same fonts again
+    /// and again, and converting a whole font is the slowest step in most
+    /// documents. There is one entry per distinct font, named by a hash of
+    /// its bytes; subsetted fonts are cheap and are never stored, so the
+    /// directory does not fill with variants. `None` keeps nothing.
+    pub cache_directory: Option<std::path::PathBuf>,
+    /// How hard the compressors for fonts, PNG images and the packed blob
+    /// work. It is independent of the [`Mode`].
+    pub compression: Compression,
+}
+
+/// How much time to spend compressing.
+///
+/// ```
+/// use octavo::{Compression, Tuning};
+///
+/// assert_eq!(Compression::default(), Compression::Balanced);
+/// assert!(Compression::Maximum.tuning().woff2_quality > Compression::Balanced.tuning().woff2_quality);
+/// let custom = Compression::Custom(Tuning { png_preset: Some(0), ..Tuning::BALANCED });
+/// assert_eq!(custom.tuning().png_preset, Some(0));
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Compression {
+    /// A good balance: output a few percent larger than the smallest
+    /// possible, in a fraction of the time.
+    #[default]
+    Balanced,
+    /// The slowest, strongest settings everywhere, whatever they cost in
+    /// time. The output is usually a little smaller and takes several times
+    /// as long, so use it only when every byte matters.
+    Maximum,
+    /// Your own settings.
+    Custom(Tuning),
+}
+
+impl Compression {
+    /// The settings this choice stands for.
+    #[must_use]
+    pub fn tuning(self) -> Tuning {
+        match self {
+            Compression::Balanced => Tuning::BALANCED,
+            Compression::Maximum => Tuning::MAXIMUM,
+            Compression::Custom(tuning) => tuning,
+        }
+    }
+}
+
+/// The compressor settings behind a [`Compression`]. Values above a
+/// setting's range count as its maximum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Tuning {
+    /// The Brotli quality of re-encoded WOFF2 fonts, 0 to 11.
+    pub woff2_quality: u8,
+    /// The oxipng preset for PNG images, 0 (fast) to 6 (thorough). `None`
+    /// picks a preset by image size: big images get the quick ones.
+    pub png_preset: Option<u8>,
+    /// The Brotli quality of the packed blob, 0 to 11. `None` uses 9, and
+    /// only for blobs big enough for Brotli to beat its own decoder.
+    pub brotli_quality: Option<u8>,
+}
+
+impl Tuning {
+    /// What [`Compression::Balanced`] uses.
+    pub const BALANCED: Tuning = Tuning {
+        woff2_quality: 9,
+        png_preset: None,
+        brotli_quality: None,
+    };
+    /// What [`Compression::Maximum`] uses.
+    pub const MAXIMUM: Tuning = Tuning {
+        woff2_quality: 11,
+        png_preset: Some(6),
+        brotli_quality: Some(11),
+    };
 }
 
 /// The quality of a re-encoded image.
@@ -544,8 +620,17 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         || js::stage(&doc, &removed, licenses),
         || {
             rayon::join(
-                || css::stage(&doc, &words, options.subset_text_fonts, licenses),
-                || images::stage(&doc, options.images),
+                || {
+                    css::stage(
+                        &doc,
+                        &words,
+                        options.subset_text_fonts,
+                        licenses,
+                        options.cache_directory.as_deref(),
+                        options.compression.tuning(),
+                    )
+                },
+                || images::stage(&doc, options.images, options.compression.tuning()),
             )
         },
     );
@@ -567,6 +652,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     let html = Edits::new(edits).apply(src);
     Ok(Simplified {
         scanned: html::Scanned::new(html),
+        compression: options.compression,
         applied,
         warnings: links
             .remote()
@@ -595,6 +681,7 @@ pub struct Simplified {
     scanned: html::Scanned,
     applied: Vec<Applied>,
     warnings: Vec<Warning>,
+    compression: Compression,
 }
 
 impl Simplified {
@@ -634,8 +721,8 @@ impl Simplified {
         if mode == Mode::Safe {
             return unpacked();
         }
-        let Some(packed) =
-            pack::run(&self.scanned, mode).filter(|p| p.html.len() < self.scanned.html().len())
+        let Some(packed) = pack::run(&self.scanned, mode, self.compression.tuning())
+            .filter(|p| p.html.len() < self.scanned.html().len())
         else {
             return unpacked();
         };

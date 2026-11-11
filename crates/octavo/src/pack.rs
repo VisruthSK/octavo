@@ -3,7 +3,7 @@ use crate::{
     data::{self, Mime},
     html::{AttrName, Attribute, Element, Rel, Scanned, Tag},
     js::{self, ScriptKind},
-    Licenses, Mode,
+    Licenses, Mode, Tuning,
 };
 use base91::{
     codemap::{xml_friendly::ENCODE_MAP, XmlFriendly},
@@ -45,7 +45,7 @@ pub(crate) struct Packed {
     pub(crate) blobs: NonZeroUsize,
 }
 
-pub(crate) fn run(scanned: &Scanned, mode: Mode) -> Option<Packed> {
+pub(crate) fn run(scanned: &Scanned, mode: Mode, tuning: Tuning) -> Option<Packed> {
     let src = scanned.html();
     if mode == Mode::Safe || contains_ignore_case(src, "content-security-policy") {
         return None;
@@ -63,7 +63,7 @@ pub(crate) fn run(scanned: &Scanned, mode: Mode) -> Option<Packed> {
     if sites.is_empty() {
         return None;
     }
-    let loader = blobs.loader();
+    let loader = blobs.loader(tuning);
     let mut out = String::with_capacity(src.len());
     let mut at = 0;
     for (n, site) in sites.iter().enumerate() {
@@ -178,7 +178,7 @@ impl<'a> Blobs<'a> {
         self.texts.insert_full(text).0
     }
 
-    fn loader(&self) -> String {
+    fn loader(&self, tuning: Tuning) -> String {
         let all: String = self.texts.iter().map(|text| text.as_ref()).collect();
         let sizes: Vec<String> = self
             .texts
@@ -187,7 +187,14 @@ impl<'a> Blobs<'a> {
             .collect();
         let (deflated, brotlied) = rayon::join(
             || deflate(all.as_bytes()),
-            || (all.len() >= BROTLI_THRESHOLD).then(|| brotli(all.as_bytes())),
+            || {
+                (tuning.brotli_quality.is_some() || all.len() >= BROTLI_THRESHOLD).then(|| {
+                    brotli(
+                        all.as_bytes(),
+                        tuning.brotli_quality.map_or(9, |q| q.min(11)),
+                    )
+                })
+            },
         );
         let plain = assemble(
             &format!("inflate(bytes({}), {})", literal(&deflated), all.len()),
@@ -249,9 +256,9 @@ fn deflate(data: &[u8]) -> Vec<u8> {
     out
 }
 
-fn brotli(data: &[u8]) -> Vec<u8> {
+fn brotli(data: &[u8], quality: u8) -> Vec<u8> {
     let params = BrotliEncoderParams {
-        quality: 9,
+        quality: i32::from(quality),
         lgwin: 24,
         size_hint: data.len(),
         ..Default::default()

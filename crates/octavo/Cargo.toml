@@ -34,6 +34,8 @@ data-url = "0.3.2"
 percent-encoding = "2.3.2"
 cssparser = "0.37"
 rayon = "1.12.0"
+blake3 = { version = "1", default-features = false }
+woofwoof = "1.0.2"
 libdeflater = "1.26.1"
 ravif = { version = "0.13.0", default-features = false, features = ["threading"] }
 imgref = "1.12.3"

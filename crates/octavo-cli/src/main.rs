@@ -4,7 +4,8 @@ use bytesize::ByteSize;
 use clap::{builder::Styles, value_parser, Args, Parser};
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{
-    optimize, simplify, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform, Warning,
+    optimize, simplify, Compression, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform,
+    Tuning, Warning,
 };
 use std::{
     collections::BTreeMap,
@@ -112,6 +113,41 @@ struct Optimize {
         help = "Drop the license and copyright notices of bundled libraries and fonts, which most licenses require keeping"
     )]
     strip_licenses: bool,
+    #[arg(
+        long,
+        value_name = "DIRECTORY",
+        help = "Remember converted fonts in this directory, so later runs skip the slowest step"
+    )]
+    cache_dir: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Use the slowest, strongest compression everywhere, whatever it costs in time"
+    )]
+    maximum: bool,
+    #[arg(
+        long,
+        value_name = "0-11",
+        value_parser = clap::value_parser!(u8).range(0..=11),
+        conflicts_with = "maximum",
+        help = "Brotli quality of re-encoded fonts"
+    )]
+    woff2_quality: Option<u8>,
+    #[arg(
+        long,
+        value_name = "0-6",
+        value_parser = clap::value_parser!(u8).range(0..=6),
+        conflicts_with = "maximum",
+        help = "oxipng preset for PNG images; by default chosen by image size"
+    )]
+    png_preset: Option<u8>,
+    #[arg(
+        long,
+        value_name = "0-11",
+        value_parser = clap::value_parser!(u8).range(0..=11),
+        conflicts_with = "maximum",
+        help = "Brotli quality of the packed blob"
+    )]
+    brotli_quality: Option<u8>,
 }
 
 fn parse_nonzero_side(value: &str) -> Result<NonZeroU32, String> {
@@ -152,6 +188,11 @@ fn main() -> ExitCode {
             subset_text_fonts,
             max_image_side,
             strip_licenses,
+            cache_dir,
+            maximum,
+            woff2_quality,
+            png_preset,
+            brotli_quality,
         } = cli.optimize;
         let output = output.unwrap_or_else(|| input.with_extension("min.html"));
         let images = lossy_images.map(|format| {
@@ -168,6 +209,18 @@ fn main() -> ExitCode {
             images,
             subset_text_fonts,
             strip_licenses,
+            cache_directory: cache_dir,
+            compression: if maximum {
+                Compression::Maximum
+            } else if woff2_quality.is_some() || png_preset.is_some() || brotli_quality.is_some() {
+                Compression::Custom(Tuning {
+                    woff2_quality: woff2_quality.unwrap_or(Tuning::BALANCED.woff2_quality),
+                    png_preset,
+                    brotli_quality,
+                })
+            } else {
+                Compression::Balanced
+            },
         };
         run(&input, &output, level, verify.as_deref(), options)
     };

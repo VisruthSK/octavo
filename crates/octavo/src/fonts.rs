@@ -1,7 +1,8 @@
 use crate::{
+    cache,
     data::{self, Mime},
     words::Words,
-    Licenses,
+    Licenses, Tuning,
 };
 use cssparser::{ParseError, Parser, ParserInput, Token};
 use lightningcss::{
@@ -19,7 +20,7 @@ use lightningcss::{
 };
 use rayon::prelude::*;
 use skrifa::{string::StringId, FontRef, MetadataProvider};
-use std::{borrow::Cow, collections::HashSet, convert::Infallible, ops::Range};
+use std::{borrow::Cow, collections::HashSet, convert::Infallible, ops::Range, path::Path};
 
 const WESTERN_TEXT: [Range<u32>; 3] = [0x20..0x250, 0x2000..0x2070, 0x20A0..0x20D0];
 const QUOTES: [char; 2] = ['"', '\''];
@@ -74,6 +75,8 @@ pub(crate) struct Settings<'a> {
     pub(crate) words: &'a Words,
     pub(crate) subset_text_fonts: bool,
     pub(crate) notices: Licenses,
+    pub(crate) cache: Option<&'a Path>,
+    pub(crate) tuning: Tuning,
 }
 
 pub(crate) fn rewrite(
@@ -188,7 +191,13 @@ fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Dec
     } else {
         chars.text.as_ref()
     };
-    match transcode(&font.bytes, subset, settings.notices) {
+    match transcode(
+        &font.bytes,
+        subset,
+        settings.notices,
+        settings.cache,
+        settings.tuning,
+    ) {
         Some(transcoded) => Decision::Replace {
             uri: data::encode_base64(Mime::FontWoff2, &transcoded.woff2),
             notice: transcoded.notice,
@@ -430,7 +439,53 @@ struct Transcoded {
     notice: Option<String>,
 }
 
-fn transcode(bytes: &[u8], chars: Option<&HashSet<char>>, notices: Licenses) -> Option<Transcoded> {
+fn transcode(
+    bytes: &[u8],
+    chars: Option<&HashSet<char>>,
+    notices: Licenses,
+    cache: Option<&Path>,
+    tuning: Tuning,
+) -> Option<Transcoded> {
+    let quality = tuning.woff2_quality.min(11);
+    let (Some(directory), None) = (cache, chars) else {
+        return convert(bytes, chars, notices, quality);
+    };
+    let key = cache::key(&[bytes, &[quality]]);
+    if let Some(entry) = cache::load(directory, &key).and_then(|entry| Transcoded::decode(&entry)) {
+        return Some(entry);
+    }
+    let converted = convert(bytes, chars, notices, quality)?;
+    cache::store(directory, &key, &converted.encode());
+    Some(converted)
+}
+
+impl Transcoded {
+    fn encode(&self) -> Vec<u8> {
+        let notice = self.notice.as_deref().unwrap_or("").as_bytes();
+        let mut out = Vec::with_capacity(4 + notice.len() + self.woff2.len());
+        out.extend_from_slice(&(notice.len() as u32).to_le_bytes());
+        out.extend_from_slice(notice);
+        out.extend_from_slice(&self.woff2);
+        out
+    }
+
+    fn decode(entry: &[u8]) -> Option<Transcoded> {
+        let length = u32::from_le_bytes(entry.get(..4)?.try_into().ok()?) as usize;
+        let notice = entry.get(4..4 + length)?;
+        let woff2 = entry.get(4 + length..)?;
+        (woff2.starts_with(b"wOF2")).then(|| Transcoded {
+            woff2: woff2.to_vec(),
+            notice: (!notice.is_empty()).then(|| String::from_utf8_lossy(notice).into_owned()),
+        })
+    }
+}
+
+fn convert(
+    bytes: &[u8],
+    chars: Option<&HashSet<char>>,
+    notices: Licenses,
+    quality: u8,
+) -> Option<Transcoded> {
     let sfnt: Cow<[u8]> = match bytes.get(..4)? {
         b"wOFF" => Cow::Owned(wuff::decompress_woff1(bytes).ok()?),
         b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
@@ -448,7 +503,7 @@ fn transcode(bytes: &[u8], chars: Option<&HashSet<char>>, notices: Licenses) -> 
         None => sfnt,
     };
     Some(Transcoded {
-        woff2: fontcull::compress_to_woff2(&sfnt).ok()?,
+        woff2: woofwoof::compress(&sfnt, "", usize::from(quality), true)?,
         notice,
     })
 }

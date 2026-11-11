@@ -1,7 +1,7 @@
 mod common;
 
 use common::{busy_script, data_uri, packed, page, safe, simplified};
-use octavo::{optimize, simplify, Mode, Options};
+use octavo::{optimize, simplify, Compression, Mode, Options, Tuning};
 
 #[test]
 fn css_comments_mentioning_custom_properties_do_not_swallow_rules() {
@@ -426,4 +426,129 @@ fn many_adjacent_rules_that_are_set_aside_all_come_back_in_order() {
         out.contains(".keep{color:#00f}") && !out.contains(".gone"),
         "{out}"
     );
+}
+
+fn font_page(text: &str) -> String {
+    let font = include_bytes!("data/octavo-test.ttf");
+    let css = format!(
+        "@font-face{{font-family:Octavo Test;src:url({})}}body{{font-family:Octavo Test}}",
+        data_uri("font/ttf", font)
+    );
+    page(&format!("<style>{css}</style>"), &format!("<p>{text}</p>"))
+}
+
+fn cache_options(directory: &std::path::Path) -> Options {
+    Options {
+        cache_directory: Some(directory.to_path_buf()),
+        ..Options::default()
+    }
+}
+
+fn scratch(name: &str) -> std::path::PathBuf {
+    let directory = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(name);
+    let _ = std::fs::remove_dir_all(&directory);
+    directory
+}
+
+#[test]
+fn a_cached_font_gives_exactly_the_same_output_as_a_converted_one() {
+    let directory = scratch("font-cache-same");
+    let html = font_page("A");
+    let uncached = optimize(&html, Mode::Safe).expect("supported").html;
+    let first = simplify(&html, cache_options(&directory)).expect("supported");
+    let first = first.pack(Mode::Safe).html;
+    assert_eq!(
+        std::fs::read_dir(&directory)
+            .expect("cache written")
+            .count(),
+        1
+    );
+    let second = simplify(&html, cache_options(&directory)).expect("supported");
+    let second = second.pack(Mode::Safe).html;
+    assert_eq!(first, uncached);
+    assert_eq!(second, uncached);
+    assert_eq!(
+        std::fs::read_dir(&directory)
+            .expect("still one entry")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn only_whole_fonts_are_cached_and_subsets_never_add_entries() {
+    let directory = scratch("font-cache-whole-only");
+    let html = font_page("A");
+    let subset = Options {
+        subset_text_fonts: true,
+        ..cache_options(&directory)
+    };
+    simplify(&font_page("A"), subset.clone()).expect("supported");
+    simplify(&font_page("B"), subset).expect("supported");
+    assert!(!directory.exists() || std::fs::read_dir(&directory).expect("entries").count() == 0);
+    simplify(&html, cache_options(&directory)).expect("supported");
+    simplify(&font_page("B"), cache_options(&directory)).expect("supported");
+    assert_eq!(std::fs::read_dir(&directory).expect("entries").count(), 1);
+}
+
+#[test]
+fn a_damaged_cache_entry_is_ignored_and_replaced() {
+    let directory = scratch("font-cache-damaged");
+    let html = font_page("A");
+    simplify(&html, cache_options(&directory)).expect("supported");
+    let entry = std::fs::read_dir(&directory)
+        .expect("entry")
+        .next()
+        .expect("one")
+        .expect("readable")
+        .path();
+    std::fs::write(&entry, b"not a cache entry").expect("overwrite");
+    let out = simplify(&html, cache_options(&directory))
+        .expect("supported")
+        .pack(Mode::Safe)
+        .html;
+    assert!(out.contains("data:font/woff2"), "{out}");
+    assert!(std::fs::read(&entry).expect("rewritten").len() > 20);
+}
+
+fn packed_size(html: &str, compression: Compression) -> usize {
+    let options = Options {
+        compression,
+        ..Options::default()
+    };
+    simplify(html, options)
+        .expect("supported")
+        .pack(Mode::Packed)
+        .html
+        .len()
+}
+
+#[test]
+fn stronger_compression_is_never_larger() {
+    let html = font_page("A");
+    let weakest = Compression::Custom(Tuning {
+        woff2_quality: 0,
+        png_preset: Some(0),
+        brotli_quality: Some(0),
+    });
+    let sizes =
+        [Compression::Maximum, Compression::Balanced, weakest].map(|c| packed_size(&html, c));
+    assert!(sizes[0] <= sizes[1] && sizes[1] <= sizes[2], "{sizes:?}");
+}
+
+#[test]
+fn custom_font_quality_has_its_own_cache_entry() {
+    let directory = scratch("font-cache-quality");
+    let html = font_page("A");
+    for woff2_quality in [3, 9, 9, 11] {
+        let options = Options {
+            compression: Compression::Custom(Tuning {
+                woff2_quality,
+                ..Tuning::BALANCED
+            }),
+            ..cache_options(&directory)
+        };
+        simplify(&html, options).expect("supported");
+    }
+    assert_eq!(std::fs::read_dir(&directory).expect("entries").count(), 3);
 }

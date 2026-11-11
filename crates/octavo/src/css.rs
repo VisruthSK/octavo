@@ -4,7 +4,7 @@ use crate::{
     fonts,
     html::{AttrName, Element, Rel, Tag},
     words::Words,
-    Licenses, Target, Transform,
+    Licenses, Target, Transform, Tuning,
 };
 use indexmap::IndexSet;
 use lightningcss::{
@@ -20,6 +20,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     convert::Infallible,
+    path::Path,
     sync::{Arc, RwLock},
 };
 
@@ -485,6 +486,8 @@ pub(crate) fn stage(
     words: &Words,
     subset_text_fonts: bool,
     licenses: Licenses,
+    cache: Option<&Path>,
+    tuning: Tuning,
 ) -> Vec<Edit> {
     let sources: Vec<(&Tag, Cow<str>)> = doc
         .tags()
@@ -550,6 +553,8 @@ pub(crate) fn stage(
         words,
         subset_text_fonts,
         notices: licenses,
+        cache,
+        tuning,
     };
     let notices = fonts::rewrite(&mut sheets, &loose, &settings);
     let printed: Vec<Option<String>> = sheets

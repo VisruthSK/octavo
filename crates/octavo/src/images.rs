@@ -2,7 +2,7 @@ use crate::{
     data::{self, Mime},
     doc::{Doc, Edit},
     html::{AttrName, Element, Tag},
-    ImageEncoding, ImageFormat, Target, Transform,
+    ImageEncoding, ImageFormat, Target, Transform, Tuning,
 };
 use fast_image_resize::{images::Image, FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
 use gamut_core::{Dimensions, EncodeImage, ImageRef, Rgb8, Rgba8};
@@ -64,7 +64,7 @@ fn jobs_mut<'i, 'a>(images: &'i mut [Candidate<'a>]) -> Vec<&'i mut EncodedUri<'
         .collect()
 }
 
-pub(crate) fn stage(doc: &Doc, lossy: Option<ImageEncoding>) -> Vec<Edit> {
+pub(crate) fn stage(doc: &Doc, lossy: Option<ImageEncoding>, tuning: Tuning) -> Vec<Edit> {
     let mut images: Vec<Candidate> = doc
         .tags()
         .iter()
@@ -108,7 +108,7 @@ pub(crate) fn stage(doc: &Doc, lossy: Option<ImageEncoding>) -> Vec<Edit> {
         .into_par_iter()
         .with_max_len(1)
         .filter_map(|(at, _)| {
-            let uri = reencode(decoded[at].as_ref()?, lossy)?;
+            let uri = reencode(decoded[at].as_ref()?, lossy, tuning)?;
             Some((at, uri))
         })
         .collect();
@@ -155,13 +155,13 @@ fn decode(uri: &str) -> Option<Decoded> {
     })
 }
 
-fn reencode(decoded: &Decoded, lossy: Option<ImageEncoding>) -> Option<String> {
+fn reencode(decoded: &Decoded, lossy: Option<ImageEncoding>, tuning: Tuning) -> Option<String> {
     lossy
         .and_then(|encoding| encode(decoded, encoding))
-        .or_else(|| recompress(decoded))
+        .or_else(|| recompress(decoded, tuning))
 }
 
-fn recompress(decoded: &Decoded) -> Option<String> {
+fn recompress(decoded: &Decoded, tuning: Tuning) -> Option<String> {
     if decoded.image.mime != Mime::ImagePng || decoded.pixels > MAX_LOSSLESS_PIXELS {
         return None;
     }
@@ -174,7 +174,11 @@ fn recompress(decoded: &Decoded) -> Option<String> {
     };
     let options = PngOptions {
         strip: StripChunks::Keep(RENDERING_CHUNKS.into_iter().collect()),
-        ..PngOptions::from_preset(effort.preset())
+        ..PngOptions::from_preset(
+            tuning
+                .png_preset
+                .map_or(effort.preset(), |preset| preset.min(6)),
+        )
     };
     let smaller = oxipng::optimize_from_memory(&decoded.image.bytes, &options)
         .ok()
