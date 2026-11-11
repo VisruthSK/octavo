@@ -78,7 +78,6 @@ pub struct Settings<'a> {
 
 pub fn rewrite(
     sheets: &mut [Option<StyleSheet<'_>>],
-    css: &[&str],
     loose: &[&str],
     settings: &Settings,
 ) -> Vec<Vec<String>> {
@@ -96,7 +95,12 @@ pub fn rewrite(
         return vec![Vec::new(); sheets.len()];
     }
     let usage = collect_usage(sheets, loose);
-    let chars = collect_chars(css, loose, settings);
+    let surviving: Vec<String> = sheets
+        .par_iter()
+        .filter_map(|sheet| Some(sheet.as_ref()?.to_css(PrinterOptions::default()).ok()?.code))
+        .collect();
+    let surviving: Vec<&str> = surviving.iter().map(String::as_str).collect();
+    let chars = collect_chars(&surviving, loose, settings);
     let decisions: Vec<Vec<Decision>> = faces
         .par_iter()
         .map(|sheet_faces| {

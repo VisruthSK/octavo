@@ -303,14 +303,13 @@ pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, licenses: Licens
         .flat_map(|s| s.saved.iter().map(String::as_str))
         .chain(embedded)
         .collect();
-    let css: Vec<&str> = shielded.iter().map(|s| s.css.as_str()).collect();
     let settings = fonts::Settings {
         src: doc.src(),
         words,
         subset_text_fonts,
         notices: licenses,
     };
-    let notices = fonts::rewrite(&mut sheets, &css, &loose, &settings);
+    let notices = fonts::rewrite(&mut sheets, &loose, &settings);
     let printed: Vec<Option<String>> = sheets
         .par_iter()
         .zip(&shielded)
