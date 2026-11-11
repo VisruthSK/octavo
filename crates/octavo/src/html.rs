@@ -1,3 +1,4 @@
+use crate::ascii::starts_with_ignore_case;
 use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -207,6 +208,12 @@ impl Tag {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct Scan {
+    pub(crate) tags: Vec<Tag>,
+    pub(crate) found_html: bool,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct Scanned {
     html: String,
     tags: Vec<Tag>,
@@ -214,8 +221,11 @@ pub(crate) struct Scanned {
 
 impl Scanned {
     pub(crate) fn new(html: String) -> Self {
-        let tags = scan(&html);
-        Scanned { html, tags }
+        let scan = scan(&html);
+        Scanned {
+            html,
+            tags: scan.tags,
+        }
     }
 
     pub(crate) fn html(&self) -> &str {
@@ -233,8 +243,22 @@ struct Svg {
     body_start: usize,
 }
 
-pub(crate) fn scan(src: &str) -> Vec<Tag> {
+fn bogus_comment(src: &str) -> bool {
+    if src.starts_with("<!") {
+        return !starts_with_ignore_case(src, "<!doctype");
+    }
+    if src.starts_with("<?") {
+        return true;
+    }
+    if let Some(rest) = src.strip_prefix("</") {
+        return !rest.starts_with(|c: char| c.is_ascii_alphabetic());
+    }
+    false
+}
+
+pub(crate) fn scan(src: &str) -> Scan {
     let mut tags = Vec::new();
+    let mut found_html = false;
     let mut svg_depth = 0usize;
     let mut svg: Option<Svg> = None;
     let mut i = 0;
@@ -251,6 +275,10 @@ pub(crate) fn scan(src: &str) -> Vec<Tag> {
             };
             continue;
         }
+        if bogus_comment(&src[i..]) {
+            i = src[i..].find('>').map_or(src.len(), |e| i + e + 1);
+            continue;
+        }
         let closing = src[i + 1..].starts_with('/');
         let name_start = i + 1 + closing as usize;
         let name_len = src[name_start..]
@@ -262,6 +290,12 @@ pub(crate) fn scan(src: &str) -> Vec<Tag> {
             continue;
         }
         let written = &src[name_start..name_start + name_len];
+        if !closing && written.eq_ignore_ascii_case("html") {
+            found_html = true;
+        }
+        if !closing && written.eq_ignore_ascii_case("plaintext") {
+            break;
+        }
         let element = Element::parse(written);
         let raw = RawText::parse(written);
         let (attrs, tag_end, self_closing) =
@@ -320,7 +354,7 @@ pub(crate) fn scan(src: &str) -> Vec<Tag> {
         i = span.end;
     }
     tags.sort_by_key(|t| t.span.start);
-    tags
+    Scan { tags, found_html }
 }
 
 fn find_close(src: &str, from: usize, name: &str) -> usize {

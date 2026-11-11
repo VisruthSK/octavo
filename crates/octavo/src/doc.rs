@@ -55,13 +55,16 @@ impl Edits {
 pub(crate) struct Doc<'a> {
     src: &'a str,
     tags: Vec<Tag>,
+    found_html: bool,
 }
 
 impl<'a> Doc<'a> {
     pub(crate) fn new(src: &'a str) -> Self {
+        let scan = html::scan(src);
         Doc {
             src,
-            tags: html::scan(src),
+            tags: scan.tags,
+            found_html: scan.found_html,
         }
     }
 
@@ -71,6 +74,10 @@ impl<'a> Doc<'a> {
 
     pub(crate) fn tags(&self) -> &[Tag] {
         &self.tags
+    }
+
+    pub(crate) fn found_html(&self) -> bool {
+        self.found_html
     }
 
     pub(crate) fn words(&self, removed: &[Range<usize>]) -> Words {
