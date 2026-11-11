@@ -3,7 +3,7 @@ use crate::{
     data::{self, Mime},
     html::{AttrName, Attribute, Element, Rel, Scanned, Tag},
     js::{self, ScriptKind},
-    Licenses,
+    Licenses, Mode,
 };
 use base91::{
     codemap::{xml_friendly::ENCODE_MAP, XmlFriendly},
@@ -12,7 +12,7 @@ use base91::{
 use brotli::enc::BrotliEncoderParams;
 use indexmap::IndexSet;
 use libdeflater::{CompressionLvl, Compressor};
-use std::{borrow::Cow, collections::BTreeMap, ops::Range, sync::OnceLock};
+use std::{borrow::Cow, collections::BTreeMap, num::NonZeroUsize, ops::Range, sync::OnceLock};
 
 const MIN_BLOB: usize = 256;
 const MIN_FRAGMENT: usize = 1024;
@@ -40,20 +40,20 @@ struct Site {
     call: String,
 }
 
-pub struct Packed {
-    pub html: String,
-    pub blobs: usize,
+pub(crate) struct Packed {
+    pub(crate) html: String,
+    pub(crate) blobs: NonZeroUsize,
 }
 
-pub fn run(scanned: &Scanned, styles: bool) -> Option<Packed> {
+pub(crate) fn run(scanned: &Scanned, mode: Mode) -> Option<Packed> {
     let src = scanned.html();
-    if contains_ignore_case(src, "content-security-policy") {
+    if mode == Mode::Safe || contains_ignore_case(src, "content-security-policy") {
         return None;
     }
     let mut blobs = Blobs::default();
     let mut sites: Vec<Site> = Vec::new();
     for tag in scanned.tags().iter().filter(|t| !t.in_svg) {
-        if let Some(c) = candidate(src, tag, styles) {
+        if let Some(c) = candidate(src, tag, mode) {
             sites.push(Site {
                 span: tag.span.clone(),
                 call: call_site(blobs.add(c.text), c.kind, &c.attrs),
@@ -79,11 +79,12 @@ pub fn run(scanned: &Scanned, styles: bool) -> Option<Packed> {
     out.push_str(&src[at..]);
     Some(Packed {
         html: out,
-        blobs: blobs.texts.len(),
+        blobs: NonZeroUsize::new(blobs.texts.len())?,
     })
 }
 
-fn candidate<'a>(src: &'a str, tag: &Tag, styles: bool) -> Option<Candidate<'a>> {
+fn candidate<'a>(src: &'a str, tag: &Tag, mode: Mode) -> Option<Candidate<'a>> {
+    let styles = mode == Mode::Packed;
     let (kind, text) = match tag.element {
         Element::Script
             if tag.attr(AttrName::Src).is_none()

@@ -1,7 +1,7 @@
 use crate::{
     data::{self, Mime},
     doc::{Doc, Edit},
-    html::{AttrName, Element},
+    html::{AttrName, Element, Tag},
     ImageEncoding, ImageFormat, Target, Transform,
 };
 use fast_image_resize::{images::Image, FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
@@ -13,7 +13,7 @@ use oxipng::{Options as PngOptions, StripChunks};
 use ravif::Encoder;
 use rayon::prelude::*;
 use rgb::FromSlice;
-use std::{cmp::Reverse, io::Cursor};
+use std::{cmp::Reverse, io::Cursor, num::NonZeroU32};
 
 const MAX_LOSSLESS_PIXELS: u64 = 40_000_000;
 const MAX_LOSSY_PIXELS: u64 = 200_000_000;
@@ -25,10 +25,16 @@ struct Decoded {
     pixels: u64,
 }
 
-struct Uri<'a> {
-    owner: usize,
+struct EncodedUri<'a> {
     attr: AttrName,
     value: &'a str,
+    decoded: Option<Decoded>,
+    converted: Option<String>,
+}
+
+struct Candidate<'a> {
+    tag: &'a Tag,
+    uris: Vec<EncodedUri<'a>>,
 }
 
 enum Effort {
@@ -47,66 +53,79 @@ impl Effort {
     }
 }
 
-pub fn stage(doc: &Doc, lossy: Option<ImageEncoding>) -> Vec<Edit> {
-    let tags: Vec<_> = doc
+fn flat<'i, 'a>(images: &'i [Candidate<'a>]) -> Vec<&'i EncodedUri<'a>> {
+    images.iter().flat_map(|image| image.uris.iter()).collect()
+}
+
+fn jobs_mut<'i, 'a>(images: &'i mut [Candidate<'a>]) -> Vec<&'i mut EncodedUri<'a>> {
+    images
+        .iter_mut()
+        .flat_map(|image| image.uris.iter_mut())
+        .collect()
+}
+
+pub(crate) fn stage(doc: &Doc, lossy: Option<ImageEncoding>) -> Vec<Edit> {
+    let mut images: Vec<Candidate> = doc
         .tags()
         .iter()
         .filter(|t| t.element == Element::Img && !t.in_svg)
-        .collect();
-    let uris: Vec<Uri<'_>> = tags
-        .iter()
-        .enumerate()
-        .flat_map(|(at, tag)| {
-            tag.attrs
+        .map(|tag| Candidate {
+            tag,
+            uris: tag
+                .attrs
                 .iter()
                 .filter(|attr| matches!(attr.name, AttrName::Src | AttrName::DataSrc))
-                .map(move |attr| Uri {
-                    owner: at,
+                .map(|attr| EncodedUri {
                     attr: attr.name.clone(),
                     value: &attr.value,
+                    decoded: None,
+                    converted: None,
                 })
+                .collect(),
         })
         .collect();
-    let mut starts = vec![0; tags.len() + 1];
-    for uri in &uris {
-        starts[uri.owner + 1] += 1;
-    }
-    for at in 0..tags.len() {
-        starts[at + 1] += starts[at];
-    }
-    let decoded: Vec<Option<Decoded>> = uris.par_iter().map(|uri| decode(uri.value)).collect();
-    let mut largest_first: Vec<usize> = (0..uris.len()).filter(|&i| decoded[i].is_some()).collect();
-    largest_first.sort_by_key(|&i| Reverse(decoded[i].as_ref().map_or(0, |d| d.pixels)));
-    let finished: Vec<(usize, String)> = largest_first
-        .par_iter()
-        .with_max_len(1)
-        .filter_map(|&i| {
-            let decoded = decoded[i].as_ref()?;
-            reencode(decoded, lossy).map(|uri| (i, uri))
-        })
-        .collect();
-    let mut converted: Vec<Option<String>> = vec![None; uris.len()];
-    for (i, uri) in finished {
-        converted[i] = Some(uri);
-    }
-    tags.iter()
+    let jobs = jobs_mut(&mut images);
+    jobs.into_par_iter().for_each(|uri| {
+        uri.decoded = decode(uri.value);
+    });
+    let mut largest_first: Vec<(usize, u64)> = flat(&images)
+        .into_iter()
         .enumerate()
-        .map(|(at, tag)| Edit {
-            span: tag.span.clone(),
-            text: tag.open_tag(|name, value| {
-                let source = uris[starts[at]..starts[at + 1]]
-                    .iter()
-                    .position(|uri| uri.attr == *name)
-                    .map(|offset| starts[at] + offset);
-                let replacement = source.and_then(|i| converted[i].take());
-                Some(replacement.unwrap_or_else(|| value.to_string()))
-            }),
-            transform: if lossy.is_some() {
-                Transform::ReencodedImage
-            } else {
-                Transform::RecompressedPng
-            },
-            target: Target::Resource(tag.attr(AttrName::Id).unwrap_or("img").to_string()),
+        .filter_map(|(at, uri)| uri.decoded.as_ref().map(|decoded| (at, decoded.pixels)))
+        .collect();
+    largest_first.sort_by_key(|&(_, pixels)| Reverse(pixels));
+    let uris = flat(&images);
+    let converted: Vec<(usize, String)> = largest_first
+        .into_par_iter()
+        .with_max_len(1)
+        .filter_map(|(at, _)| {
+            let decoded = uris[at].decoded.as_ref()?;
+            reencode(decoded, lossy).map(|uri| (at, uri))
+        })
+        .collect();
+    let mut jobs = jobs_mut(&mut images);
+    for (at, uri) in converted {
+        jobs[at].converted = Some(uri);
+    }
+    images
+        .into_iter()
+        .map(|image| {
+            let Candidate { tag, mut uris } = image;
+            Edit {
+                span: tag.span.clone(),
+                text: tag.open_tag(|name, value| {
+                    uris.iter_mut()
+                        .find(|uri| uri.attr == *name)
+                        .and_then(|uri| uri.converted.take())
+                        .or_else(|| Some(value.to_string()))
+                }),
+                transform: if lossy.is_some() {
+                    Transform::ReencodedImage
+                } else {
+                    Transform::RecompressedPng
+                },
+                target: Target::Resource(tag.label().to_string()),
+            }
         })
         .filter(Edit::shrinks)
         .collect()
@@ -162,7 +181,7 @@ fn encode(decoded: &Decoded, lossy: ImageEncoding) -> Option<String> {
     let mut resized = false;
     if let Some(side) = lossy
         .max_side
-        .filter(|&side| image.width().max(image.height()) > side)
+        .filter(|&side| image.width().max(image.height()) > side.get())
     {
         image = shrink(image, side)?;
         resized = true;
@@ -176,9 +195,10 @@ fn encode(decoded: &Decoded, lossy: ImageEncoding) -> Option<String> {
         .then(|| data::encode_base64(mime, &bytes))
 }
 
-fn shrink(image: RgbaImage, side: u32) -> Option<RgbaImage> {
+fn shrink(image: RgbaImage, side: NonZeroU32) -> Option<RgbaImage> {
+    let side = f64::from(side.get());
     let (source_width, source_height) = (image.width(), image.height());
-    let scale = f64::from(side) / f64::from(source_width.max(source_height));
+    let scale = side / f64::from(source_width.max(source_height));
     let width = ((f64::from(source_width) * scale).round() as u32).max(1);
     let height = ((f64::from(source_height) * scale).round() as u32).max(1);
     let source = Image::from_vec_u8(

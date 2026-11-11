@@ -1,7 +1,7 @@
 use crate::{
     doc::{Doc, Edit},
     html::{AttrName, Element, Tag},
-    Target, Transform,
+    Library, Target, Transform,
 };
 use std::borrow::Cow;
 
@@ -11,8 +11,8 @@ enum Fate {
     Remove,
 }
 
-struct Library {
-    global: &'static str,
+struct Bundled {
+    global: Library,
     signature: &'static str,
     needed_by: &'static [&'static [&'static str]],
     fate: Fate,
@@ -26,33 +26,33 @@ const NOTE_LINKS: &[&str] = &[
 ];
 const BOOTSTRAP_API: &[&str] = &["data-bs-", "code-copy-button"];
 
-const LIBRARIES: [Library; 5] = [
-    Library {
-        global: "tippy",
+const LIBRARIES: [Bundled; 5] = [
+    Bundled {
+        global: Library::Tippy,
         signature: "require(\"@popperjs/core\")",
         needed_by: &[NOTE_LINKS],
         fate: Fate::Stub,
     },
-    Library {
-        global: "bootstrap",
+    Bundled {
+        global: Library::Bootstrap,
         signature: "Bootstrap v5",
         needed_by: &[BOOTSTRAP_API],
         fate: Fate::Remove,
     },
-    Library {
-        global: "Popper",
+    Bundled {
+        global: Library::Popper,
         signature: "@popperjs/core v",
         needed_by: &[NOTE_LINKS, BOOTSTRAP_API],
         fate: Fate::Remove,
     },
-    Library {
-        global: "ClipboardJS",
+    Bundled {
+        global: Library::Clipboard,
         signature: "clipboard.js v",
         needed_by: &[&["code-copy-button"]],
         fate: Fate::Stub,
     },
-    Library {
-        global: "AnchorJS",
+    Bundled {
+        global: Library::Anchor,
         signature: "AnchorJS - v",
         needed_by: &[&["anchored"]],
         fate: Fate::Stub,
@@ -63,7 +63,7 @@ const NULL_OBJECT: &str = "let n=new Proxy(function(){},{get:(_,k)=>k==Symbol.to
 const BANNER_BYTES: usize = 300;
 const MIN_LIBRARY_BYTES: usize = 2000;
 
-pub fn stage(doc: &Doc) -> Vec<Edit> {
+pub(crate) fn stage(doc: &Doc) -> Vec<Edit> {
     let scripts: Vec<(&Tag, Cow<str>)> = doc
         .tags()
         .iter()
@@ -71,10 +71,10 @@ pub fn stage(doc: &Doc) -> Vec<Edit> {
         .filter_map(|t| doc.script_text(t).map(|text| (t, text)))
         .collect();
     let markup = doc.markup();
-    let mut dead: Vec<(&Library, &Tag)> = Vec::new();
+    let mut dead: Vec<(&Bundled, &Tag)> = Vec::new();
     for lib in &LIBRARIES {
         let alive =
-            |tag: &Tag, dead: &[(&Library, &Tag)]| dead.iter().all(|(_, d)| d.span != tag.span);
+            |tag: &Tag, dead: &[(&Bundled, &Tag)]| dead.iter().all(|(_, d)| d.span != tag.span);
         let Some((tag, _)) = scripts.iter().find(|(t, text)| {
             alive(t, &dead)
                 && text.len() > MIN_LIBRARY_BYTES
@@ -92,20 +92,20 @@ pub fn stage(doc: &Doc) -> Vec<Edit> {
             alive(other, &dead)
                 && other.span != tag.span
                 && !is_runtime(other)
-                && text.contains(lib.global)
+                && text.contains(lib.global.name())
         });
         if !wanted && !referenced {
             dead.push((lib, tag));
         }
     }
-    let stubs: Vec<&(&Library, &Tag)> = dead
+    let stubs: Vec<&(&Bundled, &Tag)> = dead
         .iter()
         .filter(|(lib, _)| lib.fate == Fate::Stub)
         .collect();
     let stub_at = stubs.iter().map(|(_, tag)| tag.span.start).min();
     let assignments: String = stubs
         .iter()
-        .map(|(lib, _)| format!("window.{}=n;", lib.global))
+        .map(|(lib, _)| format!("window.{}=n;", lib.global.name()))
         .collect();
     dead.iter()
         .map(|(lib, tag)| Edit {
@@ -116,7 +116,7 @@ pub fn stage(doc: &Doc) -> Vec<Edit> {
                 String::new()
             },
             transform: Transform::DeadLibrary,
-            target: Target::Library(lib.global.to_string()),
+            target: Target::Library(lib.global),
         })
         .collect()
 }

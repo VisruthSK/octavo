@@ -1,5 +1,6 @@
 use crate::{
     ascii::starts_with_ignore_case,
+    data,
     doc::Doc,
     html::{AttrName, Element},
 };
@@ -7,11 +8,26 @@ use indexmap::IndexSet;
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Origin {
+pub(crate) enum Origin {
     Local,
     Remote,
 }
 
+/// A URL found in the document, kept exactly as written.
+///
+/// Carries where the URL points, so the optimizer can tell a document that
+/// is not self-contained from one whose resources merely live on the
+/// network.
+///
+/// ```
+/// use octavo::{optimize, Error, Mode};
+///
+/// let src = "<html><head><script src=\"a.js\"></script></head></html>";
+/// let Err(Error::NotSelfContained(links)) = optimize(src, Mode::Safe) else {
+///     panic!("expected a self-containment error");
+/// };
+/// assert_eq!(links[0].as_str(), "a.js");
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Url {
     text: String,
@@ -34,10 +50,22 @@ impl Url {
         })
     }
 
-    pub fn origin(&self) -> Origin {
+    pub(crate) fn origin(&self) -> Origin {
         self.origin
     }
 
+    /// The URL as written in the document.
+    ///
+    /// ```
+    /// use octavo::{optimize, Error, Mode};
+    ///
+    /// let src = "<html><head><script src=\"a.js\"></script></head></html>";
+    /// let Err(Error::NotSelfContained(links)) = optimize(src, Mode::Safe) else {
+    ///     panic!("expected a self-containment error");
+    /// };
+    /// assert_eq!(links[0].as_str(), "a.js");
+    /// ```
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.text
     }
@@ -73,7 +101,7 @@ impl Scheme {
 
     fn prefix(self) -> &'static str {
         match self {
-            Scheme::Data => "data:",
+            Scheme::Data => data::DATA_URL_PREFIX,
             Scheme::Blob => "blob:",
             Scheme::About => "about:",
             Scheme::Fragment => "#",
@@ -105,32 +133,32 @@ impl Scheme {
 }
 
 #[derive(Default)]
-pub struct Links {
+pub(crate) struct Links {
     urls: IndexSet<Url>,
 }
 
 impl Links {
-    pub fn local(&self) -> impl Iterator<Item = &Url> {
+    pub(crate) fn local(&self) -> impl Iterator<Item = &Url> {
         self.urls.iter().filter(|url| url.origin() == Origin::Local)
     }
 
-    pub fn remote(&self) -> impl Iterator<Item = &Url> {
+    pub(crate) fn remote(&self) -> impl Iterator<Item = &Url> {
         self.urls
             .iter()
             .filter(|url| url.origin() == Origin::Remote)
     }
 
-    pub fn is_self_contained(&self) -> bool {
+    pub(crate) fn is_self_contained(&self) -> bool {
         self.local().next().is_none()
     }
 }
 
-pub fn is_html(src: &str) -> bool {
+pub(crate) fn is_html(src: &str) -> bool {
     src.match_indices('<')
         .any(|(at, _)| starts_with_ignore_case(&src[at..], "<html"))
 }
 
-pub fn links(doc: &Doc) -> Links {
+pub(crate) fn links(doc: &Doc) -> Links {
     let mut urls = IndexSet::new();
     for tag in doc.tags().iter().filter(|t| !t.in_svg) {
         let url = match tag.element {

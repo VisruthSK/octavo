@@ -1,7 +1,7 @@
-use std::{borrow::Borrow, ops::Range};
+use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Element {
+pub(crate) enum Element {
     Script,
     Style,
     Link,
@@ -18,7 +18,7 @@ impl Element {
         Element::Svg,
     ];
 
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Element::Script => "script",
             Element::Style => "style",
@@ -88,7 +88,7 @@ impl RawText {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AttrName {
+pub(crate) enum AttrName {
     Src,
     DataSrc,
     Href,
@@ -99,7 +99,7 @@ pub enum AttrName {
 }
 
 impl AttrName {
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             AttrName::Src => "src",
             AttrName::DataSrc => "data-src",
@@ -131,19 +131,19 @@ impl AttrName {
 }
 
 #[derive(Clone, Debug)]
-pub struct Attribute {
-    pub name: AttrName,
-    pub value: String,
+pub(crate) struct Attribute {
+    pub(crate) name: AttrName,
+    pub(crate) value: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Rel<'a> {
+pub(crate) enum Rel<'a> {
     Stylesheet,
     Other(&'a str),
 }
 
 impl Rel<'_> {
-    pub fn is_stylesheet(&self) -> bool {
+    pub(crate) fn is_stylesheet(&self) -> bool {
         match self {
             Rel::Stylesheet => true,
             Rel::Other(value) => value
@@ -154,24 +154,23 @@ impl Rel<'_> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Tag {
-    pub element: Element,
-    pub span: Range<usize>,
-    pub attrs: Vec<Attribute>,
-    pub body: Option<Range<usize>>,
-    pub in_svg: bool,
+pub(crate) struct Tag {
+    pub(crate) element: Element,
+    pub(crate) span: Range<usize>,
+    pub(crate) attrs: Vec<Attribute>,
+    pub(crate) body: Option<Range<usize>>,
+    pub(crate) in_svg: bool,
 }
 
 impl Tag {
-    pub fn attr(&self, name: impl Borrow<AttrName>) -> Option<&str> {
-        let name = name.borrow();
+    pub(crate) fn attr(&self, name: AttrName) -> Option<&str> {
         self.attrs
             .iter()
-            .find(|attr| attr.name == *name)
+            .find(|attr| attr.name == name)
             .map(|attr| attr.value.as_str())
     }
 
-    pub fn rel(&self) -> Option<Rel<'_>> {
+    pub(crate) fn rel(&self) -> Option<Rel<'_>> {
         self.attr(AttrName::Rel).map(|value| {
             if value == "stylesheet" {
                 Rel::Stylesheet
@@ -181,7 +180,15 @@ impl Tag {
         })
     }
 
-    pub fn open_tag(&self, mut rewrite: impl FnMut(&AttrName, &str) -> Option<String>) -> String {
+    pub(crate) fn label(&self) -> &str {
+        self.attr(AttrName::Id)
+            .unwrap_or_else(|| self.element.name())
+    }
+
+    pub(crate) fn open_tag(
+        &self,
+        mut rewrite: impl FnMut(&AttrName, &str) -> Option<String>,
+    ) -> String {
         let attrs: String = self
             .attrs
             .iter()
@@ -200,22 +207,22 @@ impl Tag {
 }
 
 #[derive(Clone, Debug)]
-pub struct Scanned {
+pub(crate) struct Scanned {
     html: String,
     tags: Vec<Tag>,
 }
 
 impl Scanned {
-    pub fn new(html: String) -> Self {
+    pub(crate) fn new(html: String) -> Self {
         let tags = scan(&html);
         Scanned { html, tags }
     }
 
-    pub fn html(&self) -> &str {
+    pub(crate) fn html(&self) -> &str {
         &self.html
     }
 
-    pub fn tags(&self) -> &[Tag] {
+    pub(crate) fn tags(&self) -> &[Tag] {
         &self.tags
     }
 }
@@ -226,7 +233,7 @@ struct Svg {
     body_start: usize,
 }
 
-pub fn scan(src: &str) -> Vec<Tag> {
+pub(crate) fn scan(src: &str) -> Vec<Tag> {
     let mut tags = Vec::new();
     let mut svg_depth = 0usize;
     let mut svg: Option<Svg> = None;

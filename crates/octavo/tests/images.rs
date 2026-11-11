@@ -6,6 +6,7 @@ use flate2::{write::ZlibEncoder, Compression, Crc};
 use image::ImageEncoder;
 use octavo::{ImageEncoding, ImageFormat, Mode, Options};
 use std::io::Write;
+use std::num::NonZeroU32;
 
 fn chunk(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
     let mut crc = Crc::new();
@@ -103,7 +104,7 @@ fn photographic_png() -> Vec<u8> {
     png
 }
 
-fn lossy(format: ImageFormat, max_side: Option<u32>) -> Options {
+fn lossy(format: ImageFormat, max_side: Option<NonZeroU32>) -> Options {
     Options {
         images: Some(ImageEncoding {
             max_side,
@@ -137,7 +138,7 @@ fn oversized_images_shrink_without_touching_the_tag() {
     let full = simplified(&src, lossy(ImageFormat::Webp, None))
         .pack(Mode::Safe)
         .html;
-    let shrunk = simplified(&src, lossy(ImageFormat::Webp, Some(24)))
+    let shrunk = simplified(&src, lossy(ImageFormat::Webp, NonZeroU32::new(24)))
         .pack(Mode::Safe)
         .html;
     assert!(shrunk.len() < full.len());

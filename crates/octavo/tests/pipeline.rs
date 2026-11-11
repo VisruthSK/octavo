@@ -2,6 +2,7 @@ mod common;
 
 use common::{optimized, page, safe};
 use octavo::{Mode, Target, Transform};
+use std::num::NonZeroUsize;
 
 #[test]
 fn unreachable_rules_are_removed_and_reachable_kept() {
@@ -75,7 +76,7 @@ fn invalid_css_passes_through_unchanged() {
 fn packing_replaces_large_scripts_with_call_sites() {
     let big = "window.counter=(window.counter||0)+1;".repeat(80);
     let src = page(&format!("<script>{big}</script>"), "<p>");
-    let out = optimized(&src, Mode::Packed { styles: true }).html;
+    let out = optimized(&src, Mode::Packed).html;
     assert!(
         out.contains("$o(0")
             && !out.contains("window.counter=(window.counter||0)+1;window.counter")
@@ -89,23 +90,16 @@ fn identical_resources_share_one_blob() {
         .map(|i| format!("window.v{i}=Math.sqrt({});", i * 31))
         .collect();
     let tag = format!("<script>{script}</script>");
-    let out = optimized(
-        &page(&format!("{tag}{tag}{tag}"), "<p>"),
-        Mode::Packed { styles: true },
-    );
-    assert!(out
-        .applied
-        .iter()
-        .any(|a| a.transform == Transform::Packed && a.target == Target::Resources(1)));
+    let out = optimized(&page(&format!("{tag}{tag}{tag}"), "<p>"), Mode::Packed);
+    assert!(out.applied.iter().any(|a| a.transform == Transform::Packed
+        && a.target == Target::Resources(NonZeroUsize::new(1).expect("non-zero"))));
 }
 
 #[test]
 fn content_security_policy_disables_packing() {
     let big = "var a=1;".repeat(300);
     let src = page(&format!("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'\"><script>{big}</script>"), "<p>");
-    assert!(!optimized(&src, Mode::Packed { styles: true })
-        .html
-        .contains("$o("));
+    assert!(!optimized(&src, Mode::Packed).html.contains("$o("));
 }
 
 #[test]
@@ -122,7 +116,7 @@ fn keep_styles_leaves_stylesheets_untouched_by_the_packer() {
             .map(|i| format!("<p class=k>{i}"))
             .collect::<String>(),
     );
-    let out = optimized(&src, Mode::Packed { styles: false }).html;
+    let out = optimized(&src, Mode::Scripts).html;
     assert!(out.contains("<style>") && out.matches("$o(").count() == 1);
 }
 
@@ -164,12 +158,8 @@ fn big_svg() -> String {
 #[test]
 fn large_inline_svg_is_packed_only_when_javascript_is_required() {
     let src = page("", &format!("<div>{}</div>", big_svg()));
-    assert!(optimized(&src, Mode::Packed { styles: true })
-        .html
-        .contains("$o(0,3)"));
-    assert!(optimized(&src, Mode::Packed { styles: false })
-        .html
-        .contains("<path"));
+    assert!(optimized(&src, Mode::Packed).html.contains("$o(0,3)"));
+    assert!(optimized(&src, Mode::Scripts).html.contains("<path"));
 }
 
 #[test]
@@ -181,7 +171,7 @@ fn inert_data_scripts_keep_their_type_when_packed() {
         "",
         &format!("<script type=\"application/json\" data-for=\"w\">[{data}0]</script>"),
     );
-    let out = optimized(&src, Mode::Packed { styles: false }).html;
+    let out = optimized(&src, Mode::Scripts).html;
     assert!(out.contains(r#"$o(0,0,{"data-for":"w","type":"application/json"})"#));
 }
 
@@ -191,9 +181,7 @@ fn inline_modules_are_never_packed() {
         .map(|i| format!("window.m{i}={i};"))
         .collect::<String>();
     let src = page(&format!("<script type=\"module\">{body}</script>"), "<p>");
-    assert!(!optimized(&src, Mode::Packed { styles: true })
-        .html
-        .contains("$o("));
+    assert!(!optimized(&src, Mode::Packed).html.contains("$o("));
 }
 
 #[test]

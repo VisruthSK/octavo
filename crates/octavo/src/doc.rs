@@ -6,25 +6,25 @@ use crate::{
 };
 use std::{borrow::Cow, ops::Range};
 
-pub struct Edit {
-    pub span: Range<usize>,
-    pub text: String,
-    pub transform: Transform,
-    pub target: Target,
+pub(crate) struct Edit {
+    pub(crate) span: Range<usize>,
+    pub(crate) text: String,
+    pub(crate) transform: Transform,
+    pub(crate) target: Target,
 }
 
 impl Edit {
-    pub fn shrinks(&self) -> bool {
+    pub(crate) fn shrinks(&self) -> bool {
         self.text.len() < self.span.len()
     }
 }
 
-pub struct Edits {
+pub(crate) struct Edits {
     items: Vec<Edit>,
 }
 
 impl Edits {
-    pub fn new(mut edits: Vec<Edit>) -> Edits {
+    pub(crate) fn new(mut edits: Vec<Edit>) -> Edits {
         edits.sort_by_key(|edit| edit.span.start);
         let mut items: Vec<Edit> = Vec::with_capacity(edits.len());
         for edit in edits {
@@ -39,7 +39,7 @@ impl Edits {
         Edits { items }
     }
 
-    pub fn apply(&self, src: &str) -> String {
+    pub(crate) fn apply(&self, src: &str) -> String {
         let mut out = String::with_capacity(src.len());
         let mut at = 0;
         for edit in &self.items {
@@ -52,28 +52,28 @@ impl Edits {
     }
 }
 
-pub struct Doc<'a> {
+pub(crate) struct Doc<'a> {
     src: &'a str,
     tags: Vec<Tag>,
 }
 
 impl<'a> Doc<'a> {
-    pub fn new(src: &'a str) -> Self {
+    pub(crate) fn new(src: &'a str) -> Self {
         Doc {
             src,
             tags: html::scan(src),
         }
     }
 
-    pub fn src(&self) -> &str {
+    pub(crate) fn src(&self) -> &str {
         self.src
     }
 
-    pub fn tags(&self) -> &[Tag] {
+    pub(crate) fn tags(&self) -> &[Tag] {
         &self.tags
     }
 
-    pub fn words(&self, removed: &[Range<usize>]) -> Words {
+    pub(crate) fn words(&self, removed: &[Range<usize>]) -> Words {
         let gone = |tag: &Tag| removed.contains(&tag.span);
         let mut words =
             self.collect(|t| matches!(t.element, Element::Style | Element::Link) || gone(t));
@@ -89,11 +89,11 @@ impl<'a> Doc<'a> {
         words
     }
 
-    pub fn markup(&self) -> Words {
+    pub(crate) fn markup(&self) -> Words {
         self.collect(|t| matches!(t.element, Element::Script | Element::Style | Element::Link))
     }
 
-    pub fn script_text(&self, tag: &Tag) -> Option<Cow<'_, str>> {
+    pub(crate) fn script_text(&self, tag: &Tag) -> Option<Cow<'_, str>> {
         match (tag.attr(AttrName::Src), &tag.body) {
             (Some(src), _) => data::decode(src)
                 .and_then(|d| String::from_utf8(d.bytes).ok())

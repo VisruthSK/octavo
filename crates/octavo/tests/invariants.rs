@@ -6,11 +6,7 @@ use proptest::{prelude::*, test_runner::FileFailurePersistence};
 use regex::Regex;
 use std::sync::LazyLock;
 
-const MODES: [Mode; 3] = [
-    Mode::Safe,
-    Mode::Packed { styles: false },
-    Mode::Packed { styles: true },
-];
+const MODES: [Mode; 3] = [Mode::Safe, Mode::Scripts, Mode::Packed];
 
 static TARGETS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?is)<script\b.*?</script\s*>|<style\b.*?</style\s*>|<svg\b.*?</svg\s*>|<link\b[^>]*>|<img\b[^>]*>")
