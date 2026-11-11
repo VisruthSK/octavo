@@ -152,7 +152,7 @@ async function forcedStates(page) {
   return states;
 }
 
-async function settle(page, { quiet = 100, limit = 3000 } = {}) {
+async function settle(page, { quiet = 150, limit = 3000 } = {}) {
   await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
   await page.evaluate(
     ({ quiet, limit }) =>
@@ -226,9 +226,10 @@ export async function capture(browser, file, scenario, lossy) {
       accessibility: await settledAccessibilityTree(page),
     });
     if (scripted && !scenario.media && !scenario.motion) {
+      const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
       for (const [index, interact] of interactions.entries()) {
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
-        await settle(page);
+        await settle(page, { quiet: slideDeck ? 400 : 150 });
         await record(`interaction ${index}`);
       }
     }
