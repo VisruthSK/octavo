@@ -7,6 +7,7 @@ use octavo::{optimize, simplify, ImageEncoding, ImageFormat, Mode, Options, Tran
 use std::{
     collections::BTreeMap,
     fs,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     process::{self, ExitCode},
     time::{Duration, Instant},
@@ -28,6 +29,19 @@ const DIM: Style = Style::new().dimmed();
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    #[arg(
+        short,
+        long,
+        global = true,
+        value_name = "N",
+        default_value_t = default_jobs(),
+        help = "Parallel workers"
+    )]
+    jobs: NonZeroUsize,
+}
+
+fn default_jobs() -> NonZeroUsize {
+    std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)
 }
 
 #[derive(Subcommand)]
@@ -138,7 +152,15 @@ fn label(mode: Mode) -> &'static str {
 }
 
 fn main() -> ExitCode {
-    let result = match Cli::parse().command {
+    let cli = Cli::parse();
+    if let Err(error) = rayon::ThreadPoolBuilder::new()
+        .num_threads(cli.jobs.get())
+        .build_global()
+    {
+        eprintln!("{ERROR}error{ERROR:#}: {error}");
+        return ExitCode::FAILURE;
+    }
+    let result = match cli.command {
         Command::Optimize {
             input,
             output,

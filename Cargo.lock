@@ -1636,6 +1636,7 @@ dependencies = [
  "clap",
  "indicatif",
  "octavo",
+ "rayon",
 ]
 
 [[package]]
