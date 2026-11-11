@@ -109,8 +109,10 @@ fn recompress(decoded: &Decoded) -> Option<String> {
     }
     let preset = if decoded.pixels <= THOROUGH_PIXELS {
         4
-    } else {
+    } else if decoded.pixels <= HEAVY_PIXELS {
         2
+    } else {
+        1
     };
     let options = PngOptions {
         strip: StripChunks::Safe,
