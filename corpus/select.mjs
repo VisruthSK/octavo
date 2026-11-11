@@ -1,15 +1,25 @@
 const markers = {
-  bootstrap: /bootstrap/i,
-  revealjs: /reveal(\.js|js)/i,
-  dashboard: /quarto-dashboard|bslib/i,
-  math: /mathjax|katex/i,
-  plotly: /plotly/i,
-  mermaid: /mermaid/i,
-  leaflet: /leaflet/i,
-  tables: /datatables|reactable/i,
-  popups: /tippy|popper/i,
-  search: /quarto-search/i,
-  typst: /typst/i,
+  slides: /<div class="reveal"|Reveal\.initialize/,
+  dashboard: /class="[^"]*quarto-dashboard/,
+  mermaid: /class="[^"]*\bmermaid\b[^"]*"/,
+  mathjax: /MathJax\.Hub|MathJax-script|window\.MathJax/,
+  katex: /class="katex/,
+  math: /class="math (?:inline|display)"/,
+  navbar: /class="navbar/,
+  sidebar: /id="quarto-sidebar/,
+  darkToggle: /quarto-color-scheme-toggle|bootstrap-dark/,
+  crossRefs: /class="quarto-xref|href="#(?:fig|tbl|sec|eq)-/,
+  tabset: /class="panel-tabset/,
+  callout: /class="callout/,
+  listing: /class="[^"]*quarto-listing/,
+  lightbox: /GLightbox|class="[^"]*lightbox/,
+  video: /<video\b/,
+  iframe: /<iframe\b/,
+  search: /id="quarto-search-results|quarto-search-data/,
+  citations: /class="citation"|data-cites=/,
+  footnotes: /class="footnote-ref|id="fn1/,
+  table: /<table\b/,
+  toc: /id="TOC"|class="[^"]*toc-/,
 };
 
 const sumLengths = (html, pattern) => [...html.matchAll(pattern)].reduce((total, match) => total + (match[1]?.length ?? 0), 0);
@@ -66,4 +76,13 @@ export function select(pool, count) {
     }
   }
   return chosen.map((at) => pool[at].id);
+}
+
+export function selectStratified(pool, quotas) {
+  return Object.entries(quotas).flatMap(([format, count]) =>
+    select(
+      pool.filter((entry) => entry.format === format),
+      count,
+    ).map((id, position) => ({ id, format, position })),
+  );
 }

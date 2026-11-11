@@ -94,7 +94,7 @@ const work = selected.flatMap((row) => levels.map((level) => ({ row, level })));
 const results = await pool(work, jobs, async ({ row, level }) => {
   const input = row.path;
   const output = join(outDirectory, `${row.id}.${level}.html`);
-  const result = await run(["optimize", input, output, "--level", level, "--jobs", String(threads)]);
+  const result = await run([input, output, "--level", level, "--jobs", String(threads)]);
   const source = readFileSync(input, "utf8");
   const produced = result.code === 0 ? readFileSync(output, "utf8") : "";
   const excluded = Boolean(row.source) && result.stderr.includes(rejections["not-self-contained"]);
@@ -136,7 +136,7 @@ const medianRate = Math.max(median(large.map((entry) => entry.ms / entry.inBytes
 for (const entry of measured) {
   const allowed = STARTUP_ALLOWANCE_MS + SLOWDOWN_LIMIT * medianRate * entry.inBytes;
   if (entry.ms > allowed) {
-    const retry = await run(["optimize", entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores)]);
+    const retry = await run([entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores)]);
     entry.ms = Math.min(entry.ms, retry.ms);
   }
   if (entry.ms > allowed) {
