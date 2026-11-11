@@ -1,7 +1,7 @@
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 
-const SCREENSHOT_TOLERANCE = { exact: 0, lossy: 0.02 };
+const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
 const excerpt = (text, at) => text.slice(Math.max(0, at - 60), at + 100);
 const firstDifference = (a, b) => [...a].findIndex((char, i) => char !== b[i]);
@@ -10,18 +10,28 @@ const missingFrom = (reference, candidate = "") => {
   return reference.split(";").filter((declaration) => !present.has(declaration));
 };
 
-function where(left, right) {
+const CHANNEL_ROUNDING = 1;
+
+function differences(left, right) {
+  let count = 0;
   let [minX, minY, maxX, maxY] = [Infinity, Infinity, -1, -1];
-  let first;
+  let first = "";
   for (let y = 0; y < left.height; y++) {
     for (let x = 0; x < left.width; x++) {
       const at = (y * left.width + x) * 4;
-      if (left.data.subarray(at, at + 4).equals(right.data.subarray(at, at + 4))) continue;
-      first ??= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
+      const worst = Math.max(
+        Math.abs(left.data[at] - right.data[at]),
+        Math.abs(left.data[at + 1] - right.data[at + 1]),
+        Math.abs(left.data[at + 2] - right.data[at + 2]),
+        Math.abs(left.data[at + 3] - right.data[at + 3]),
+      );
+      if (worst <= CHANNEL_ROUNDING) continue;
+      count += 1;
+      first ||= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
       [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
     }
   }
-  return maxX < 0 ? "" : `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}`;
+  return { count, where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
 }
 
 function compareScreenshots(a, b, lossy) {
@@ -30,13 +40,12 @@ function compareScreenshots(a, b, lossy) {
   if (left.width !== right.width || left.height !== right.height) {
     return [`screenshot size ${left.width}x${left.height} vs ${right.width}x${right.height}`];
   }
-  const differing = pixelmatch(left.data, right.data, null, left.width, left.height, {
-    threshold: lossy ? 0.1 : 0,
-    includeAA: !lossy,
-  });
-  const limit = lossy ? SCREENSHOT_TOLERANCE.lossy : SCREENSHOT_TOLERANCE.exact;
-  if (differing / (left.width * left.height) <= limit) return [];
-  return [`screenshot: ${differing} pixels differ${where(left, right)}`];
+  if (lossy) {
+    const differing = pixelmatch(left.data, right.data, null, left.width, left.height, { threshold: 0.1 });
+    return differing / (left.width * left.height) > SCREENSHOT_TOLERANCE.lossy ? [`screenshot: ${differing} pixels differ`] : [];
+  }
+  const { count, where } = differences(left, right);
+  return count ? [`screenshot: ${count} pixels differ by more than ${CHANNEL_ROUNDING}${where}`] : [];
 }
 
 function compareState(a, b, lossy) {

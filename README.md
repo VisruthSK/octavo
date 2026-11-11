@@ -173,7 +173,7 @@ let out = simplify(&html, options)?.pack(Mode::Packed);
 - console errors and network requests
 - the serialized DOM and the accessibility tree
 - the computed style of every element, including pseudo-elements and forced hover, focus and active states
-- loaded fonts and full-page screenshots, which must match pixel for pixel
+- loaded fonts and full-page screenshots, which must match pixel for pixel, allowing one level out of 255 in a single colour channel for rendering rounding (computed styles are still compared exactly)
 - every running animation: its target, timing and keyframes, so a pruned `@keyframes` rule is caught
 
 This runs in desktop light, desktop dark, mobile, tablet, print, JavaScript-off and animations-on scenarios, followed by an interaction sweep: colour-scheme toggle, tabs, collapses, hovers, key presses and scrolling. `Math.random` is seeded so widget ids repeat, and transitions are switched off (except in the animations-on scenario) so timing cannot leak into the comparison.

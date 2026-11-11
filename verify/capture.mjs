@@ -153,6 +153,7 @@ async function forcedStates(page) {
 }
 
 async function settle(page, { quiet = 100, limit = 3000 } = {}) {
+  await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
   await page.evaluate(
     ({ quiet, limit }) =>
       new Promise((resolve) => {
