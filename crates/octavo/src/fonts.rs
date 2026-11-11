@@ -19,7 +19,7 @@ use lightningcss::{
     visitor::{Visit, VisitTypes, Visitor},
 };
 use rayon::prelude::*;
-use skrifa::{string::StringId, FontRef, MetadataProvider};
+use skrifa::{raw::TableProvider, string::StringId, FontRef, MetadataProvider};
 use std::{borrow::Cow, collections::HashSet, convert::Infallible, ops::Range, path::Path};
 
 const WESTERN_TEXT: [Range<u32>; 3] = [0x20..0x250, 0x2000..0x2070, 0x20A0..0x20D0];
@@ -493,21 +493,28 @@ fn convert(
         b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
         _ => Cow::Borrowed(bytes),
     };
-    let notice = chars.and_then(|_| {
+    let subset = chars.and_then(|chars| subsetted(&sfnt, chars));
+    let notice = subset.as_ref().and_then(|_| {
         if notices == Licenses::Keep {
             notice(&sfnt)
         } else {
             None
         }
     });
-    let sfnt = match chars {
-        Some(chars) => Cow::Owned(fontcull::subset_font_data(&sfnt, chars, &[]).ok()?),
-        None => sfnt,
-    };
+    let sfnt = subset.map_or(sfnt, Cow::Owned);
     Some(Transcoded {
         woff2: woofwoof::compress(&sfnt, "", usize::from(quality), true)?,
         notice,
     })
+}
+
+fn subsetted(sfnt: &[u8], chars: &HashSet<char>) -> Option<Vec<u8>> {
+    let subset = fontcull::subset_font_data(sfnt, chars, &[]).ok()?;
+    (!has_positioning(sfnt) || has_positioning(&subset)).then_some(subset)
+}
+
+fn has_positioning(sfnt: &[u8]) -> bool {
+    FontRef::new(sfnt).is_ok_and(|font| font.gpos().is_ok())
 }
 
 fn notice(sfnt: &[u8]) -> Option<String> {
@@ -522,4 +529,31 @@ fn notice(sfnt: &[u8]) -> Option<String> {
     .map(|text| text.to_string().replace("*/", "* /"))
     .collect();
     (!lines.is_empty()).then(|| format!(" {} ", lines.join(" ")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_positioning;
+
+    fn sfnt_with(tag: &[u8; 4], table: &[u8]) -> Vec<u8> {
+        let mut font = vec![0, 1, 0, 0, 0, 1, 0, 16, 0, 0, 0, 0];
+        font.extend_from_slice(tag);
+        font.extend_from_slice(&[0; 4]);
+        font.extend_from_slice(&28u32.to_be_bytes());
+        font.extend_from_slice(&(table.len() as u32).to_be_bytes());
+        font.extend_from_slice(table);
+        font
+    }
+
+    #[test]
+    fn a_font_with_a_gpos_table_has_positioning() {
+        let gpos = [0, 1, 0, 0, 0, 10, 0, 12, 0, 14, 0, 0, 0, 0, 0, 0];
+        assert!(has_positioning(&sfnt_with(b"GPOS", &gpos)));
+    }
+
+    #[test]
+    fn a_font_without_one_or_with_no_font_at_all_has_none() {
+        assert!(!has_positioning(&sfnt_with(b"head", &[0; 16])));
+        assert!(!has_positioning(b"not a font"));
+    }
 }
