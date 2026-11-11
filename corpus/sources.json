@@ -9,16 +9,6 @@
       "html": 6,
       "slides": 5,
       "dashboard": 1
-    },
-    "pool": {
-      "html": 330,
-      "slides": 122,
-      "dashboard": 30
-    },
-    "select": {
-      "html": 80,
-      "slides": 70,
-      "dashboard": 10
     }
   }
 ]

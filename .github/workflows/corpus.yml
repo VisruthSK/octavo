@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       tier:
-        description: Which documents to run
+        description: Which documents to run, or select to rebuild corpus/selection.json from every upstream document
         type: choice
-        options: [smoke, full]
+        options: [smoke, full, select]
         default: smoke
 
 concurrency:
@@ -32,10 +32,36 @@ env:
   TIER: ${{ github.event_name == 'pull_request' && 'smoke' || github.event.inputs.tier || 'full' }}
 
 jobs:
-  corpus:
-    name: Corpus (${{ github.event_name == 'pull_request' && 'smoke' || github.event.inputs.tier || 'full' }})
+  select:
+    name: Select upstream documents
+    if: github.event.inputs.tier == 'select'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.11.9
+      - run: node corpus/upstream.mjs --select --jobs 3
+      - uses: actions/upload-artifact@v7
+        with:
+          name: selection
+          path: corpus/selection.json
+
+  corpus:
+    name: Corpus (${{ github.event_name == 'pull_request' && 'smoke' || github.event.inputs.tier || 'full' }}, shard ${{ strategy.job-index }})
+    if: github.event.inputs.tier != 'select'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ github.event_name == 'pull_request' && fromJSON('[1]') || fromJSON('[1,2,3,4,5,6]') }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -63,11 +89,11 @@ jobs:
         with:
           path: corpus/.cache
           key: corpus-${{ hashFiles('corpus/sources.json', 'corpus/selection.json') }}
-      - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --jobs 2
+      - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --jobs 2 --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: corpus-report
+          name: corpus-report-${{ matrix.shard }}
           path: out/corpus
           if-no-files-found: ignore

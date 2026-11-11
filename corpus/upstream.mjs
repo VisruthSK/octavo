@@ -99,17 +99,6 @@ export const featureOf = (path) => {
   return top === "smoke-all" ? `${top}/${next}` : top;
 };
 
-export function spread(entries) {
-  const queues = [...Map.groupBy(entries, (entry) => featureOf(entry.path))]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, items]) => items);
-  const ordered = [];
-  for (let round = 0; ordered.length < entries.length; round += 1) {
-    for (const queue of queues) if (queue[round]) ordered.push(queue[round]);
-  }
-  return ordered;
-}
-
 const render = (file, outputDirectory) =>
   new Promise((done) => {
     const child = spawn(quarto, ["render", file, "-M", "embed-resources:true", "--output-dir", outputDirectory, "--quiet"], {
@@ -183,16 +172,13 @@ export async function chooseUpstream({ jobs = 4 } = {}) {
   const version = spawnSync(quarto, ["--version"], { encoding: "utf8" }).stdout.trim();
   mkdirSync(rendered, { recursive: true });
   const selected = [];
-  const everything = [];
+  let candidatesSeen = 0;
   const skipped = new Map();
   for (const source of sources) {
     const directory = extract(source, await download(source));
     const eligible = candidates(directory);
-    const queue = formats.flatMap((format) =>
-      spread(eligible.filter((entry) => entry.format === format)).slice(0, source.pool[format] ?? 0),
-    );
     const pooled = [];
-    await pool(queue, jobs, async ({ file, path, format }) => {
+    await pool(eligible, jobs, async ({ file, path, format }) => {
       const id = `${source.name}-${slug(path.replace(/\.qmd$/, ""))}`;
       const outcome = await renderDocument({ id, file });
       if (!outcome.text) {
@@ -210,24 +196,23 @@ export async function chooseUpstream({ jobs = 4 } = {}) {
       });
     });
     pooled.sort((a, b) => a.id.localeCompare(b.id));
-    const order = new Map(selectStratified(pooled, source.select).map((pick) => [pick.id, pick.position]));
-    for (const entry of pooled) {
-      const position = order.get(entry.id);
-      if (position !== undefined) {
-        selected.push({ ...entry, tier: position < (source.smoke[entry.format] ?? 0) ? "smoke" : "full" });
-      }
-    }
-    everything.push(...pooled);
+    const smoke = new Set(selectStratified(pooled, source.smoke).map((pick) => pick.id));
+    for (const entry of pooled) selected.push({ ...entry, tier: smoke.has(entry.id) ? "smoke" : "full" });
+    candidatesSeen += eligible.length;
   }
   selected.sort((a, b) => a.id.localeCompare(b.id));
   writeFileSync(selectionPath, `${JSON.stringify(selected, null, 2)}\n`);
-  return { pooled: everything.length, selected, skipped };
+  return { candidates: candidatesSeen, selected, skipped };
 }
 
-export async function renderSelected({ jobs = 4, tier = "full" } = {}) {
+export const inShard = (index, shard) => !shard || index % shard.count === shard.index;
+
+export async function renderSelected({ jobs = 4, tier = "full", shard } = {}) {
   const sources = readJson(sourcesPath);
   mkdirSync(rendered, { recursive: true });
-  const entries = readJson(selectionPath).filter((entry) => tier === "full" || entry.tier === tier);
+  const entries = readJson(selectionPath)
+    .filter((entry) => tier === "full" || entry.tier === tier)
+    .filter((_, index) => inShard(index, shard));
   const done = [];
   const failures = [];
   for (const source of sources) {
@@ -262,15 +247,17 @@ if (process.argv[1]?.endsWith("upstream.mjs")) {
   };
   const jobs = Number(flag("jobs") ?? Math.max(1, Math.floor(cpus().length / 4)));
   if (process.argv.includes("--select")) {
-    const { pooled, selected, skipped } = await chooseUpstream({ jobs });
+    const { candidates: seen, selected, skipped } = await chooseUpstream({ jobs });
     const dropped = [...skipped].map(([reason, count]) => `${count} ${reason}`).join(", ");
-    console.log(`rendered ${pooled + [...skipped.values()].reduce((a, b) => a + b, 0)} candidates${dropped ? `, dropped ${dropped}` : ""}`);
+    console.log(`${seen} candidates${dropped ? `, dropped ${dropped}` : ""}`);
     const byFormat = Map.groupBy(selected, (entry) => entry.format);
     console.log(
       `wrote ${selected.length} to selection.json (${formats.map((format) => `${format} ${byFormat.get(format)?.length ?? 0}`).join(", ")})`,
     );
   } else {
-    const documents = await renderSelected({ jobs, tier: flag("tier") ?? "full" });
+    const [position, count] = (flag("shard") ?? "").split("/").map(Number);
+    const shard = count ? { index: position - 1, count } : undefined;
+    const documents = await renderSelected({ jobs, tier: flag("tier") ?? "full", shard });
     console.log(`rendered ${documents.length} pinned documents`);
   }
 }
