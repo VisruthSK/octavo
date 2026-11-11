@@ -17,7 +17,7 @@ const flag = (name, fallback) => {
   return at < 0 ? fallback : (process.argv[at + 1] ?? fallback);
 };
 const tier = flag("tier", "smoke");
-const levels = flag("levels", "safe,packed").split(",");
+const levels = flag("levels", tier === "full" ? "safe,scripts,packed" : "safe,packed").split(",");
 const filter = new RegExp(flag("filter", "."));
 const cores = cpus().length;
 const jobs = Number(flag("jobs", Math.max(1, Math.floor(cores / 2))));
@@ -160,9 +160,20 @@ for (const entry of measured) {
   }
 }
 
+const overall = [...Map.groupBy(
+  measured.filter((entry) => entry.outBytes !== null),
+  (entry) => entry.level,
+)].map(([level, entries]) => {
+  const input = entries.reduce((total, entry) => total + entry.inBytes, 0);
+  const output = entries.reduce((total, entry) => total + entry.outBytes, 0);
+  const seconds = entries.reduce((total, entry) => total + entry.ms, 0) / 1000;
+  return `| ${level} | ${entries.length} | ${(input / 1048576).toFixed(1)} | ${(output / 1048576).toFixed(1)} | ${((output / input) * 100).toFixed(1)}% | ${seconds.toFixed(1)} | ${(input / 1048576 / seconds).toFixed(2)} |`;
+});
+
 const categories = Map.groupBy(measured, (entry) => `${entry.category} / ${entry.level}`);
 const kib = (bytes) => (bytes / 1024).toFixed(1);
 const lines = [`# Corpus report`, ``, `Tier ${tier}, ${selected.length} documents, levels ${levels.join(", ")}, browser ${browser ? "on" : "off"}. ${jobs} documents at a time, ${threads} threads each.`, ``];
+lines.push(`## Overall by level`, ``, `| Level | Docs | Input MiB | Output MiB | Output as % of input | Octavo seconds | MiB/s |`, `|---|---|---|---|---|---|---|`, ...overall, ``);
 lines.push(`| Category / level | Docs | Input KiB | Output KiB | Median ratio | p50 ms | p95 ms | Naive KiB | Brotli(original) KiB |`);
 lines.push(`|---|---|---|---|---|---|---|---|---|`);
 for (const [name, entries] of [...categories].sort(([a], [b]) => a.localeCompare(b))) {

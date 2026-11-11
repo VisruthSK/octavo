@@ -205,7 +205,7 @@ node verify/corpus.mjs --tier smoke --browser
 node verify/corpus.mjs --tier full --browser --jobs 2
 ```
 
-The full tier is slow, so CI splits it across six shards and runs it on release tags and weekly, not on every push. See [`corpus/README.md`](corpus/README.md) for the format and how to add documents.
+The full tier runs all three levels and is slow, so CI splits it across six shards and runs it on release tags and weekly, not on every push. See [`corpus/README.md`](corpus/README.md) for the format and how to add documents.
 
 ## Releases
 
