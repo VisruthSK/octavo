@@ -316,3 +316,20 @@ fn arithmetic_that_would_lose_precision_is_left_as_written() {
     assert!(out.contains(".keep{color:#00f}"), "{out}");
     assert!(!out.contains(".gone"), "{out}");
 }
+
+#[test]
+fn many_adjacent_rules_that_are_set_aside_all_come_back_in_order() {
+    let css = ".gone{color:red}.a{font-size:calc(1.6em / .7)}.b{font-size:calc(2em / .3)}.c::-moz-bogus-thing{x:y}.keep{color:#0000ff}";
+    let out = safe(&page(
+        &format!("<style>{css}</style>"),
+        "<p class=\"a b c keep\">",
+    ));
+    let a = out.find(".a{font-size:calc(1.6em / .7)}").expect(&out);
+    let b = out.find(".b{font-size:calc(2em / .3)}").expect(&out);
+    let c = out.find(".c::-moz-bogus-thing{x:y}").expect(&out);
+    assert!(a < b && b < c, "{out}");
+    assert!(
+        out.contains(".keep{color:#00f}") && !out.contains(".gone"),
+        "{out}"
+    );
+}

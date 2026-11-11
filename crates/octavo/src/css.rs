@@ -33,7 +33,29 @@ struct Isolated {
 }
 
 fn marker(n: usize) -> String {
-    format!("@layer {KEPT_RULE}{n};")
+    format!("@keyframes {KEPT_RULE}{n}{{from{{top:0}}}}")
+}
+
+fn restore(mut code: String, rules: &[String]) -> Option<String> {
+    for (n, rule) in rules.iter().enumerate() {
+        let start = code.find(&format!("@keyframes {KEPT_RULE}{n}{{"))?;
+        let mut depth = 0usize;
+        let end = code[start..].char_indices().find_map(|(at, c)| {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(start + at + 1);
+                    }
+                }
+                _ => {}
+            }
+            None
+        })?;
+        code.replace_range(start..end, rule);
+    }
+    Some(code)
 }
 
 struct Shielded<'a> {
@@ -227,14 +249,11 @@ fn print(
         minify: true,
         ..Default::default()
     };
-    let mut code = sheet.to_css(printer).ok()?.code;
-    for (n, rule) in isolated.iter().flat_map(|i| i.rules.iter()).enumerate() {
-        let marker = marker(n);
-        if !code.contains(&marker) {
-            return None;
-        }
-        code = code.replacen(&marker, rule, 1);
-    }
+    let code = sheet.to_css(printer).ok()?.code;
+    let code = match isolated {
+        Some(isolated) => restore(code, &isolated.rules)?,
+        None => code,
+    };
     let css = unshield(&code, &shielded.saved);
     let mut out = shielded.notices.clone();
     for notice in font_notices {
