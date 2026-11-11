@@ -2,13 +2,20 @@
 name = "octavo-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Structure-aware optimizer for Quarto HTML."
+description = "Command-line optimizer for the self-contained HTML that Quarto writes with embed-resources: true."
 readme = "../../README.md"
-keywords = ["quarto", "html", "optimizer", "minify"]
+keywords = ["quarto", "html", "optimizer", "minifier"]
 categories = ["command-line-utilities", "web-programming"]
+include = [
+    "src/**",
+    "tests/**",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
 [[bin]]
 name = "octavo"
@@ -16,7 +23,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-octavo = { path = "../octavo" }
+octavo = { version = "0.1.0", path = "../octavo" }
 clap = { version = "4", features = ["derive"] }
 anstream = "1.0.0"
 anstyle = "1.0.14"

@@ -2,13 +2,22 @@
 name = "octavo"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Shrinks the self-contained HTML that Quarto writes with embed-resources: true."
 readme = "../../README.md"
-keywords = ["quarto", "html", "optimizer", "minify"]
+keywords = ["quarto", "html", "optimizer", "minifier"]
 categories = ["web-programming", "compression"]
+include = [
+    "src/**",
+    "tests/**",
+    "loader/loader.js",
+    "loader/brotli.js",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
 [dependencies]
 base64 = "0.23.1"
