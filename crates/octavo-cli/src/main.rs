@@ -29,6 +29,7 @@ const DIM: Style = Style::new().dimmed();
 
 #[derive(Parser)]
 #[command(
+    name = "octavo",
     version,
     about = "Structure-aware optimizer for Quarto HTML. Run `octavo <input> [output]` to shrink a file",
     styles = STYLES,
