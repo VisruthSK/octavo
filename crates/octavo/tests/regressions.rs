@@ -304,3 +304,15 @@ fn several_rejected_rules_and_non_ascii_text_before_them_are_all_restored() {
     assert!(out.contains(".b:first{margin:0}"), "{out}");
     assert!(!out.contains(".gone"), "{out}");
 }
+
+#[test]
+fn arithmetic_that_would_lose_precision_is_left_as_written() {
+    let css = ".gone{color:red}.a{font-size:calc(1.6em / .7)}.b{width:calc(100% - 20px)}.keep{color:#0000ff}";
+    let out = safe(&page(
+        &format!("<style>{css}</style>"),
+        "<p class=\"a b keep\">",
+    ));
+    assert!(out.contains(".a{font-size:calc(1.6em / .7)}"), "{out}");
+    assert!(out.contains(".keep{color:#00f}"), "{out}");
+    assert!(!out.contains(".gone"), "{out}");
+}

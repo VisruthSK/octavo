@@ -95,7 +95,38 @@ fn finish<'i>(mut sheet: StyleSheet<'i>, words: &Words) -> Option<StyleSheet<'i>
     Some(sheet)
 }
 
+fn folds_inexactly(rule: &str) -> bool {
+    let mut rest = rule;
+    while let Some(at) = rest.find("calc(") {
+        let inner = &rest[at + "calc(".len()..];
+        let mut depth = 1usize;
+        let end = inner
+            .char_indices()
+            .find(|&(_, c)| {
+                match c {
+                    '(' => depth += 1,
+                    ')' => depth -= 1,
+                    _ => {}
+                }
+                depth == 0
+            })
+            .map_or(inner.len(), |(end, _)| end);
+        let expression = &inner[..end];
+        let opaque = ["var(", "env(", "attr(", "--"]
+            .iter()
+            .any(|marker| expression.contains(marker));
+        if !opaque && expression.contains(['/', '*']) {
+            return true;
+        }
+        rest = &inner[end..];
+    }
+    false
+}
+
 fn isolate(css: &str, places: &[(u32, u32)]) -> Option<Isolated> {
+    if places.is_empty() && !css.contains("calc(") {
+        return None;
+    }
     let offsets: Vec<usize> = places
         .iter()
         .map(|&(line, column)| offset_of(css, line, column))
@@ -104,7 +135,8 @@ fn isolate(css: &str, places: &[(u32, u32)]) -> Option<Isolated> {
     let mut rules = Vec::new();
     let mut at = 0;
     for item in top_level_items(css) {
-        if offsets.iter().any(|offset| item.contains(offset)) {
+        if offsets.iter().any(|offset| item.contains(offset)) || folds_inexactly(&css[item.clone()])
+        {
             out.push_str(&css[at..item.start]);
             out.push_str(&marker(rules.len()));
             rules.push(css[item.clone()].to_string());
@@ -435,10 +467,8 @@ pub(crate) fn stage(
         .iter()
         .zip(&shielded)
         .map(|(parsed, shielded)| {
-            parsed
-                .as_ref()
-                .err()
-                .and_then(|places| isolate(&shielded.css, places))
+            let places = parsed.as_ref().err().map_or(&[][..], Vec::as_slice);
+            isolate(&shielded.css, places)
         })
         .collect();
     let mut sheets: Vec<Option<StyleSheet>> = parsed
@@ -446,8 +476,8 @@ pub(crate) fn stage(
         .zip(&isolated)
         .map(|(parsed, isolated)| {
             let sheet = match (parsed, isolated) {
-                (Ok(sheet), _) => sheet,
-                (Err(_), Some(isolated)) => parse(&isolated.css).ok()?,
+                (_, Some(isolated)) => parse(&isolated.css).ok()?,
+                (Ok(sheet), None) => sheet,
                 (Err(_), None) => return None,
             };
             finish(sheet, words)
