@@ -1,6 +1,6 @@
 # Octavo corpus
 
-Roughly 300 documents that exercise Octavo on realistic output, on scale, and on inputs built to break it. Nothing large is committed. Each document is a small module that builds its text deterministically, and `manifest.json` records its size and SHA-256 so drift is caught.
+About 300 hand-written documents that exercise Octavo on realistic output, on scale, and on inputs built to break it, plus the real Quarto documents described below. Nothing large is committed. Each document is a small module that builds its text deterministically, and `manifest.json` records its size and SHA-256 so drift is caught.
 
 ## Layout
 
@@ -35,7 +35,14 @@ When the runner disagrees with an expectation, decide which side is wrong. If Oc
 
 ## Real documents from upstream
 
-`sources.json` pins upstream repositories by URL and SHA-256. `corpus/selection.json` lists every one of their documents that renders cleanly to self-contained HTML, not a sample, and marks a small stratified subset as the smoke tier. It pins exactly which are used, so every run, locally and in CI, renders the same ones and a document that fails to render is an error, not a skip. `node corpus/upstream.mjs [--tier smoke|full] [--jobs N]` renders the pinned documents. `node corpus/upstream.mjs --select` regenerates the selection (the corpus workflow runs it with the `select` tier, so the renders happen in CI), and is only needed when `sources.json` changes. `--shard K/N` renders and verifies one share, which is how CI splits the full tier: it downloads and extracts the example documents, keeps the ones that need no R, Python or Julia and no project files, and splits them by declared format into html, slides (revealjs, slidy, s5, dzslides) and dashboard. Each format has its own pool size and selection quota in `sources.json`, so slides and dashboards are always represented. Every pooled document is rendered with Quarto in its own format into `.cache/rendered/`, measured (size, script, style, image and font weight, and which Quarto features it uses), and the quota is then chosen per format by farthest-point sampling over those measurements. `index.json` lists the selection with the Quarto version; `pool.json` lists everything that was measured. Documents that fail to render are skipped and reported. The runner picks the rendered documents up automatically (`--no-upstream` skips them) and expects `accepts` plus browser equivalence. Nothing rendered is committed, because the HTML depends on the Quarto version. Set `QUARTO` to the executable when it is not on `PATH`.
+`sources.json` pins upstream repositories by URL and SHA-256. Octavo uses every document in them that renders to self-contained HTML, not a sample.
+
+`corpus/selection.json` is the committed list. It names each document, its format (html, slides or dashboard) and its tier. A small subset spread across the formats by measured features (size, script, style, image and font weight, and which Quarto features it uses) is marked `smoke`, and the rest is `full`. Because the list is committed, every run renders the same documents, and a document that fails to render is an error, not a skip.
+
+- `node corpus/upstream.mjs [--tier smoke|full] [--jobs N] [--shard K/N]` renders the listed documents into `.cache/rendered/` and writes `index.json`. The runner picks them up automatically (`--no-upstream` skips them) and expects `accepts` plus browser equivalence. `--shard` renders one share, which is how CI splits the full tier.
+- `node corpus/upstream.mjs --select` rebuilds `selection.json`. It downloads and extracts the example documents, keeps the ones that need no R, Python or Julia and no project files, renders each with Quarto in its own format, and drops the ones that fail, need the network or are not self-contained, printing a count per reason. It is only needed when `sources.json` changes. The corpus workflow runs it with the `select` tier, so the renders happen in CI.
+
+Nothing rendered is committed, because the HTML depends on the Quarto version. Set `QUARTO` to the executable when it is not on `PATH`.
 
 ## Running
 
@@ -47,7 +54,7 @@ node verify/corpus.mjs --tier smoke --browser
 node verify/corpus.mjs --tier full --browser --filter '^css-'
 ```
 
-Flags: `--tier smoke|full`, `--levels safe,scripts,packed`, `--browser`, `--filter <regex on id>`, `--jobs <n>`, `--binary <path>`, `--out <dir>`.
+Flags: `--tier smoke|full`, `--levels safe,scripts,packed`, `--browser`, `--filter <regex on id>`, `--jobs <n>`, `--shard K/N` (a share of the hand-written documents, matching the same flag on `upstream.mjs`), `--binary <path>`, `--out <dir>`.
 
 ## What the runner checks
 

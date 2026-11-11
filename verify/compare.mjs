@@ -1,11 +1,11 @@
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 
-const SCREENSHOT_TOLERANCE = { exact: 0.0005, lossy: 0.02 };
+const SCREENSHOT_TOLERANCE = { exact: 0, lossy: 0.02 };
 
 const excerpt = (text, at) => text.slice(Math.max(0, at - 60), at + 100);
 const firstDifference = (a, b) => [...a].findIndex((char, i) => char !== b[i]);
-const missingFrom = (reference, candidate) => {
+const missingFrom = (reference, candidate = "") => {
   const present = new Set(candidate.split(";"));
   return reference.split(";").filter((declaration) => !present.has(declaration));
 };
@@ -16,7 +16,10 @@ function compareScreenshots(a, b, lossy) {
   if (left.width !== right.width || left.height !== right.height) {
     return [`screenshot size ${left.width}x${left.height} vs ${right.width}x${right.height}`];
   }
-  const differing = pixelmatch(left.data, right.data, null, left.width, left.height, { threshold: 0.1 });
+  const differing = pixelmatch(left.data, right.data, null, left.width, left.height, {
+    threshold: lossy ? 0.1 : 0,
+    includeAA: !lossy,
+  });
   const limit = lossy ? SCREENSHOT_TOLERANCE.lossy : SCREENSHOT_TOLERANCE.exact;
   return differing / (left.width * left.height) > limit ? [`screenshot: ${differing} pixels differ`] : [];
 }
@@ -34,8 +37,13 @@ function compareState(a, b, lossy) {
     issues.push(`dom differs at ${at}: [${excerpt(a.dom, at)}] vs [${excerpt(b.dom, at)}]`);
   }
   if (a.fonts.join() !== b.fonts.join()) issues.push(`fonts ${a.fonts} vs ${b.fonts}`);
+  if (a.animations.join("\n") !== b.animations.join("\n")) {
+    const missing = a.animations.filter((animation) => !b.animations.includes(animation));
+    issues.push(`animations ${a.animations.length} vs ${b.animations.length}, e.g. ${(missing[0] ?? "extra in optimized").slice(0, 160)}`);
+  }
   if (a.sheets !== b.sheets) issues.push(`style sheets ${a.sheets} vs ${b.sheets}`);
   if (a.scroll.join() !== b.scroll.join()) issues.push(`scroll size ${a.scroll} vs ${b.scroll}`);
+  if (a.labels.length !== b.labels.length) issues.push(`element count ${a.labels.length} vs ${b.labels.length}`);
   const tolerance = lossy ? 1 : 0.01;
   const moved = a.rects.flatMap((rect, i) =>
     rect.every((n, k) => Math.abs(n - (b.rects[i]?.[k] ?? Infinity)) <= tolerance) ? [] : [i],

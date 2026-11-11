@@ -3,12 +3,13 @@
 Octavo makes Quarto HTML files smaller. Give it a document rendered with `embed-resources: true` and it writes a single, self-contained file that opens offline, looks the same and is usually five to twenty times smaller.
 
 ```sh
-octavo report.html                       # writes report.min.html
-octavo deck.html small.html --lossy-images      # AVIF, much smaller, not pixel-exact
-octavo --audit report.html                          # what each step would save
+octavo report.html                          # writes report.min.html
+octavo deck.html small.html --lossy-images  # AVIF, much smaller, not pixel-exact
+octavo report.html --maximum                # slowest, smallest output
+octavo --audit report.html                  # what each step would save
 ```
 
-Octavo is clever glue. It does not implement a CSS minifier, a JavaScript compressor or an image codec. It knows where Quarto's weight comes from and when it is safe to remove, and it hands each job to the best library for that job. The libraries are listed [below](#the-libraries-doing-the-work).
+Octavo does not implement a CSS minifier, a JavaScript compressor or an image codec. It knows where Quarto's weight comes from and when removing it is safe, and it hands each job to a library built for it. The libraries are listed [below](#the-libraries-doing-the-work).
 
 ## Where the bytes go
 
@@ -77,7 +78,21 @@ Everything else in the code only knows about HTML, CSS, JavaScript, fonts and im
 | `scripts` | Also packs scripts and data blocks. Stylesheets and SVG stay real. |
 | `packed` | Packs everything. **The page needs JavaScript to be styled.** Use it for documents that already need JavaScript. |
 
-`--verify "<command>"` checks each candidate with a command of your choice (`{original}` and `{optimized}` are substituted). A candidate that fails steps down from `packed` to `scripts` to `safe`, and finally to the original, so a bad result is never written as the answer.
+`--verify "<command>"` checks each candidate with a command of your choice (`{original}` and `{optimized}` are substituted). A candidate that fails steps down from `packed` to `scripts` to `safe`, and finally to the original, so a failing result is never written.
+
+### Compression effort
+
+The level decides what the output depends on. The effort decides how hard the compressors work, and it applies at every level. The default is a balance: output a few percent above the smallest possible, in a fraction of the time. `--maximum` uses the slowest settings everywhere. Three flags set the values yourself, and none can be combined with `--maximum`:
+
+| Flag | Range | Balanced | Maximum |
+|---|---|---|---|
+| `--woff2-quality` | 0 to 11 | 9 | 11 |
+| `--png-preset` (oxipng) | 0 to 6 | by image size | 6 |
+| `--brotli-quality` (packed blob) | 0 to 11 | 9, only for blobs big enough to beat Brotli's own decoder | 11, always |
+
+On a 288 KB font, WOFF2 quality 9 takes 26 ms and quality 11 takes 293 ms for 9 percent more bytes, which is a small share of a whole document. That is why the default is 9.
+
+`--cache-dir <directory>` remembers fonts converted whole, one file per distinct font, named by a hash of its bytes and quality. Documents from the same theme embed the same fonts, so later runs skip the slowest step. Subsetted fonts are never stored.
 
 ### What Octavo refuses
 
@@ -90,7 +105,7 @@ Resources loaded from the network (a CDN script, a web font) do not stop the run
 
 ### Subsetting text fonts
 
-`--subset-text-fonts` cuts themed documents by 30 to 56 percent, because Quarto themes embed whole fonts such as Source Sans. It is off by default because it is not exact: the subsetter inside `fontcull` drops some kerning pairs ("To", "Ta" and "AV" come out about a pixel wider), so text can shift slightly and the exact checker flags it. Text that JavaScript adds later in a script the document does not use also falls back to a system font. Icon fonts are always subsetted, and that is exact.
+`--subset-text-fonts` cuts themed documents by 30 to 56 percent, because Quarto themes embed whole fonts such as Source Sans. It is off by default because it is not exact. Some pairs ("To", "Ta" and "AV") come out about a pixel wider, so text can shift slightly and the exact checker flags it. The cause is not yet known ([issue 8](https://github.com/VisruthSK/octavo/issues/8)). Text that JavaScript adds later in a script the document does not use also falls back to a system font. Icon fonts are always subsetted, and that is exact.
 
 ### Licenses
 
@@ -102,7 +117,8 @@ Bundled libraries carry license banners, and MIT, BSD and Apache require them to
 |---|---|
 | Parse, prune and minify CSS | [`lightningcss`](https://crates.io/crates/lightningcss) |
 | Parse, mangle and minify JavaScript | [`oxc`](https://crates.io/crates/oxc) |
-| Subset fonts and write WOFF2 | [`fontcull`](https://crates.io/crates/fontcull), which wraps Google's WOFF2 encoder |
+| Subset fonts | [`fontcull`](https://crates.io/crates/fontcull) |
+| Write WOFF2 | [`woofwoof`](https://crates.io/crates/woofwoof), which wraps Google's WOFF2 encoder |
 | Decode WOFF and WOFF2 input | [`wuff`](https://crates.io/crates/wuff) |
 | Recompress PNG losslessly | [`oxipng`](https://crates.io/crates/oxipng) |
 | Decode PNG and JPEG | [`image`](https://crates.io/crates/image) |
@@ -112,8 +128,9 @@ Bundled libraries carry license banners, and MIT, BSD and Apache require them to
 | Deflate the packed blob | [`libdeflater`](https://crates.io/crates/libdeflater), level 12 |
 | Brotli for large packed blobs | [`brotli`](https://crates.io/crates/brotli) |
 | Text-safe encoding of the blob | [`base91`](https://crates.io/crates/base91) |
+| Name cached fonts | [`blake3`](https://crates.io/crates/blake3) |
 
-Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The only non-Rust code in the build is the WOFF2 encoder behind `fontcull` and libdeflate behind `oxipng` and `libdeflater`. Everything else is pure Rust.
+Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The only non-Rust code in the build is the WOFF2 encoder behind `woofwoof` and libdeflate behind `oxipng` and `libdeflater`. Everything else is pure Rust.
 
 ## As a library
 
@@ -134,6 +151,21 @@ for warning in &out.warnings {
 
 `simplify` runs the stages that do not depend on a mode, and `Simplified::pack` finishes the result for each mode. The command line uses this to build its fallback ladder without repeating the expensive work.
 
+`Options` carries the choices that change the result, and `Compression` sets the effort:
+
+```rust
+use octavo::{simplify, Compression, Mode, Options, Tuning};
+
+let options = Options {
+    compression: Compression::Custom(Tuning { woff2_quality: 10, ..Tuning::BALANCED }),
+    cache_directory: Some("fonts-cache".into()),
+    ..Options::default()
+};
+let out = simplify(&html, options)?.pack(Mode::Packed);
+```
+
+`Compression::Balanced` is the default, `Compression::Maximum` uses the slowest settings, and `Compression::Custom` takes a `Tuning` with the three values from the table above.
+
 ## Verification
 
 `verify/` opens the original and the optimized file in Chromium and compares them. A browser is found automatically (Chrome, Chromium or Edge, or Playwright's own build); set `CHROME_PATH` to choose one. It compares:
@@ -141,9 +173,12 @@ for warning in &out.warnings {
 - console errors and network requests
 - the serialized DOM and the accessibility tree
 - the computed style of every element, including pseudo-elements and forced hover, focus and active states
-- loaded fonts and full-page screenshots
+- loaded fonts and full-page screenshots, which must match pixel for pixel
+- every running animation: its target, timing and keyframes, so a pruned `@keyframes` rule is caught
 
-This runs in desktop light, desktop dark, mobile, print and JavaScript-off scenarios, followed by an interaction sweep: colour-scheme toggle, tabs, collapses, hovers, key presses and scrolling. `Math.random` is seeded so widget ids repeat, and transitions are switched off so timing cannot leak into the comparison. The original is captured twice, and any difference it shows against itself is ignored.
+This runs in desktop light, desktop dark, mobile, tablet, print, JavaScript-off and animations-on scenarios, followed by an interaction sweep: colour-scheme toggle, tabs, collapses, hovers, key presses and scrolling. `Math.random` is seeded so widget ids repeat, and transitions are switched off (except in the animations-on scenario) so timing cannot leak into the comparison.
+
+When a comparison finds a difference, both pages are captured a second time. A difference counts only if neither page shows it against its own second capture and it appears again between the two new captures, so a one-off flake is dropped and a real change is not. `verify/verifier.test.mjs` checks the checker: it breaks a page in a dozen specific ways (a dropped keyframes, hover, dark, print or media rule, a colour off by one, a 0.02 px layout shift) and each must be caught.
 
 With `--lossy-images`, pass `--lossy` to the checker. Image bytes are then not compared, dimensions still are, and screenshots may differ by up to 2% of pixels.
 
@@ -160,7 +195,7 @@ On a busy machine, large pages loaded side by side can land in different timing 
 
 ### The corpus
 
-`corpus/` holds a test corpus of about 470 documents: hand-written adversarial and realistic fixtures (parsing, CSS, scripts, images, fonts, Quarto-style pages, libraries, large pages) and about 160 real pages that Quarto renders from its own test documents, chosen across HTML, slides and dashboards by measured features. Every fixture states its expected outcome up front: optimize, keep unchanged, or reject.
+`corpus/` holds the test corpus: about 300 hand-written adversarial and realistic fixtures (parsing, CSS, scripts, images, fonts, Quarto-style pages, libraries, large pages), and every document in Quarto's own test suite that renders to self-contained HTML, across HTML pages, slides and dashboards. Every fixture states its expected outcome up front: optimize, keep unchanged, or reject.
 
 ```sh
 cargo build --release
@@ -170,7 +205,11 @@ node verify/corpus.mjs --tier smoke --browser
 node verify/corpus.mjs --tier full --browser --jobs 2
 ```
 
-See [`corpus/README.md`](corpus/README.md) for the format and how to add documents.
+The full tier is slow, so CI splits it across six shards and runs it on release tags and weekly, not on every push. See [`corpus/README.md`](corpus/README.md) for the format and how to add documents.
+
+## Releases
+
+Pushing a version tag runs the CI suite and the full corpus first. The binaries are built, and the GitHub release is created, only if both pass.
 
 ## Limits
 

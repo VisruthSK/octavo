@@ -30,8 +30,10 @@ export async function verify(original, optimized, { lossy = false } = {}) {
         const [before, after] = await Promise.all([run(original), run(optimized)]);
         let issues = compare(before, after, lossy);
         if (issues.length) {
-          const noise = new Set(compare(before, await run(original), lossy).map(signature));
-          issues = issues.filter((issue) => !noise.has(signature(issue)));
+          const [before2, after2] = await Promise.all([run(original), run(optimized)]);
+          const noise = new Set([...compare(before, before2, lossy), ...compare(after, after2, lossy)].map(signature));
+          const reproduced = new Set(compare(before2, after2, lossy).map(signature));
+          issues = issues.filter((issue) => !noise.has(signature(issue)) && reproduced.has(signature(issue)));
         }
         return { scenario: scenario.name, issues };
       }),

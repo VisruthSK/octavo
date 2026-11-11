@@ -87,7 +87,13 @@ await run(["--version"]);
 const upstreamRows = upstream
   ? readRendered().map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }))
   : [];
-const rows = [...(await materialize()).map((row) => ({ ...row, path: documentPath(row.id) })), ...upstreamRows];
+const [shardPosition, shardCount] = flag("shard", "").split("/").map(Number);
+const ownHandWritten = (_, index) => !shardCount || index % shardCount === shardPosition - 1;
+const handWritten = (await materialize())
+  .map((row) => ({ ...row, path: documentPath(row.id) }))
+  .filter((row) => tier === "full" || row.tier === "smoke")
+  .filter(ownHandWritten);
+const rows = [...handWritten, ...upstreamRows];
 const selected = rows.filter((row) => (tier === "full" || row.tier === "smoke") && filter.test(row.id));
 rmSync(outDirectory, { recursive: true, force: true });
 mkdirSync(outDirectory, { recursive: true });

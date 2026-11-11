@@ -4,6 +4,8 @@ export const scenarios = [
   { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light" },
   { name: "desktop-dark", viewport: { width: 1280, height: 900 }, colorScheme: "dark" },
   { name: "mobile", viewport: { width: 390, height: 844 }, colorScheme: "light" },
+  { name: "tablet", viewport: { width: 768, height: 1024 }, colorScheme: "light" },
+  { name: "motion", viewport: { width: 1280, height: 900 }, colorScheme: "light", motion: true },
   { name: "no-js", viewport: { width: 1280, height: 900 }, colorScheme: "light", javaScriptEnabled: false },
   { name: "print", viewport: { width: 1280, height: 900 }, colorScheme: "light", media: "print" },
 ];
@@ -36,7 +38,7 @@ function seedRandom() {
   };
 }
 
-async function observe({ lossy, probe }) {
+async function observe({ lossy, probe, motion }) {
   const describe = (element, pseudo) => {
     const style = getComputedStyle(element, pseudo);
     if (pseudo && style.content === "none") return "";
@@ -78,7 +80,37 @@ async function observe({ lossy, probe }) {
     }
   }
   const elements = [...document.body.querySelectorAll("*")];
+  const position = new Map(elements.map((element, at) => [element, at]));
+  const animations = motion
+    ? document
+        .getAnimations()
+        .map((animation) => {
+          const timing = animation.effect?.getTiming?.() ?? {};
+          return [
+            position.get(animation.effect?.target) ?? -1,
+            animation.animationName ?? animation.transitionProperty ?? "",
+            animation.constructor.name,
+            JSON.stringify([timing.duration, timing.delay, timing.iterations, timing.direction, timing.easing, timing.fill]),
+            JSON.stringify(animation.effect?.getKeyframes?.() ?? []),
+          ].join("|");
+        })
+        .sort()
+    : [];
+  if (motion) {
+    for (const animation of document.getAnimations()) {
+      animation.pause();
+      animation.currentTime = 0;
+    }
+  }
+  const pseudosOf = (element) => [
+    null,
+    "::before",
+    "::after",
+    ...(getComputedStyle(element).display === "list-item" ? ["::marker"] : []),
+    ...(element.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
+  ];
   return {
+    animations,
     title: document.title,
     dom: clone.outerHTML,
     labels: elements.map((el) => el.tagName + (el.id ? `#${el.id}` : "")),
@@ -86,7 +118,7 @@ async function observe({ lossy, probe }) {
       const { x, y, width, height } = el.getBoundingClientRect();
       return [x, y, width, height].map((n) => Math.round(n * 100) / 100);
     }),
-    styles: elements.map((el) => [null, "::before", "::after"].map((pseudo) => describe(el, pseudo)).join("")),
+    styles: elements.map((el) => pseudosOf(el).map((pseudo) => describe(el, pseudo)).join("")),
     fonts: [...document.fonts].filter((font) => font.status === "loaded").map((font) => font.family).sort(),
     sheets: document.styleSheets.length,
     scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
@@ -140,7 +172,7 @@ export async function capture(browser, file, scenario, lossy) {
     viewport: scenario.viewport,
     colorScheme: scenario.colorScheme,
     deviceScaleFactor: 1,
-    reducedMotion: "reduce",
+    reducedMotion: scenario.motion ? "no-preference" : "reduce",
     javaScriptEnabled: scripted,
   });
   try {
@@ -153,20 +185,21 @@ export async function capture(browser, file, scenario, lossy) {
     page.on("request", (request) => !/^(file|data|blob|about):/.test(request.url()) && requests.push(request.url()));
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
-    if (scripted) await page.addStyleTag({ content: NO_MOTION });
+    if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
     await page.evaluate(() => document.fonts.ready);
     if (scripted) await settle(page);
 
     const states = [];
     const record = async (label, extra = {}) => {
+      if (scenario.media) await page.emulateMedia({ media: scenario.media });
       const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" }).catch(() => null);
-      states.push({ label, ...(await page.evaluate(observe, { lossy })), screenshot, ...extra });
+      states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion })), screenshot, ...extra });
     };
     await record("load", {
       forced: scripted ? await forcedStates(page) : [],
       accessibility: await settledAccessibilityTree(page),
     });
-    if (scripted && !scenario.media) {
+    if (scripted && !scenario.media && !scenario.motion) {
       for (const [index, interact] of interactions.entries()) {
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
         await settle(page);
