@@ -186,6 +186,16 @@ fn write(path: &Path, contents: &str) -> Result<(), String> {
     fs::write(path, contents).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+fn staging_path(output: &Path) -> PathBuf {
+    let mut name = output.file_name().unwrap_or_default().to_os_string();
+    name.push(".octavo-tmp");
+    output.with_file_name(name)
+}
+
+fn same_file(a: &Path, b: &Path) -> bool {
+    matches!((fs::canonicalize(a), fs::canonicalize(b)), (Ok(a), Ok(b)) if a == b)
+}
+
 fn size(bytes: usize) -> String {
     ByteSize(bytes as u64).to_string()
 }
@@ -257,13 +267,16 @@ fn run(
         if candidate.len() >= src.len() {
             continue;
         }
-        write(output, &candidate)?;
+        let staged = staging_path(output);
+        write(&staged, &candidate)?;
         if let Some(command) = verify {
             progress.set_message(format!("verifying ({})", label(*mode)));
-            if !passes(command, input, output) {
+            if !passes(command, input, &staged) {
+                let _ = fs::remove_file(&staged);
                 continue;
             }
         }
+        fs::rename(&staged, output).map_err(|e| format!("{}: {e}", output.display()))?;
         progress.finish_and_clear();
         warn(simplified.warnings());
         println!(
@@ -277,7 +290,9 @@ fn run(
     }
     progress.finish_and_clear();
     warn(simplified.warnings());
-    write(output, &src)?;
+    if !same_file(input, output) {
+        write(output, &src)?;
+    }
     println!(
         "{WARN}kept the original{WARN:#} {DIM}({}){DIM:#}",
         size(src.len())
