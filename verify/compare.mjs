@@ -10,6 +10,20 @@ const missingFrom = (reference, candidate = "") => {
   return reference.split(";").filter((declaration) => !present.has(declaration));
 };
 
+function where(left, right) {
+  let [minX, minY, maxX, maxY] = [Infinity, Infinity, -1, -1];
+  let first;
+  for (let y = 0; y < left.height; y++) {
+    for (let x = 0; x < left.width; x++) {
+      const at = (y * left.width + x) * 4;
+      if (left.data.subarray(at, at + 4).equals(right.data.subarray(at, at + 4))) continue;
+      first ??= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
+      [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
+    }
+  }
+  return maxX < 0 ? "" : `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}`;
+}
+
 function compareScreenshots(a, b, lossy) {
   const left = PNG.sync.read(a);
   const right = PNG.sync.read(b);
@@ -21,7 +35,8 @@ function compareScreenshots(a, b, lossy) {
     includeAA: !lossy,
   });
   const limit = lossy ? SCREENSHOT_TOLERANCE.lossy : SCREENSHOT_TOLERANCE.exact;
-  return differing / (left.width * left.height) > limit ? [`screenshot: ${differing} pixels differ`] : [];
+  if (differing / (left.width * left.height) <= limit) return [];
+  return [`screenshot: ${differing} pixels differ${where(left, right)}`];
 }
 
 function compareState(a, b, lossy) {

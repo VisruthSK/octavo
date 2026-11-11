@@ -21,6 +21,9 @@ on:
         type: choice
         options: [smoke, full, select]
         default: smoke
+      filter:
+        description: Only verify documents whose id matches this regular expression
+        default: "."
 
 concurrency:
   group: corpus-${{ github.workflow }}-${{ github.event_name }}-${{ inputs.tier || 'auto' }}-${{ github.event.pull_request.number || github.ref }}
@@ -124,7 +127,7 @@ jobs:
           path: corpus/.cache
           key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json') }}
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD"
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
