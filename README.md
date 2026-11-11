@@ -3,9 +3,9 @@
 Octavo makes Quarto HTML files smaller. Give it a document rendered with `embed-resources: true` and it writes a single, self-contained file that opens offline, looks the same and is usually five to twenty times smaller.
 
 ```sh
-octavo optimize report.html                       # writes report.min.html
-octavo optimize deck.html small.html --lossy-images      # AVIF, much smaller, not pixel-exact
-octavo audit report.html                          # what each step would save
+octavo report.html                       # writes report.min.html
+octavo deck.html small.html --lossy-images      # AVIF, much smaller, not pixel-exact
+octavo --audit report.html                          # what each step would save
 ```
 
 Octavo is clever glue. It does not implement a CSS minifier, a JavaScript compressor or an image codec. It knows where Quarto's weight comes from and when it is safe to remove, and it hands each job to the best library for that job. The libraries are listed [below](#the-libraries-doing-the-work).

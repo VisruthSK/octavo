@@ -26,7 +26,7 @@ for (const file of files) {
   const name = basename(file, ".html").replace(/\s+/g, "_");
   const optimized = join(outDir, `${name}.${mode}.html`);
   const started = Date.now();
-  execFileSync(binary, ["optimize", file, optimized, "--level", mode, ...(lossy ? ["--lossy-images"] : [])], { stdio: "pipe", maxBuffer: 1 << 28 });
+  execFileSync(binary, [file, optimized, "--level", mode, ...(lossy ? ["--lossy-images"] : [])], { stdio: "pipe", maxBuffer: 1 << 28 });
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
   const before = statSync(file).size;
   const after = statSync(optimized).size;

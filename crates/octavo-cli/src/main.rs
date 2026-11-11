@@ -1,7 +1,7 @@
 use anstream::{eprintln, println};
 use anstyle::{AnsiColor, Style};
 use bytesize::ByteSize;
-use clap::{builder::Styles, value_parser, Parser, Subcommand, ValueEnum};
+use clap::{builder::Styles, value_parser, Args, Parser, ValueEnum};
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{optimize, simplify, ImageEncoding, ImageFormat, Mode, Options, Transform};
 use std::{
@@ -25,14 +25,18 @@ const ERROR: Style = AnsiColor::Red.on_default().bold();
 const DIM: Style = Style::new().dimmed();
 
 #[derive(Parser)]
-#[command(version, about, styles = STYLES, arg_required_else_help = true)]
+#[command(
+    version,
+    about = "Structure-aware optimizer for Quarto HTML. Run `octavo <input> [output]` to shrink a file",
+    styles = STYLES,
+    arg_required_else_help = true
+)]
 struct Cli {
-    #[command(subcommand)]
-    command: Command,
+    #[command(flatten)]
+    optimize: Optimize,
     #[arg(
         short,
         long,
-        global = true,
         value_name = "N",
         default_value_t = default_jobs(),
         help = "Parallel workers"
@@ -44,62 +48,60 @@ fn default_jobs() -> NonZeroUsize {
     std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)
 }
 
-#[derive(Subcommand)]
-enum Command {
-    #[command(about = "Shrink a Quarto HTML file")]
-    Optimize {
-        #[arg(help = "HTML file written by Quarto with embed-resources: true")]
-        input: PathBuf,
-        #[arg(help = "Where to write the result [default: <input>.min.html]")]
-        output: Option<PathBuf>,
-        #[arg(short, long, value_enum, default_value_t = Level::Packed)]
-        level: Level,
-        #[arg(
-            long,
-            value_name = "COMMAND",
-            help = "Check each candidate with a shell command; {original} and {optimized} are substituted, and a failing candidate steps down to the next level"
-        )]
-        verify: Option<String>,
-        #[arg(
-            long,
-            value_name = "FORMAT",
-            value_enum,
-            num_args = 0..=1,
-            default_missing_value = "avif",
-            help = "Re-encode PNG and JPEG images in a lossy format"
-        )]
-        lossy_images: Option<Format>,
-        #[arg(
-            long,
-            value_name = "QUALITY",
-            requires = "lossy_images",
-            value_parser = value_parser!(u8).range(1..=100),
-            help = "Quality of the re-encoded images [default: 60 for AVIF, 80 for WebP]"
-        )]
-        image_quality: Option<u8>,
-        #[arg(
-            long,
-            help = "Subset text fonts to the characters the document uses. Often a large saving, but not exact: some kerning is lost, so text can shift by a pixel or two"
-        )]
-        subset_text_fonts: bool,
-        #[arg(
-            long,
-            value_name = "PIXELS",
-            requires = "lossy_images",
-            help = "Shrink re-encoded images whose longest side exceeds this [default: 3840, 0 keeps size]"
-        )]
-        max_image_side: Option<u32>,
-        #[arg(
-            long,
-            help = "Drop the license and copyright notices of bundled libraries and fonts, which most licenses require keeping"
-        )]
-        strip_licenses: bool,
-    },
-    #[command(about = "Show what each transformation would save")]
-    Audit {
-        #[arg(help = "HTML file written by Quarto with embed-resources: true")]
-        input: PathBuf,
-    },
+#[derive(Args)]
+struct Optimize {
+    #[arg(help = "HTML file written by Quarto with embed-resources: true")]
+    input: PathBuf,
+    #[arg(help = "Where to write the result [default: <input>.min.html]")]
+    output: Option<PathBuf>,
+    #[arg(short, long, value_enum, default_value_t = Level::Packed)]
+    level: Level,
+    #[arg(
+        long,
+        value_name = "COMMAND",
+        help = "Check each candidate with a shell command; {original} and {optimized} are substituted, and a failing candidate steps down to the next level"
+    )]
+    verify: Option<String>,
+    #[arg(
+        long,
+        conflicts_with_all = ["output", "verify"],
+        help = "Report what each transformation would save, without writing anything"
+    )]
+    audit: bool,
+    #[arg(
+        long,
+        value_name = "FORMAT",
+        value_enum,
+        num_args = 0..=1,
+        default_missing_value = "avif",
+        help = "Re-encode PNG and JPEG images in a lossy format"
+    )]
+    lossy_images: Option<Format>,
+    #[arg(
+        long,
+        value_name = "QUALITY",
+        requires = "lossy_images",
+        value_parser = value_parser!(u8).range(1..=100),
+        help = "Quality of the re-encoded images [default: 60 for AVIF, 80 for WebP]"
+    )]
+    image_quality: Option<u8>,
+    #[arg(
+        long,
+        help = "Subset text fonts to the characters the document uses. Often a large saving, but not exact: some kerning is lost, so text can shift by a pixel or two"
+    )]
+    subset_text_fonts: bool,
+    #[arg(
+        long,
+        value_name = "PIXELS",
+        requires = "lossy_images",
+        help = "Shrink re-encoded images whose longest side exceeds this [default: 3840, 0 keeps size]"
+    )]
+    max_image_side: Option<u32>,
+    #[arg(
+        long,
+        help = "Drop the license and copyright notices of bundled libraries and fonts, which most licenses require keeping"
+    )]
+    strip_licenses: bool,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -160,36 +162,37 @@ fn main() -> ExitCode {
         eprintln!("{ERROR}error{ERROR:#}: {error}");
         return ExitCode::FAILURE;
     }
-    let result = match cli.command {
-        Command::Optimize {
+    let result = if cli.optimize.audit {
+        audit(&cli.optimize.input)
+    } else {
+        let Optimize {
             input,
             output,
             level,
             verify,
+            audit: _,
             lossy_images,
             image_quality,
             subset_text_fonts,
             max_image_side,
             strip_licenses,
-        } => {
-            let output = output.unwrap_or_else(|| input.with_extension("min.html"));
-            let images = lossy_images.map(|format| {
-                let encoding = ImageEncoding::new(format.into());
-                ImageEncoding {
-                    quality: image_quality.unwrap_or(encoding.quality),
-                    max_side: max_image_side
-                        .map_or(encoding.max_side, |side| (side > 0).then_some(side)),
-                    ..encoding
-                }
-            });
-            let options = Options {
-                images,
-                subset_text_fonts,
-                strip_licenses,
-            };
-            run(&input, &output, level, verify.as_deref(), options)
-        }
-        Command::Audit { input } => audit(&input),
+        } = cli.optimize;
+        let output = output.unwrap_or_else(|| input.with_extension("min.html"));
+        let images = lossy_images.map(|format| {
+            let encoding = ImageEncoding::new(format.into());
+            ImageEncoding {
+                quality: image_quality.unwrap_or(encoding.quality),
+                max_side: max_image_side
+                    .map_or(encoding.max_side, |side| (side > 0).then_some(side)),
+                ..encoding
+            }
+        });
+        let options = Options {
+            images,
+            subset_text_fonts,
+            strip_licenses,
+        };
+        run(&input, &output, level, verify.as_deref(), options)
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

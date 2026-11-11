@@ -32,7 +32,7 @@ const run = (name, make, n) => {
   const once = () => {
     const output = join(dir, `out.${outputs++}.html`);
     const started = process.hrtime.bigint();
-    execFileSync(binary, ["optimize", input, output, "--level", "packed"], { stdio: "pipe", maxBuffer: 1 << 28 });
+    execFileSync(binary, [input, output, "--level", "packed"], { stdio: "pipe", maxBuffer: 1 << 28 });
     return Number(process.hrtime.bigint() - started) / 1e6;
   };
   return Math.min(once(), once(), once());

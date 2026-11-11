@@ -32,7 +32,7 @@ function build(name, html, level) {
   const input = join(dir, `${name}.html`);
   const output = join(dir, `${name}.${level}.html`);
   writeFileSync(input, html);
-  execFileSync(binary, ["optimize", input, output, "--level", level]);
+  execFileSync(binary, [input, output, "--level", level]);
   return { input, output, bytes: statSync(output).size, original: statSync(input).size };
 }
 

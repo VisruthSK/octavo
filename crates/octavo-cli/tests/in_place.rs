@@ -24,7 +24,6 @@ fn shrinkable() -> String {
 
 fn optimize(path: &Path, extra: &[&str]) {
     let status = Command::new(env!("CARGO_BIN_EXE_octavo"))
-        .arg("optimize")
         .arg(path)
         .arg(path)
         .args(extra)
@@ -87,7 +86,6 @@ fn a_separate_output_leaves_the_input_alone() {
     let path = fixture("separate-output", &original);
     let output = path.with_file_name("out.html");
     let status = Command::new(env!("CARGO_BIN_EXE_octavo"))
-        .arg("optimize")
         .arg(&path)
         .arg(&output)
         .output()
@@ -96,4 +94,19 @@ fn a_separate_output_leaves_the_input_alone() {
     assert!(status.success());
     assert_eq!(fs::read_to_string(&path).expect("read"), original);
     assert!(fs::read_to_string(&output).expect("read").len() < original.len());
+}
+
+#[test]
+fn audit_reports_without_writing_anything() {
+    let original = shrinkable();
+    let path = fixture("audit", &original);
+    let output = Command::new(env!("CARGO_BIN_EXE_octavo"))
+        .arg("--audit")
+        .arg(&path)
+        .output()
+        .expect("run octavo");
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("transformation"));
+    assert_eq!(fs::read_to_string(&path).expect("read"), original);
+    assert!(leftovers(&path).is_empty(), "{:?}", leftovers(&path));
 }
