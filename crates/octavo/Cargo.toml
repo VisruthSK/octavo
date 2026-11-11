@@ -30,7 +30,7 @@ ravif = { version = "0.13.0", default-features = false, features = ["threading"]
 imgref = "1.12.3"
 rgb = "0.8.53"
 gamut-webp = "0.3.1"
-gamut-core = "2.0.1"
+gamut-core = "3.0.0"
 fast_image_resize = { version = "6.1.0", features = ["rayon"] }
 indexmap = "2.14.2"
 html-escape = "0.3.1"
