@@ -23,6 +23,22 @@ const lines = [`## Corpus totals`, ``, `${results.length} document runs from ${n
 for (const [level, entries] of [...Map.groupBy(produced, (entry) => entry.level)].sort(([a], [b]) => a.localeCompare(b))) lines.push(row(level, entries));
 lines.push(``, `### By category and level`, ``, ...header);
 for (const [name, entries] of [...Map.groupBy(produced, (entry) => `${entry.category} / ${entry.level}`)].sort(([a], [b]) => a.localeCompare(b))) lines.push(row(name, entries));
+const rounding = results.filter((entry) => entry.roundedPixels > 0);
+lines.push(
+  ``,
+  `### Pixels off by exactly one level`,
+  ``,
+  `Rendering rounding that the screenshot check allows. A rise in these counts across many documents would point to a systematic cause.`,
+  ``,
+  `| Level | Documents with any | Pixels |`,
+  `|---|---|---|`,
+  ...[...Map.groupBy(results, (entry) => entry.level)].sort(([a], [b]) => a.localeCompare(b)).map(([level, entries]) => {
+    const some = entries.filter((entry) => entry.roundedPixels > 0);
+    return `| ${level} | ${some.length} of ${entries.length} | ${some.reduce((total, entry) => total + entry.roundedPixels, 0)} |`;
+  }),
+  ``,
+  ...rounding.sort((a, b) => b.roundedPixels - a.roundedPixels).slice(0, 5).map((entry) => `- ${entry.id} (${entry.level}): ${entry.roundedPixels}`),
+);
 const problems = results.filter((entry) => entry.problems.length);
 lines.push(``, `### Problems`, ``, problems.length ? problems.map((entry) => `- ${entry.id} (${entry.level}): ${entry.problems.join("; ").slice(0, 300)}`).join("\n") : "None.");
 

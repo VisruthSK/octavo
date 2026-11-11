@@ -137,6 +137,7 @@ if (browser) {
       entries.map((entry) => entry.output),
     );
     for (const [at, entry] of entries.entries()) {
+      entry.roundedPixels = reports[at].reduce((total, report) => total + report.rounded, 0);
       for (const { scenario, issues } of reports[at]) {
         if (entry.level === "packed" && scenario === "no-js") continue;
         for (const issue of issues) entry.problems.push(`${scenario}: ${issue}`);

@@ -57,9 +57,10 @@ const eachLimited = async (items, limit, work) => {
 };
 
 async function confirmed(original, file, scenario, before, after, lossy) {
-  const issues = compare(before, after, lossy);
-  if (!issues.length) return issues;
-  return slots.using(async () => {
+  const stats = { roundedPixels: 0 };
+  const issues = compare(before, after, lossy, stats);
+  if (!issues.length) return { issues, rounded: stats.roundedPixels };
+  const kept = await slots.using(async () => {
     const open = await browser();
     const [before2, after2] = await Promise.all([
       capture(open, original, scenario, lossy).catch(crashed),
@@ -69,6 +70,7 @@ async function confirmed(original, file, scenario, before, after, lossy) {
     const reproduced = new Set(compare(before2, after2, lossy).map(signature));
     return issues.filter((issue) => !noise.has(signature(issue)) && reproduced.has(signature(issue)));
   }, pages);
+  return { issues: kept, rounded: stats.roundedPixels };
 }
 
 export async function verify(original, optimized, { lossy = false } = {}) {
@@ -82,8 +84,8 @@ export async function verify(original, optimized, { lossy = false } = {}) {
     const [before, ...afters] = await Promise.all([original, ...files].map((file) => run(file, scenario)));
     await Promise.all(
       files.map(async (file, at) => {
-        const issues = await confirmed(original, file, scenario, before, afters[at], lossy);
-        reports[at].push({ scenario: scenario.name, issues });
+        const { issues, rounded } = await confirmed(original, file, scenario, before, afters[at], lossy);
+        reports[at].push({ scenario: scenario.name, issues, rounded });
       }),
     );
   });

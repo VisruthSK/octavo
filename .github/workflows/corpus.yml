@@ -24,6 +24,15 @@ on:
       filter:
         description: Only verify documents whose id matches this regular expression
         default: "."
+      diagnose:
+        description: Upload screenshots and a zoom of the differing region for this document id
+        default: ""
+      diagnose_scenario:
+        description: Which scenario to capture for the diagnosis
+        default: tablet
+      diagnose_level:
+        description: Which level of the document to capture
+        default: packed
 
 concurrency:
   group: corpus-${{ github.workflow }}-${{ github.event_name }}-${{ inputs.tier || 'auto' }}-${{ github.event.pull_request.number || github.ref }}
@@ -128,6 +137,21 @@ jobs:
           key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json') }}
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}"
+      - name: Diagnose one document
+        if: always() && inputs.diagnose != ''
+        run: |
+          original="corpus/.cache/rendered/${{ inputs.diagnose }}.html"
+          [ -f "$original" ] || original="corpus/.cache/${{ inputs.diagnose }}.html"
+          optimized="out/corpus/${{ inputs.diagnose }}.${{ inputs.diagnose_level }}.html"
+          if [ -f "$original" ] && [ -f "$optimized" ]; then
+            node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" out/diagnose
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always() && inputs.diagnose != ''
+        with:
+          name: diagnose-${{ matrix.shard }}
+          path: out/diagnose
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         if: always()
         with:

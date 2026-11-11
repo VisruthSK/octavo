@@ -12,8 +12,10 @@ const missingFrom = (reference, candidate = "") => {
 
 const CHANNEL_ROUNDING = 1;
 
-function differences(left, right) {
+export function differences(left, right) {
   let count = 0;
+  let rounded = 0;
+  let [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Infinity, Infinity, -1, -1];
   let [minX, minY, maxX, maxY] = [Infinity, Infinity, -1, -1];
   let first = "";
   for (let y = 0; y < left.height; y++) {
@@ -25,16 +27,20 @@ function differences(left, right) {
         Math.abs(left.data[at + 2] - right.data[at + 2]),
         Math.abs(left.data[at + 3] - right.data[at + 3]),
       );
-      if (worst <= CHANNEL_ROUNDING) continue;
+      if (worst > 0) [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Math.min(anyMinX, x), Math.min(anyMinY, y), Math.max(anyMaxX, x), Math.max(anyMaxY, y)];
+      if (worst <= CHANNEL_ROUNDING) {
+        if (worst > 0) rounded += 1;
+        continue;
+      }
       count += 1;
       first ||= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
       [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
     }
   }
-  return { count, where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
+  return { count, rounded, box: [minX, minY, maxX, maxY], anyBox: [anyMinX, anyMinY, anyMaxX, anyMaxY], where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
 }
 
-function compareScreenshots(a, b, lossy) {
+function compareScreenshots(a, b, lossy, stats) {
   const left = PNG.sync.read(a);
   const right = PNG.sync.read(b);
   if (left.width !== right.width || left.height !== right.height) {
@@ -44,11 +50,12 @@ function compareScreenshots(a, b, lossy) {
     const differing = pixelmatch(left.data, right.data, null, left.width, left.height, { threshold: 0.1 });
     return differing / (left.width * left.height) > SCREENSHOT_TOLERANCE.lossy ? [`screenshot: ${differing} pixels differ`] : [];
   }
-  const { count, where } = differences(left, right);
+  const { count, rounded, where } = differences(left, right);
+  if (stats) stats.roundedPixels += rounded;
   return count ? [`screenshot: ${count} pixels differ by more than ${CHANNEL_ROUNDING}${where}`] : [];
 }
 
-function compareState(a, b, lossy) {
+function compareState(a, b, lossy, stats) {
   const issues = [];
   if (a.title !== b.title) issues.push(`title [${a.title}] vs [${b.title}]`);
   if (a.accessibility !== b.accessibility) issues.push("accessibility tree differs");
@@ -82,11 +89,11 @@ function compareState(a, b, lossy) {
     const lost = missingFrom(a.styles[first], b.styles[first]).slice(0, 3);
     issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first]}: ${lost.join(" | ")}`);
   }
-  if (a.screenshot && b.screenshot) issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy));
+  if (a.screenshot && b.screenshot) issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy, stats));
   return issues;
 }
 
-export function compare(before, after, lossy) {
+export function compare(before, after, lossy, stats) {
   if (before.crashed || after.crashed) return [`crashed: original=${before.crashed ?? "no"} optimized=${after.crashed ?? "no"}`];
   const issues = [];
   if (!before.states.length) issues.push("original produced no states");
@@ -96,7 +103,7 @@ export function compare(before, after, lossy) {
   if (before.requests.join() !== after.requests.join()) issues.push(`requests: ${before.requests} vs ${after.requests}`);
   if (before.states.length !== after.states.length) issues.push(`state count ${before.states.length} vs ${after.states.length}`);
   for (const [i, state] of before.states.entries()) {
-    if (after.states[i]) issues.push(...compareState(state, after.states[i], lossy).map((issue) => `${state.label}: ${issue}`));
+    if (after.states[i]) issues.push(...compareState(state, after.states[i], lossy, stats).map((issue) => `${state.label}: ${issue}`));
   }
   return issues;
 }
