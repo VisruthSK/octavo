@@ -16,7 +16,10 @@ use std::{borrow::Cow, collections::BTreeMap, num::NonZeroUsize, ops::Range, syn
 
 const MIN_BLOB: usize = 256;
 const MIN_FRAGMENT: usize = 1024;
-const BROTLI_THRESHOLD: usize = 1 << 17;
+const PROBE_QUALITY: u8 = 5;
+const DEFAULT_QUALITY: u8 = 9;
+const QUALITY_9_TYPICAL_RATIO_TO_PROBE: f64 = 0.98;
+const SMALLEST_WORTHWHILE_BROTLI_GAIN: f64 = 0.01;
 const LOADER: &str = include_str!("../loader/loader.js");
 const BROTLI_DECODER: &str = include_str!("../loader/brotli.js");
 
@@ -185,17 +188,24 @@ impl<'a> Blobs<'a> {
             .iter()
             .map(|t| t.encode_utf16().count().to_string())
             .collect();
-        let (deflated, brotlied) = rayon::join(
-            || deflate(all.as_bytes()),
-            || {
-                (tuning.brotli_quality.is_some() || all.len() >= BROTLI_THRESHOLD).then(|| {
-                    brotli(
-                        all.as_bytes(),
-                        tuning.brotli_quality.map_or(9, |q| q.min(11)),
-                    )
-                })
-            },
-        );
+        let bytes = all.as_bytes();
+        let (deflated, brotlied) = match tuning.brotli_quality {
+            Some(quality) => {
+                let (deflated, brotlied) =
+                    rayon::join(|| deflate(bytes), || brotli(bytes, quality.min(11)));
+                (deflated, Some(brotlied))
+            }
+            None => {
+                let (deflated, probe) =
+                    rayon::join(|| deflate(bytes), || brotli(bytes, PROBE_QUALITY));
+                let best_case = (probe.len() as f64 * QUALITY_9_TYPICAL_RATIO_TO_PROBE) as usize
+                    + brotli_decoder_deflated().len();
+                let worthwhile = deflated.len() as f64 * (1.0 - SMALLEST_WORTHWHILE_BROTLI_GAIN);
+                let brotlied =
+                    ((best_case as f64) < worthwhile).then(|| brotli(bytes, DEFAULT_QUALITY));
+                (deflated, brotlied)
+            }
+        };
         let plain = assemble(
             &format!("inflate(bytes({}), {})", literal(&deflated), all.len()),
             &sizes,
@@ -215,12 +225,17 @@ impl<'a> Blobs<'a> {
     }
 }
 
+fn brotli_decoder_deflated() -> &'static [u8] {
+    static DEFLATED: OnceLock<Vec<u8>> = OnceLock::new();
+    DEFLATED.get_or_init(|| deflate(BROTLI_DECODER.as_bytes()))
+}
+
 fn brotli_decoder() -> &'static str {
     static EXPRESSION: OnceLock<String> = OnceLock::new();
     EXPRESSION.get_or_init(|| {
         format!(
             "new Function(new TextDecoder().decode(inflate(bytes({}), {})) + \";return BR.default\")()",
-            literal(&deflate(BROTLI_DECODER.as_bytes())),
+            literal(brotli_decoder_deflated()),
             BROTLI_DECODER.len()
         )
     })

@@ -94,8 +94,8 @@ jobs:
     env:
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
-      CARGO_PROFILE_RELEASE_LTO: "off"
-      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+      CARGO_PROFILE_RELEASE_LTO: ${{ needs.plan.outputs.tier == 'smoke' && 'off' || 'true' }}
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ needs.plan.outputs.tier == 'smoke' && '16' || '1' }}
     steps:
       - uses: actions/checkout@v7
         with:

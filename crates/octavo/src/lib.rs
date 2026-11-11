@@ -183,8 +183,10 @@ pub struct Tuning {
     /// The oxipng preset for PNG images, 0 (fast) to 6 (thorough). `None`
     /// picks a preset by image size: big images get the quick ones.
     pub png_preset: Option<u8>,
-    /// The Brotli quality of the packed blob, 0 to 11. `None` uses 9, and
-    /// only for blobs big enough for Brotli to beat its own decoder.
+    /// The Brotli quality of the packed blob, 0 to 11. `None` uses 9, but
+    /// only when a quick trial shows it should save at least one percent over
+    /// DEFLATE after paying for Brotli's own decoder. That skips a slow pass
+    /// on image-heavy pages, where Brotli barely helps.
     pub brotli_quality: Option<u8>,
 }
 

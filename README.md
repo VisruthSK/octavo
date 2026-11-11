@@ -88,7 +88,7 @@ The level decides what the output depends on. The effort decides how hard the co
 |---|---|---|---|
 | `--woff2-quality` | 0 to 11 | 9 | 11 |
 | `--png-preset` (oxipng) | 0 to 6 | by image size | 6 |
-| `--brotli-quality` (packed blob) | 0 to 11 | 9, only for blobs big enough to beat Brotli's own decoder | 11, always |
+| `--brotli-quality` (packed blob) | 0 to 11 | 9, only when a quick trial shows it saves at least 1% over DEFLATE after paying for Brotli's decoder | 11, always |
 
 On a 288 KB font, WOFF2 quality 9 takes 26 ms and quality 11 takes 293 ms for 9 percent more bytes, which is a small share of a whole document. That is why the default is 9.
 
