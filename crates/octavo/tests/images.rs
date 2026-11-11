@@ -21,7 +21,7 @@ fn chunk(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
     .concat()
 }
 
-fn png_with_comment(comment: &str) -> Vec<u8> {
+fn png_with_chunks(chunks: &[Vec<u8>]) -> Vec<u8> {
     let mut header = Vec::new();
     header.extend_from_slice(&4u32.to_be_bytes());
     header.extend_from_slice(&4u32.to_be_bytes());
@@ -33,10 +33,14 @@ fn png_with_comment(comment: &str) -> Vec<u8> {
     zlib.write_all(&rows).unwrap();
     let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
     png.extend(chunk(b"IHDR", &header));
-    png.extend(chunk(b"tEXt", format!("Comment\0{comment}").as_bytes()));
+    png.extend(chunks.concat());
     png.extend(chunk(b"IDAT", &zlib.finish().unwrap()));
     png.extend(chunk(b"IEND", &[]));
     png
+}
+
+fn png_with_comment(comment: &str) -> Vec<u8> {
+    png_with_chunks(&[chunk(b"tEXt", format!("Comment\0{comment}").as_bytes())])
 }
 
 fn page(attr: &str, png: &[u8]) -> String {
@@ -144,4 +148,35 @@ fn oversized_images_shrink_without_touching_the_tag() {
     assert!(shrunk.len() < full.len());
     assert!(shrunk.contains("<img class=\"figure\" src=\"data:image/webp;base64,"));
     assert!(!shrunk.contains("width=") && !shrunk.contains("height="));
+}
+
+fn chunk_names(png: &[u8]) -> Vec<[u8; 4]> {
+    let mut names = Vec::new();
+    let mut at = 8;
+    while at + 8 <= png.len() {
+        let length = u32::from_be_bytes(png[at..at + 4].try_into().unwrap()) as usize;
+        names.push(png[at + 4..at + 8].try_into().unwrap());
+        at += 12 + length;
+    }
+    names
+}
+
+#[test]
+fn recompression_keeps_the_chunks_that_change_how_colours_render() {
+    let original = png_with_chunks(&[
+        chunk(b"gAMA", &45455u32.to_be_bytes()),
+        chunk(b"cHRM", &[0; 32]),
+        chunk(b"eXIf", b"MM\0*\0\0\0\x08\0\0\0\0\0\0\0\0"),
+        chunk(b"tEXt", format!("Comment\0{}", "x".repeat(2000)).as_bytes()),
+    ]);
+    let out = optimized(&page("src", &original), Mode::Safe).html;
+    let names = chunk_names(&embedded_png(&out));
+    for kept in [b"gAMA", b"cHRM", b"eXIf"] {
+        assert!(
+            names.contains(kept),
+            "{:?} lost from {names:?}",
+            String::from_utf8_lossy(kept)
+        );
+    }
+    assert!(!names.contains(b"tEXt"), "{names:?}");
 }

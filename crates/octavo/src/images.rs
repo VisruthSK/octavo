@@ -15,6 +15,11 @@ use rayon::prelude::*;
 use rgb::FromSlice;
 use std::{cmp::Reverse, io::Cursor, num::NonZeroU32};
 
+const RENDERING_CHUNKS: [[u8; 4]; 10] = [
+    *b"cICP", *b"iCCP", *b"sRGB", *b"gAMA", *b"cHRM", *b"pHYs", *b"eXIf", *b"acTL", *b"fcTL",
+    *b"fdAT",
+];
+
 const MAX_LOSSLESS_PIXELS: u64 = 40_000_000;
 const MAX_LOSSY_PIXELS: u64 = 200_000_000;
 const THOROUGH_PIXELS: u64 = 400_000;
@@ -162,7 +167,7 @@ fn recompress(decoded: &Decoded) -> Option<String> {
         Effort::Light
     };
     let options = PngOptions {
-        strip: StripChunks::Safe,
+        strip: StripChunks::Keep(RENDERING_CHUNKS.into_iter().collect()),
         ..PngOptions::from_preset(effort.preset())
     };
     let smaller = oxipng::optimize_from_memory(&decoded.image.bytes, &options)
