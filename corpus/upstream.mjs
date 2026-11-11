@@ -2,7 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
-import { join, posix, relative } from "node:path";
+import { dirname, join, posix, relative } from "node:path";
 import { cacheDirectory } from "./build.mjs";
 import { featuresOf, selectStratified } from "./select.mjs";
 
@@ -102,10 +102,11 @@ export const featureOf = (path) => {
 const render = (file, outputDirectory) =>
   new Promise((done) => {
     const child = spawn(quarto, ["render", file, "-M", "embed-resources:true", "--output-dir", outputDirectory, "--quiet"], {
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
     let timedOut = false;
+    child.stdout.on("data", (chunk) => (stderr += chunk));
     child.stderr.on("data", (chunk) => (stderr += chunk));
     const timer = setTimeout(() => {
       timedOut = true;
@@ -116,6 +117,14 @@ const render = (file, outputDirectory) =>
       done({ ok: code === 0, stderr, code, timedOut });
     });
   });
+
+const directoryTurns = new Map();
+
+const inDirectory = (directory, work) => {
+  const turn = (directoryTurns.get(directory) ?? Promise.resolve()).then(work);
+  directoryTurns.set(directory, turn.catch(() => {}));
+  return turn;
+};
 
 const failureReason = ({ stderr, code, timedOut }) =>
   stderr.trim().split("\n").at(-1)?.slice(0, 120) || (timedOut ? "render timed out" : `quarto exited with code ${code}`);
@@ -148,12 +157,18 @@ async function renderDocument({ id, file }) {
   let text = existsSync(kept) ? readFileSync(kept) : null;
   if (!text) {
     const output = join(rendered, id);
-    rmSync(output, { recursive: true, force: true });
-    mkdirSync(output, { recursive: true });
-    const result = await render(file, output);
-    const html = readdirSync(output).find((name) => name.endsWith(".html"));
-    text = result.ok && html ? readFileSync(join(output, html)) : null;
-    rmSync(output, { recursive: true, force: true });
+    let result;
+    for (let attempt = 0; attempt < 2 && !text; attempt += 1) {
+      result = await inDirectory(dirname(file), async () => {
+        rmSync(output, { recursive: true, force: true });
+        mkdirSync(output, { recursive: true });
+        const outcome = await render(file, output);
+        const html = readdirSync(output).find((name) => name.endsWith(".html"));
+        text = outcome.ok && html ? readFileSync(join(output, html)) : null;
+        rmSync(output, { recursive: true, force: true });
+        return outcome;
+      });
+    }
     if (!text) return { reason: failureReason(result) };
   }
   const markup = text.toString("utf8");
