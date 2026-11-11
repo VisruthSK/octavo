@@ -26,11 +26,16 @@ Roughly 300 documents that exercise Octavo on realistic output, on scale, and on
 - `build` takes no arguments, returns the document text, and is deterministic. Use `random(seed)` from `spec.mjs` for pseudo-random content, never `Math.random` or the clock.
 - `expect` is written from what Octavo promises, before running anything:
   - `{ outcome: "optimizes" }` the output is smaller and renders identically in Chromium. Add `retains: [...]` (text that must still be present) and `removes: [...]` (text that must be gone). These are checked on the `safe` level output, where the text is not packed.
+  - `{ outcome: "accepts" }` Octavo optimizes the input or leaves it as it was, but never rejects it. Use it for real-world documents where the gain is not the point.
   - `{ outcome: "keeps" }` Octavo finds nothing to gain and leaves the file as it was.
   - `{ outcome: "rejects", error: "not-html" | "not-self-contained" }` the input is refused with that error.
 - Set `browser: false` on an `optimizes` document only when it cannot be rendered meaningfully (for example a page that is intentionally enormous). Say why in the id.
 
 When the runner disagrees with an expectation, decide which side is wrong. If Octavo has a bug, leave the expectation as it is and report the bug; never edit an expectation to match a bug.
+
+## Real documents from upstream
+
+`sources.json` pins upstream repositories by URL and SHA-256. `node corpus/upstream.mjs` downloads and extracts their example documents, keeps the ones that need no R, Python or Julia and no project files, orders them by the hash of their path (so the selection is deterministic and spread across the tree), renders the first `limit` with Quarto into `.cache/rendered/`, and writes `index.json` with the Quarto version. Documents that fail to render are skipped and reported. The runner picks the rendered documents up automatically (`--no-upstream` skips them) and expects `accepts` plus browser equivalence. Nothing rendered is committed, because the HTML depends on the Quarto version. Set `QUARTO` to the executable when it is not on `PATH`.
 
 ## Running
 
