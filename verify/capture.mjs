@@ -88,7 +88,7 @@ async function observe({ lossy, probe, motion, pixels }) {
     img.removeAttribute(attribute);
     img.setAttribute(`pixels-${attribute}`, prints[at]);
   }
-  const elements = [...document.body.querySelectorAll("*")];
+  const elements = [...document.body.querySelectorAll("*:not(script):not(style):not(link):not(noscript)")];
   const position = new Map(elements.map((element, at) => [element, at]));
   const animations = motion
     ? document
@@ -221,7 +221,7 @@ export async function capture(browser, file, scenario, lossy) {
       states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, pixels: scenario.pixels })), screenshot, ...extra });
     };
     await record("load", {
-      forced: scripted ? await forcedStates(page) : [],
+      forced: scripted && !scenario.motion ? await forcedStates(page) : [],
       accessibility: await settledAccessibilityTree(page),
     });
     if (scripted && !scenario.media && !scenario.motion) {

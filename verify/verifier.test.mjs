@@ -17,6 +17,7 @@ const base = [
   ".box{width:50px;height:50px;background:rgb(10,20,30);animation:slide 2s infinite}",
   "@keyframes slide{from{margin-left:0}to{margin-left:100px}}",
   "a.link{color:rgb(0,0,200)}",
+  "a.link{transition:color 2s}",
   "a.link:hover{color:rgb(200,0,0)}",
   "@media (max-width:500px){h1{font-size:12px}}",
   "@media (min-width:700px) and (max-width:900px){h1{font-size:40px}}",
@@ -71,4 +72,11 @@ test("a changed text node is caught", async () => {
 test("a changed layout by a hundredth of a pixel is caught", async () => {
   const failing = await scenariosFailing(page(base + ".t{width:100.00px}", "<div class=t>x</div>"), page(base + ".t{width:100.02px}", "<div class=t>x</div>"));
   assert.ok(failing.length > 0);
+});
+
+test("a script moved from the head into the body is not a difference", async () => {
+  const script = "<script>window.ready = true</script>";
+  const original = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title><style>${base}</style>${script}</head><body><h1>Title</h1></body></html>`;
+  const moved = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title><style>${base}</style></head><body><h1>Title</h1>${script}</body></html>`;
+  assert.deepEqual(await scenariosFailing(original, moved), []);
 });
