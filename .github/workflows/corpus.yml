@@ -9,6 +9,7 @@ on:
       - "Cargo.lock"
   schedule:
     - cron: "0 6 * * 1"
+  workflow_call:
   workflow_dispatch:
     inputs:
       tier:
@@ -18,7 +19,7 @@ on:
         default: smoke
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: corpus-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -47,7 +48,12 @@ jobs:
       - run: cargo build --locked --release
       - run: npm ci
         working-directory: verify
-      - run: npx playwright-core install --with-deps chromium
+      - run: |
+          for attempt in 1 2 3 4; do
+            npx playwright-core install --with-deps chromium && exit 0
+            sleep $((attempt * 20))
+          done
+          exit 1
         working-directory: verify
       - run: node corpus/build.mjs --check
       - uses: quarto-dev/quarto-actions/setup@v2
