@@ -136,9 +136,16 @@ const pool = async (items, limit, work) => {
 const localLink =
   /<(?:img|script)\b[^>]*\bsrc\s*=\s*["'](?!data:|https?:|\/\/|#|blob:|about:)[^"']+|<link\b[^>]*\bhref\s*=\s*["'](?!data:|https?:|\/\/|#|blob:|about:)[^"']+/i;
 
+const remoteResource =
+  /<(?:img|script|iframe|video|audio|source)\b[^>]*\bsrc\s*=\s*["'](?:https?:)?\/\/|<link\b[^>]*\brel\s*=\s*["'][^"']*stylesheet[^"']*["'][^>]*\bhref\s*=\s*["'](?:https?:)?\/\//i;
+
 const rawTextBody = /(<(script|style|textarea|template)\b[^>]*>)[\s\S]*?<\/\2\s*>/gi;
 
-const hasLocalLink = (markup) => localLink.test(markup.replace(rawTextBody, "$1"));
+const withoutRawText = (markup) => markup.replace(rawTextBody, "$1");
+
+const hasLocalLink = (markup) => localLink.test(withoutRawText(markup));
+
+const needsNetwork = (markup) => remoteResource.test(withoutRawText(markup));
 
 const capped = (quotas, cap) =>
   Object.fromEntries(Object.entries(quotas).map(([format, count]) => [format, cap ? Math.min(count, cap) : count]));
@@ -178,6 +185,10 @@ export async function renderUpstream({ jobs = 4, cap } = {}) {
       const markup = text.toString("utf8");
       if (hasLocalLink(markup)) {
         console.error(`skipped ${id}: not self-contained`);
+        return;
+      }
+      if (needsNetwork(markup)) {
+        console.error(`skipped ${id}: needs the network`);
         return;
       }
       writeFileSync(join(rendered, `${id}.html`), text);
