@@ -9,8 +9,8 @@ beside the library.
 Apache License 2.0
 
 Used by:
-  - octavo 0.0.1-alpha.1 (https://github.com/VisruthSK/octavo)
-  - octavo-cli 0.0.1-alpha.1 (https://github.com/VisruthSK/octavo)
+  - octavo 0.1.0-alpha.1 (https://github.com/VisruthSK/octavo)
+  - octavo-cli 0.1.0-alpha.1 (https://github.com/VisruthSK/octavo)
 
 
                                  Apache License

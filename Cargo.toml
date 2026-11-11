@@ -4,7 +4,7 @@ members = ["crates/octavo", "crates/octavo-cli"]
 
 [workspace.package]
 edition = "2021"
-version = "0.0.1-alpha.1"
+version = "0.1.0-alpha.1"
 rust-version = "1.97"
 license = "MIT OR Apache-2.0"
 authors = ["Visruth Srimath Kandali"]

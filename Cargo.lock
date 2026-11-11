@@ -1614,7 +1614,7 @@ dependencies = [
 
 [[package]]
 name = "octavo"
-version = "0.0.1-alpha.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "base64",
  "base91",
@@ -1649,7 +1649,7 @@ dependencies = [
 
 [[package]]
 name = "octavo-cli"
-version = "0.0.1-alpha.1"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anstream",
  "anstyle",
