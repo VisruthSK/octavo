@@ -3,10 +3,18 @@ use data_url::DataUrl;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use std::fmt;
 
+use crate::ascii::starts_with_ignore_case;
+
 const TEXT: &AsciiSet = &CONTROLS.add(b'%').add(b'#').add(b'"').add(b'&');
 
+pub(crate) const DATA_URL_PREFIX: &str = "data:";
+
+pub(crate) fn is_data_url(value: &str) -> bool {
+    starts_with_ignore_case(value, DATA_URL_PREFIX)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Mime {
+pub(crate) enum Mime {
     TextCss,
     ImagePng,
     ImageJpeg,
@@ -17,7 +25,7 @@ pub enum Mime {
 }
 
 impl Mime {
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             Mime::TextCss => "text/css",
             Mime::ImagePng => "image/png",
@@ -29,7 +37,7 @@ impl Mime {
         }
     }
 
-    pub fn is_text(&self) -> bool {
+    pub(crate) fn is_text(&self) -> bool {
         match self {
             Mime::TextCss => true,
             Mime::ImagePng
@@ -52,7 +60,7 @@ impl Mime {
         }
     }
 
-    pub fn parse(value: &str) -> Mime {
+    pub(crate) fn parse(value: &str) -> Mime {
         match value {
             "text/css" => Mime::TextCss,
             "image/png" => Mime::ImagePng,
@@ -71,9 +79,9 @@ impl fmt::Display for Mime {
     }
 }
 
-pub struct DataUri {
-    pub mime: Mime,
-    pub bytes: Vec<u8>,
+pub(crate) struct DataUri {
+    pub(crate) mime: Mime,
+    pub(crate) bytes: Vec<u8>,
 }
 
 fn mime_of(url: &DataUrl) -> Mime {
@@ -81,7 +89,7 @@ fn mime_of(url: &DataUrl) -> Mime {
     Mime::parse(&format!("{}/{}", mime.type_, mime.subtype))
 }
 
-pub fn decode(uri: &str) -> Option<DataUri> {
+pub(crate) fn decode(uri: &str) -> Option<DataUri> {
     let url = DataUrl::process(uri).ok()?;
     Some(DataUri {
         mime: mime_of(&url),
@@ -89,7 +97,7 @@ pub fn decode(uri: &str) -> Option<DataUri> {
     })
 }
 
-pub fn decode_text(uri: &str) -> Option<String> {
+pub(crate) fn decode_text(uri: &str) -> Option<String> {
     let url = DataUrl::process(uri).ok()?;
     if !mime_of(&url).is_text() {
         return None;
@@ -97,13 +105,13 @@ pub fn decode_text(uri: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&url.decode_to_vec().ok()?.0).into_owned())
 }
 
-pub fn encode_text(mime: Mime, text: &str) -> String {
+pub(crate) fn encode_text(mime: Mime, text: &str) -> String {
     format!(
         "data:{mime};charset=utf-8,{}",
         utf8_percent_encode(text, TEXT)
     )
 }
 
-pub fn encode_base64(mime: Mime, bytes: &[u8]) -> String {
+pub(crate) fn encode_base64(mime: Mime, bytes: &[u8]) -> String {
     format!("data:{mime};base64,{}", STANDARD.encode(bytes))
 }

@@ -11,7 +11,7 @@ pub fn safe(src: &str) -> String {
 }
 
 pub fn packed(src: &str) -> String {
-    optimized(src, Mode::Packed { styles: true }).html
+    optimized(src, Mode::Packed).html
 }
 
 pub fn optimized(src: &str, mode: Mode) -> Output {

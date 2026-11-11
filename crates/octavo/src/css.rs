@@ -7,6 +7,7 @@ use crate::{
     Licenses, Target, Transform,
 };
 use cssparser::{Parser, ParserInput, Token};
+use indexmap::IndexSet;
 use lightningcss::{
     properties::Property,
     rules::CssRule,
@@ -25,14 +26,20 @@ use std::{
 
 const PLACEHOLDER: &str = "__octavo";
 
-struct Shielded {
+struct Shielded<'a> {
+    source: &'a str,
     css: String,
     saved: Vec<String>,
     notices: String,
 }
 
-fn shield(source: &str, words: &Words, referenced: &HashSet<&str>, licenses: Licenses) -> Shielded {
-    let (css, saved) = shield_custom_properties(source, &|name| {
+fn shield<'a>(
+    source: &'a str,
+    words: &Words,
+    referenced: &HashSet<&str>,
+    licenses: Licenses,
+) -> Shielded<'a> {
+    let (css, saved) = shield_custom_properties(source, |name| {
         words.has("--") || referenced.contains(name) || words.has(name)
     });
     let notices = if licenses == Licenses::Keep {
@@ -41,6 +48,7 @@ fn shield(source: &str, words: &Words, referenced: &HashSet<&str>, licenses: Lic
         String::new()
     };
     Shielded {
+        source,
         css,
         saved,
         notices,
@@ -111,7 +119,7 @@ fn skip_literal(b: &[u8], i: usize) -> usize {
     }
 }
 
-fn shield_custom_properties(css: &str, keep: &dyn Fn(&str) -> bool) -> (String, Vec<String>) {
+fn shield_custom_properties(css: &str, keep: impl Fn(&str) -> bool) -> (String, Vec<String>) {
     let b = css.as_bytes();
     let (mut out, mut saved) = (String::with_capacity(css.len()), Vec::new());
     let (mut at, mut i) = (0, 0);
@@ -268,7 +276,12 @@ fn variable_references(css: &str) -> impl Iterator<Item = &str> {
     })
 }
 
-pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, licenses: Licenses) -> Vec<Edit> {
+pub(crate) fn stage(
+    doc: &Doc,
+    words: &Words,
+    subset_text_fonts: bool,
+    licenses: Licenses,
+) -> Vec<Edit> {
     let sources: Vec<(&Tag, Cow<str>)> = doc
         .tags()
         .iter()
@@ -279,13 +292,12 @@ pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, licenses: Licens
         .iter()
         .flat_map(|(_, source)| variable_references(source))
         .collect();
-    let unique: Vec<&str> = sources
+    let shielded: Vec<Shielded<'_>> = sources
         .iter()
         .map(|(_, source)| source.as_ref())
-        .collect::<HashSet<_>>()
+        .collect::<IndexSet<_>>()
         .into_iter()
-        .collect();
-    let shielded: Vec<Shielded> = unique
+        .collect::<Vec<_>>()
         .par_iter()
         .map(|source| shield(source, words, &referenced, licenses))
         .collect();
@@ -316,11 +328,15 @@ pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, licenses: Licens
         .zip(&notices)
         .map(|((sheet, shielded), notices)| print(sheet.as_ref()?, shielded, notices))
         .collect();
-    let at: HashMap<&str, usize> = unique.iter().enumerate().map(|(i, s)| (*s, i)).collect();
+    let printed: HashMap<&str, &String> = shielded
+        .iter()
+        .zip(&printed)
+        .filter_map(|(shielded, printed)| printed.as_ref().map(|css| (shielded.source, css)))
+        .collect();
     sources
         .iter()
         .filter_map(|(tag, source)| {
-            let css = printed[at[source.as_ref()]].as_ref()?;
+            let css: &String = printed.get(source.as_ref())?;
             let (span, text) = match tag.body.clone() {
                 Some(body) => (body, css.clone()),
                 None => {
@@ -341,11 +357,7 @@ pub fn stage(doc: &Doc, words: &Words, subset_text_fonts: bool, licenses: Licens
                 span,
                 text,
                 transform: Transform::PrunedStylesheet,
-                target: Target::Resource(
-                    tag.attr(AttrName::Id)
-                        .unwrap_or(tag.element.name())
-                        .to_string(),
-                ),
+                target: Target::Resource(tag.label().to_string()),
             })
         })
         .filter(Edit::shrinks)

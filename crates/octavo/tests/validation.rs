@@ -1,7 +1,7 @@
 mod common;
 
 use common::{optimized, page};
-use octavo::{optimize, Error, Mode};
+use octavo::{optimize, simplify, Error, Mode, Options, Url, Warning};
 
 #[test]
 fn text_that_is_not_html_is_rejected() {
@@ -21,6 +21,7 @@ fn documents_linking_local_files_are_rejected_with_the_links() {
     let Error::NotSelfContained(links) = optimize(&src, Mode::Safe).unwrap_err() else {
         panic!("expected NotSelfContained");
     };
+    let links: Vec<&str> = links.iter().map(Url::as_str).collect();
     assert_eq!(
         links,
         [
@@ -49,7 +50,36 @@ fn remote_resources_only_warn() {
     );
     let out = optimized(&src, Mode::Safe);
     assert_eq!(out.warnings.len(), 2);
-    assert!(out.warnings[0].contains("https://cdn.example.com/lib.js"));
+    let urls: Vec<&str> = out
+        .warnings
+        .iter()
+        .filter_map(|warning| match warning {
+            Warning::RemoteResource(url) => Some(url.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        urls,
+        [
+            "https://cdn.example.com/lib.js",
+            "//fonts.example.com/a.css"
+        ]
+    );
+    assert!(out.warnings.iter().any(|warning| warning
+        .to_string()
+        .contains("https://cdn.example.com/lib.js")));
+}
+
+#[test]
+fn simplified_exposes_the_same_warnings_as_the_output() {
+    let src = page(
+        "<script src=\"https://cdn.example.com/lib.js\"></script>",
+        "<p>hi",
+    );
+    let simplified = simplify(&src, Options::default()).expect("supported");
+    assert_eq!(simplified.warnings().len(), 1);
+    let out = simplified.pack(Mode::Safe);
+    assert_eq!(out.warnings.as_slice(), simplified.warnings());
 }
 
 #[test]

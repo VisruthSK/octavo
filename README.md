@@ -122,14 +122,17 @@ The `octavo` crate is the whole optimizer, and the command line is a thin wrappe
 ```rust
 use octavo::{optimize, Mode};
 
-let out = optimize(&html, Mode::Packed { styles: true });
+let out = optimize(&html, Mode::Packed)?;
 println!("{} -> {} bytes", html.len(), out.html.len());
 for step in &out.applied {
     println!("{} {}: {} -> {}", step.transform, step.target, step.before, step.after);
 }
+for warning in &out.warnings {
+    eprintln!("warning: {warning}");
+}
 ```
 
-`simplify` runs the stages that do not depend on a mode, and `Output::pack` finishes the result for each mode. The command line uses this to build its fallback ladder without repeating the expensive work.
+`simplify` runs the stages that do not depend on a mode, and `Simplified::pack` finishes the result for each mode. The command line uses this to build its fallback ladder without repeating the expensive work.
 
 ## Verification
 

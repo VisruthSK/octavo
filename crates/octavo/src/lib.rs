@@ -33,27 +33,78 @@ mod pack;
 mod quarto;
 mod words;
 
+pub use check::Url;
+
 use doc::{Doc, Edit, Edits};
-use std::{fmt, ops::Range};
+use std::{
+    fmt,
+    num::{NonZeroU32, NonZeroUsize},
+    ops::Range,
+    str::FromStr,
+};
 
 /// How aggressively a document is rewritten.
+///
+/// The levels nest: each includes everything the previous level does, plus
+/// more.
+///
+/// ```
+/// use octavo::{optimize, Mode};
+///
+/// let safe = optimize("<html><head></head><body></body></html>", Mode::Safe)?;
+/// # assert_eq!(safe.html, "<html><head></head><body></body></html>");
+/// # Ok::<(), octavo::Error>(())
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     /// Minify and prune. The output needs nothing the original did not.
     Safe,
-    /// Additionally compress scripts, and with `styles` also stylesheets,
-    /// inline SVG and images, into one blob that a small loader restores
-    /// while the page is parsed. The loader needs JavaScript, so with
-    /// `styles` the page is unstyled when JavaScript is off.
-    Packed {
-        /// Also pack stylesheets, inline SVG and images.
-        styles: bool,
-    },
+    /// Additionally compress scripts and data blocks into one blob that a
+    /// small loader restores while the page is parsed. Stylesheets and
+    /// inline SVG stay real elements, so the page works with JavaScript off.
+    Scripts,
+    /// Additionally compress stylesheets, inline SVG and images into the
+    /// same blob. The loader needs JavaScript, so the page is unstyled when
+    /// JavaScript is off.
+    Packed,
+}
+
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            Mode::Safe => "safe",
+            Mode::Scripts => "scripts",
+            Mode::Packed => "packed",
+        })
+    }
+}
+
+impl FromStr for Mode {
+    type Err = String;
+
+    /// Parses the lowercase names `safe`, `scripts` and `packed`.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "safe" => Ok(Mode::Safe),
+            "scripts" => Ok(Mode::Scripts),
+            "packed" => Ok(Mode::Packed),
+            other => Err(format!(
+                "unknown level '{other}', expected one of: safe, scripts, packed"
+            )),
+        }
+    }
 }
 
 /// Settings for [`simplify`].
 ///
 /// The default is lossless and keeps license notices.
+///
+/// ```
+/// use octavo::{simplify, Options};
+///
+/// let options = Options::default();
+/// assert!(options.images.is_none() && !options.subset_text_fonts && !options.strip_licenses);
+/// ```
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
     /// Re-encode embedded PNG and JPEG images when that makes them smaller.
@@ -76,6 +127,13 @@ pub struct Options {
 }
 
 /// The quality of a re-encoded image.
+///
+/// ```
+/// use octavo::Quality;
+///
+/// assert_eq!(Quality::new(80).map(Quality::get), Some(80));
+/// assert!(Quality::new(0).is_none() && Quality::new(101).is_none());
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Quality(u8);
 
@@ -84,17 +142,37 @@ impl Quality {
     const WEBP: Quality = Quality(80);
 
     /// Creates a quality, if it is from 1 to 100.
+    ///
+    /// ```
+    /// use octavo::Quality;
+    ///
+    /// assert!(Quality::new(60).is_some());
+    /// assert!(Quality::new(0).is_none());
+    /// ```
     pub fn new(quality: u8) -> Option<Self> {
         (1..=100).contains(&quality).then_some(Quality(quality))
     }
 
     /// The quality as a number.
+    ///
+    /// ```
+    /// use octavo::Quality;
+    ///
+    /// assert_eq!(Quality::new(80).map(Quality::get), Some(80));
+    /// ```
+    #[must_use]
     pub fn get(self) -> u8 {
         self.0
     }
 }
 
 /// A lossy image format.
+///
+/// ```
+/// use octavo::ImageFormat;
+///
+/// assert_eq!("webp".parse::<ImageFormat>(), Ok(ImageFormat::Webp));
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImageFormat {
     /// AVIF: the smallest, and decoded by every current browser.
@@ -103,7 +181,40 @@ pub enum ImageFormat {
     Webp,
 }
 
+impl fmt::Display for ImageFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            ImageFormat::Avif => "avif",
+            ImageFormat::Webp => "webp",
+        })
+    }
+}
+
+impl FromStr for ImageFormat {
+    type Err = String;
+
+    /// Parses the lowercase names `avif` and `webp`.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "avif" => Ok(ImageFormat::Avif),
+            "webp" => Ok(ImageFormat::Webp),
+            other => Err(format!(
+                "unknown format '{other}', expected one of: avif, webp"
+            )),
+        }
+    }
+}
+
 /// How to re-encode images.
+///
+/// ```
+/// use octavo::ImageEncoding;
+/// use octavo::ImageFormat;
+///
+/// let encoding = ImageEncoding::new(ImageFormat::Avif);
+/// assert_eq!(encoding.quality.get(), 60);
+/// assert_eq!(encoding.max_side.map(|side| side.get()), Some(3840));
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct ImageEncoding {
     /// The format to encode to.
@@ -113,12 +224,20 @@ pub struct ImageEncoding {
     /// Shrink images whose longest side is larger than this many pixels,
     /// keeping the aspect ratio. Layout is unchanged while the page never
     /// shows the image larger than this.
-    pub max_side: Option<u32>,
+    pub max_side: Option<NonZeroU32>,
 }
 
 impl ImageEncoding {
     /// The defaults for `format`: quality 60 for AVIF and 80 for WebP, and a
     /// 3840 pixel cap on the longest side.
+    ///
+    /// ```
+    /// use octavo::{ImageEncoding, ImageFormat};
+    ///
+    /// let encoding = ImageEncoding::new(ImageFormat::Webp);
+    /// assert_eq!(encoding.quality.get(), 80);
+    /// ```
+    #[must_use]
     pub fn new(format: ImageFormat) -> Self {
         let quality = match format {
             ImageFormat::Avif => Quality::AVIF,
@@ -127,12 +246,18 @@ impl ImageEncoding {
         ImageEncoding {
             format,
             quality,
-            max_side: Some(3840),
+            max_side: NonZeroU32::new(3840),
         }
     }
 }
 
 /// The kind of change a stage made.
+///
+/// ```
+/// use octavo::Transform;
+///
+/// assert_eq!(Transform::DeadLibrary.to_string(), "dead-library");
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Transform {
     /// A Quarto runtime library the document never uses was removed.
@@ -162,27 +287,93 @@ impl fmt::Display for Transform {
     }
 }
 
+/// A bundled Quarto library, named by the global it defined.
+///
+/// ```
+/// use octavo::{Library, Target};
+///
+/// assert_eq!(Target::Library(Library::Clipboard).to_string(), "ClipboardJS");
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Library {
+    /// `tippy.js`, bundled with Quarto to power footnote, citation and
+    /// cross-reference popups.
+    Tippy,
+    /// `Bootstrap` v5, the CSS framework behind every themed document.
+    Bootstrap,
+    /// `@popperjs/core`, the positioning engine behind Tippy.
+    Popper,
+    /// `clipboard.js` v2, bundled for the copy-code buttons.
+    Clipboard,
+    /// `AnchorJS`, bundled for the heading anchor links.
+    Anchor,
+}
+
+impl Library {
+    /// The name of the global the library defines, as written in the bundled
+    /// source.
+    ///
+    /// ```
+    /// use octavo::Library;
+    ///
+    /// assert_eq!(Library::Clipboard.name(), "ClipboardJS");
+    /// ```
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Library::Tippy => "tippy",
+            Library::Bootstrap => "bootstrap",
+            Library::Popper => "Popper",
+            Library::Clipboard => "ClipboardJS",
+            Library::Anchor => "AnchorJS",
+        }
+    }
+}
+
+impl fmt::Display for Library {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(self.name())
+    }
+}
+
 /// What a transformation changed.
+///
+/// ```
+/// use octavo::Target;
+/// use std::num::NonZeroUsize;
+///
+/// assert_eq!(Target::Resources(NonZeroUsize::new(3).expect("non-zero")).to_string(), "3 resources");
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Target {
     /// A bundled library, named by the global it defined.
-    Library(String),
+    Library(Library),
     /// A resource of the document, named by its `id` or by its element name.
     Resource(String),
     /// Resources compressed into one blob.
-    Resources(usize),
+    Resources(NonZeroUsize),
 }
 
 impl fmt::Display for Target {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Target::Library(name) | Target::Resource(name) => f.pad(name),
-            Target::Resources(count) => write!(f, "{count} resources"),
+            Target::Library(library) => library.fmt(f),
+            Target::Resource(name) => f.pad(name),
+            Target::Resources(count) => write!(f, "{} resources", count.get()),
         }
     }
 }
 
 /// One transformation and the bytes it saved.
+///
+/// ```
+/// use octavo::optimize;
+/// use octavo::Mode;
+///
+/// let out = optimize("<html><head></head><body></body></html>", Mode::Safe)?;
+/// assert!(out.applied.iter().all(|step| step.after <= step.before));
+/// # Ok::<(), octavo::Error>(())
+/// ```
 #[derive(Clone, Debug)]
 pub struct Applied {
     /// What kind of change this was.
@@ -195,7 +386,48 @@ pub struct Applied {
     pub after: usize,
 }
 
+/// Something worth knowing about a document that does not stop optimization.
+///
+/// ```
+/// use octavo::{optimize, Mode, Warning};
+///
+/// let remote = "<!DOCTYPE html><html><head>\
+///     <script src=\"https://cdn.example.com/lib.js\"></script></head><body></body></html>";
+/// let out = optimize(remote, Mode::Safe)?;
+/// assert!(out.warnings.iter().any(|warning| matches!(warning, Warning::RemoteResource(_))));
+/// # Ok::<(), octavo::Error>(())
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Warning {
+    /// The page loads a resource from the network, so it cannot work
+    /// offline. Carries the URL as written in the document.
+    RemoteResource(Url),
+}
+
+impl fmt::Display for Warning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Warning::RemoteResource(url) => {
+                write!(
+                    f,
+                    "loads {url} when opened, so the page does not work offline"
+                )
+            }
+        }
+    }
+}
+
 /// An optimized document and what happened to it.
+///
+/// ```
+/// use octavo::{optimize, Mode};
+///
+/// let html = "<!DOCTYPE html><html><head></head><body><p>hi</p></body></html>";
+/// let out = optimize(html, Mode::Safe)?;
+/// assert!(out.applied.is_empty());
+/// # Ok::<(), octavo::Error>(())
+/// ```
 #[derive(Clone, Debug)]
 pub struct Output {
     /// The optimized HTML.
@@ -204,10 +436,16 @@ pub struct Output {
     pub applied: Vec<Applied>,
     /// Things worth knowing about the input, such as resources it loads from
     /// the network and therefore cannot work without one.
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Warning>,
 }
 
 /// Why a document cannot be optimized.
+///
+/// ```
+/// use octavo::{optimize, Error, Mode};
+///
+/// assert_eq!(optimize("just some words", Mode::Safe).unwrap_err(), Error::NotHtml);
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     /// The input has no `<html>` element.
@@ -215,7 +453,7 @@ pub enum Error {
     /// The document links to local files instead of containing them, which
     /// means it was not rendered with `embed-resources: true`. Holds the
     /// links in document order.
-    NotSelfContained(Vec<String>),
+    NotSelfContained(Vec<Url>),
 }
 
 impl fmt::Display for Error {
@@ -228,7 +466,15 @@ impl fmt::Display for Error {
                     f,
                     "the document links to files instead of containing them: "
                 )?;
-                write!(f, "{}", links[..links.len().min(SHOWN)].join(", "))?;
+                write!(
+                    f,
+                    "{}",
+                    links[..links.len().min(SHOWN)]
+                        .iter()
+                        .map(Url::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )?;
                 if links.len() > SHOWN {
                     write!(f, " and {} more", links.len() - SHOWN)?;
                 }
@@ -245,6 +491,16 @@ impl std::error::Error for Error {}
 /// # Errors
 ///
 /// Fails if `src` is not an HTML document or is not self-contained.
+///
+/// ```
+/// use octavo::{optimize, Mode};
+///
+/// let html = "<!DOCTYPE html><html><head><style>.a{color:red}.b{color:blue}</style>\
+///             </head><body><p class=a>hi</p></body></html>";
+/// let out = optimize(html, Mode::Safe)?;
+/// assert!(out.html.contains(".a{color:red}") && !out.html.contains(".b"));
+/// # Ok::<(), octavo::Error>(())
+/// ```
 pub fn optimize(src: &str, mode: Mode) -> Result<Output, Error> {
     Ok(simplify(src, Options::default())?.pack(mode))
 }
@@ -256,6 +512,17 @@ pub fn optimize(src: &str, mode: Mode) -> Result<Output, Error> {
 /// # Errors
 ///
 /// Fails if `src` is not an HTML document or is not self-contained.
+///
+/// ```
+/// use octavo::{simplify, Mode, Options};
+///
+/// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
+/// for mode in [Mode::Safe, Mode::Scripts, Mode::Packed] {
+///     let out = simplified.pack(mode);
+///     println!("{mode}: {} bytes", out.html.len());
+/// }
+/// # Ok::<(), octavo::Error>(())
+/// ```
 pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     if !check::is_html(src) {
         return Err(Error::NotHtml);
@@ -263,9 +530,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     let doc = Doc::new(src);
     let links = check::links(&doc);
     if !links.is_self_contained() {
-        return Err(Error::NotSelfContained(
-            links.local().map(|url| url.as_str().to_string()).collect(),
-        ));
+        return Err(Error::NotSelfContained(links.local().cloned().collect()));
     }
     let licenses = if options.strip_licenses {
         Licenses::Strip
@@ -305,7 +570,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         applied,
         warnings: links
             .remote()
-            .map(|url| format!("loads {url} when opened, so the page does not work offline"))
+            .cloned()
+            .map(Warning::RemoteResource)
             .collect(),
     })
 }
@@ -314,33 +580,62 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
 ///
 /// Packing is the only step left, and it is the expensive one, so it is kept
 /// separate: try several modes on one `Simplified` without redoing the rest.
+///
+/// ```
+/// use octavo::{simplify, Mode, Options};
+///
+/// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
+/// assert_eq!(simplified.warnings().len(), 0);
+/// let out = simplified.pack(Mode::Scripts);
+/// # assert_eq!(out.html, "<html><head></head><body></body></html>");
+/// # Ok::<(), octavo::Error>(())
+/// ```
 #[derive(Clone, Debug)]
 pub struct Simplified {
     scanned: html::Scanned,
     applied: Vec<Applied>,
-    warnings: Vec<String>,
+    warnings: Vec<Warning>,
 }
 
 impl Simplified {
     /// Things worth knowing about the input, such as resources it loads from
     /// the network. The same list appears on every [`Output`].
-    pub fn warnings(&self) -> &[String] {
+    ///
+    /// ```
+    /// use octavo::{simplify, Options};
+    ///
+    /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
+    /// assert!(simplified.warnings().is_empty());
+    /// # Ok::<(), octavo::Error>(())
+    /// ```
+    #[must_use]
+    pub fn warnings(&self) -> &[Warning] {
         &self.warnings
     }
 
     /// Produces the final document for `mode`, keeping the unpacked document
     /// when packing would not make it smaller.
+    ///
+    /// ```
+    /// use octavo::{simplify, Mode, Options};
+    ///
+    /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
+    /// let out = simplified.pack(Mode::Packed);
+    /// assert_eq!(out.html, "<html><head></head><body></body></html>");
+    /// # Ok::<(), octavo::Error>(())
+    /// ```
+    #[must_use]
     pub fn pack(&self, mode: Mode) -> Output {
         let unpacked = || Output {
             html: self.scanned.html().to_string(),
             applied: self.applied.clone(),
             warnings: self.warnings.clone(),
         };
-        let Mode::Packed { styles } = mode else {
+        if mode == Mode::Safe {
             return unpacked();
-        };
+        }
         let Some(packed) =
-            pack::run(&self.scanned, styles).filter(|p| p.html.len() < self.scanned.html().len())
+            pack::run(&self.scanned, mode).filter(|p| p.html.len() < self.scanned.html().len())
         else {
             return unpacked();
         };

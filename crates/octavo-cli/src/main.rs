@@ -1,13 +1,15 @@
 use anstream::{eprintln, println};
 use anstyle::{AnsiColor, Style};
 use bytesize::ByteSize;
-use clap::{builder::Styles, value_parser, Args, Parser, ValueEnum};
+use clap::{builder::Styles, value_parser, Args, Parser};
 use indicatif::{ProgressBar, ProgressStyle};
-use octavo::{optimize, simplify, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform};
+use octavo::{
+    optimize, simplify, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform, Warning,
+};
 use std::{
     collections::BTreeMap,
     fs,
-    num::NonZeroUsize,
+    num::{NonZeroU32, NonZeroUsize},
     path::{Path, PathBuf},
     process::{self, ExitCode},
     time::{Duration, Instant},
@@ -54,8 +56,15 @@ struct Optimize {
     input: PathBuf,
     #[arg(help = "Where to write the result [default: <input>.min.html]")]
     output: Option<PathBuf>,
-    #[arg(short, long, value_enum, default_value_t = Level::Packed)]
-    level: Level,
+    #[arg(
+        short,
+        long,
+        value_name = "LEVEL",
+        default_value_t = Mode::Packed,
+        value_parser = value_parser!(Mode),
+        help = "How much to rewrite: safe, scripts or packed"
+    )]
+    level: Mode,
     #[arg(
         long,
         value_name = "COMMAND",
@@ -71,12 +80,12 @@ struct Optimize {
     #[arg(
         long,
         value_name = "FORMAT",
-        value_enum,
         num_args = 0..=1,
         default_missing_value = "avif",
-        help = "Re-encode PNG and JPEG images in a lossy format"
+        value_parser = value_parser!(ImageFormat),
+        help = "Re-encode PNG and JPEG images in a lossy format: avif or webp"
     )]
-    lossy_images: Option<Format>,
+    lossy_images: Option<ImageFormat>,
     #[arg(
         long,
         value_name = "QUALITY",
@@ -94,9 +103,10 @@ struct Optimize {
         long,
         value_name = "PIXELS",
         requires = "lossy_images",
-        help = "Shrink re-encoded images whose longest side exceeds this [default: 3840, 0 keeps size]"
+        value_parser = parse_nonzero_side,
+        help = "Shrink re-encoded images whose longest side exceeds this many pixels [default: 3840]"
     )]
-    max_image_side: Option<u32>,
+    max_image_side: Option<NonZeroU32>,
     #[arg(
         long,
         help = "Drop the license and copyright notices of bundled libraries and fonts, which most licenses require keeping"
@@ -104,55 +114,18 @@ struct Optimize {
     strip_licenses: bool,
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum Format {
-    #[value(help = "Smallest; every current browser decodes it")]
-    Avif,
-    #[value(help = "Larger than AVIF but faster to encode")]
-    Webp,
+fn parse_nonzero_side(value: &str) -> Result<NonZeroU32, String> {
+    let pixels: u32 = value
+        .parse()
+        .map_err(|error| format!("invalid pixel count '{value}': {error}"))?;
+    NonZeroU32::new(pixels).ok_or_else(|| "the pixel count must be at least 1".to_string())
 }
 
-impl From<Format> for ImageFormat {
-    fn from(format: Format) -> Self {
-        match format {
-            Format::Avif => ImageFormat::Avif,
-            Format::Webp => ImageFormat::Webp,
-        }
-    }
-}
-
-#[derive(Clone, Copy, ValueEnum)]
-enum Level {
-    #[value(help = "Minify and prune; works with JavaScript off")]
-    Safe,
-    #[value(help = "Also pack scripts; stylesheets stay real elements")]
-    Scripts,
-    #[value(help = "Pack everything; the page needs JavaScript to be styled")]
-    Packed,
-}
-
-impl Level {
-    fn ladder(self) -> &'static [(Level, Mode)] {
-        match self {
-            Level::Packed => &[
-                (Level::Packed, Mode::Packed { styles: true }),
-                (Level::Scripts, Mode::Packed { styles: false }),
-                (Level::Safe, Mode::Safe),
-            ],
-            Level::Scripts => &[
-                (Level::Scripts, Mode::Packed { styles: false }),
-                (Level::Safe, Mode::Safe),
-            ],
-            Level::Safe => &[(Level::Safe, Mode::Safe)],
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Level::Safe => "safe",
-            Level::Scripts => "scripts",
-            Level::Packed => "packed",
-        }
+fn ladder(level: Mode) -> &'static [Mode] {
+    match level {
+        Mode::Packed => &[Mode::Packed, Mode::Scripts, Mode::Safe],
+        Mode::Scripts => &[Mode::Scripts, Mode::Safe],
+        Mode::Safe => &[Mode::Safe],
     }
 }
 
@@ -182,13 +155,12 @@ fn main() -> ExitCode {
         } = cli.optimize;
         let output = output.unwrap_or_else(|| input.with_extension("min.html"));
         let images = lossy_images.map(|format| {
-            let encoding = ImageEncoding::new(format.into());
+            let encoding = ImageEncoding::new(format);
             ImageEncoding {
                 quality: image_quality
                     .and_then(Quality::new)
                     .unwrap_or(encoding.quality),
-                max_side: max_image_side
-                    .map_or(encoding.max_side, |side| (side > 0).then_some(side)),
+                max_side: max_image_side.or(encoding.max_side),
                 ..encoding
             }
         });
@@ -239,8 +211,8 @@ struct Savings {
 
 fn audit(input: &Path) -> Result<(), String> {
     let src = read(input)?;
-    let out = optimize(&src, Mode::Packed { styles: true })
-        .map_err(|error| format!("{}: {error}", input.display()))?;
+    let out =
+        optimize(&src, Mode::Packed).map_err(|error| format!("{}: {error}", input.display()))?;
     let mut totals: BTreeMap<Transform, Savings> = BTreeMap::new();
     for step in &out.applied {
         let total = totals.entry(step.transform).or_default();
@@ -274,7 +246,7 @@ fn summary(before: usize, after: usize) -> String {
     )
 }
 
-fn warn(warnings: &[String]) {
+fn warn(warnings: &[Warning]) {
     for warning in warnings {
         eprintln!("{WARN}warning{WARN:#}: {warning}");
     }
@@ -291,7 +263,7 @@ fn spinner() -> ProgressBar {
 fn run(
     input: &Path,
     output: &Path,
-    level: Level,
+    level: Mode,
     verify: Option<&str>,
     options: Options,
 ) -> Result<(), String> {
@@ -301,8 +273,8 @@ fn run(
     progress.set_message("optimizing");
     let simplified =
         simplify(&src, options).map_err(|error| format!("{}: {error}", input.display()))?;
-    for (level, mode) in level.ladder() {
-        progress.set_message(format!("packing ({})", level.label()));
+    for mode in ladder(level) {
+        progress.set_message(format!("packing ({mode})"));
         let candidate = simplified.pack(*mode).html;
         if candidate.len() >= src.len() {
             continue;
@@ -310,7 +282,7 @@ fn run(
         let staged = staging_path(output);
         write(&staged, &candidate)?;
         if let Some(command) = verify {
-            progress.set_message(format!("verifying ({})", level.label()));
+            progress.set_message(format!("verifying ({mode})"));
             if !passes(command, input, &staged) {
                 let _ = fs::remove_file(&staged);
                 continue;
@@ -322,7 +294,7 @@ fn run(
         println!(
             "{} {DIM}[{}, {:.1?}]{DIM:#} {}",
             output.display(),
-            level.label(),
+            mode,
             started.elapsed(),
             summary(src.len(), candidate.len())
         );

@@ -69,14 +69,14 @@ struct Chars {
     text: Option<HashSet<char>>,
 }
 
-pub struct Settings<'a> {
-    pub src: &'a str,
-    pub words: &'a Words,
-    pub subset_text_fonts: bool,
-    pub notices: Licenses,
+pub(crate) struct Settings<'a> {
+    pub(crate) src: &'a str,
+    pub(crate) words: &'a Words,
+    pub(crate) subset_text_fonts: bool,
+    pub(crate) notices: Licenses,
 }
 
-pub fn rewrite(
+pub(crate) fn rewrite(
     sheets: &mut [Option<StyleSheet<'_>>],
     loose: &[&str],
     settings: &Settings,
@@ -189,9 +189,9 @@ fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Dec
         chars.text.as_ref()
     };
     match transcode(&font.bytes, subset, settings.notices) {
-        Some((woff2, notice)) => Decision::Replace {
-            uri: data::encode_base64(Mime::FontWoff2, &woff2),
-            notice,
+        Some(transcoded) => Decision::Replace {
+            uri: data::encode_base64(Mime::FontWoff2, &transcoded.woff2),
+            notice: transcoded.notice,
         },
         None => Decision::Keep,
     }
@@ -233,7 +233,7 @@ fn describe(face: &FontFaceRule) -> Option<Face> {
     let uri = sources
         .iter()
         .filter_map(|source| match source {
-            Source::Url(url) if url.url.url.starts_with("data:") => {
+            Source::Url(url) if data::is_data_url(url.url.url.as_ref()) => {
                 preference(url.format.as_ref()).map(|rank| (rank, url.url.url.to_string()))
             }
             _ => None,
@@ -309,7 +309,7 @@ fn keep_one_source(face: &mut FontFaceRule<'_>, uri: &str) {
         let kept = std::mem::take(sources)
             .into_iter()
             .filter_map(|source| match source {
-                Source::Url(mut url) if !replaced && url.url.url.starts_with("data:") => {
+                Source::Url(mut url) if !replaced && data::is_data_url(url.url.url.as_ref()) => {
                     replaced = true;
                     url.url.url = CowArcStr::from(uri.to_string());
                     url.format = Some(FontFormat::WOFF2);
@@ -425,11 +425,12 @@ fn string_literals<'i>(parser: &mut Parser<'i, '_>, chars: &mut HashSet<char>) {
     }
 }
 
-fn transcode(
-    bytes: &[u8],
-    chars: Option<&HashSet<char>>,
-    notices: Licenses,
-) -> Option<(Vec<u8>, Option<String>)> {
+struct Transcoded {
+    woff2: Vec<u8>,
+    notice: Option<String>,
+}
+
+fn transcode(bytes: &[u8], chars: Option<&HashSet<char>>, notices: Licenses) -> Option<Transcoded> {
     let sfnt: Cow<[u8]> = match bytes.get(..4)? {
         b"wOFF" => Cow::Owned(wuff::decompress_woff1(bytes).ok()?),
         b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
@@ -446,7 +447,10 @@ fn transcode(
         Some(chars) => Cow::Owned(fontcull::subset_font_data(&sfnt, chars, &[]).ok()?),
         None => sfnt,
     };
-    Some((fontcull::compress_to_woff2(&sfnt).ok()?, notice))
+    Some(Transcoded {
+        woff2: fontcull::compress_to_woff2(&sfnt).ok()?,
+        notice,
+    })
 }
 
 fn notice(sfnt: &[u8]) -> Option<String> {

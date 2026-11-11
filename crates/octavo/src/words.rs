@@ -1,20 +1,20 @@
-use crate::ascii::starts_with_ignore_case;
+use crate::data;
 use std::collections::HashSet;
 
 const MAX_WORD: usize = 128;
 
 #[derive(Default)]
-pub struct Words {
+pub(crate) struct Words {
     set: HashSet<String>,
     prefixes: HashSet<String>,
 }
 
 impl Words {
-    pub fn add_text(&mut self, text: &str) {
+    pub(crate) fn add_text(&mut self, text: &str) {
         let separators = |c: char| c.is_whitespace() || "\"'`<>=(){}[],;".contains(c);
         let not_word = |c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-'));
         for token in text.split(separators) {
-            if starts_with_ignore_case(token, "data:") {
+            if data::is_data_url(token) {
                 continue;
             }
             self.insert(token);
@@ -42,7 +42,7 @@ impl Words {
         }
     }
 
-    pub fn has(&self, word: &str) -> bool {
+    pub(crate) fn has(&self, word: &str) -> bool {
         self.set.contains(word)
             || (3..=word.len()).any(|end| {
                 word.is_char_boundary(end)
@@ -51,17 +51,17 @@ impl Words {
             })
     }
 
-    pub fn has_tag(&self, tag: &str) -> bool {
+    pub(crate) fn has_tag(&self, tag: &str) -> bool {
         self.set.contains(tag) || self.set.contains(&tag.to_ascii_uppercase())
     }
 
-    pub fn mentions(&self, phrase: &str) -> bool {
+    pub(crate) fn mentions(&self, phrase: &str) -> bool {
         phrase
             .split_whitespace()
             .all(|part| self.set.contains(&part.to_lowercase()))
     }
 
-    pub fn any_starting_with(&self, prefix: &str) -> bool {
+    pub(crate) fn any_starting_with(&self, prefix: &str) -> bool {
         self.set.iter().any(|w| w.starts_with(prefix))
     }
 }

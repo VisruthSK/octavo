@@ -188,6 +188,21 @@ fn single_quoted_attribute_values_containing_double_quotes_stay_well_formed() {
 }
 
 #[test]
+fn a_module_data_uri_with_an_upper_case_scheme_is_inlined_like_a_lower_case_one() {
+    let module = "window.once=(window.once||0)+1;".repeat(60);
+    let encoded = data_uri("text/javascript", module.as_bytes());
+    for scheme in ["data:", "DATA:"] {
+        let tag = format!(
+            "<script type=module src=\"{}\"></script>",
+            encoded.replacen("data:", scheme, 1)
+        );
+        let out = safe(&page(&tag, "<p>"));
+        assert!(!out.contains("src="), "{scheme}: {out:.200}");
+        assert!(out.contains("window.once"), "{scheme}: {out:.200}");
+    }
+}
+
+#[test]
 fn duplicated_data_uri_modules_are_not_inlined_twice() {
     let module = "window.once=(window.once||0)+1;".repeat(80);
     let encoded = data_uri("text/javascript", module.as_bytes());
@@ -217,7 +232,7 @@ fn every_truncation_of_a_realistic_document_is_handled_without_panicking() {
     let script = "window.addEventListener('x',function(){el.classList.add('a')});";
     let whole = page(&format!("<style>{css}</style><script>{script}</script><link rel=stylesheet href=\"data:text/css,.a%7Bcolor:red%7D\">"), "<p class=\"a\">héllo ✓</p><svg><circle r=\"1\"/></svg>");
     for end in (0..whole.len()).filter(|i| whole.is_char_boundary(*i)) {
-        let _ = optimize(&whole[..end], Mode::Packed { styles: true });
+        let _ = optimize(&whole[..end], Mode::Packed);
     }
 }
 

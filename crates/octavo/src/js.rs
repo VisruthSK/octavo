@@ -1,4 +1,5 @@
 use crate::{
+    data,
     doc::{Doc, Edit},
     html::{AttrName, Element, Tag},
     Licenses, Target, Transform,
@@ -15,7 +16,7 @@ use rayon::prelude::*;
 use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ScriptKind {
+pub(crate) enum ScriptKind {
     Classic,
     Module,
     Special,
@@ -23,7 +24,7 @@ pub enum ScriptKind {
 }
 
 impl ScriptKind {
-    pub fn parse(value: &str) -> ScriptKind {
+    pub(crate) fn parse(value: &str) -> ScriptKind {
         match value.trim().to_ascii_lowercase().as_str() {
             "" | "text/javascript" | "application/javascript" | "text/ecmascript" => {
                 ScriptKind::Classic
@@ -34,12 +35,12 @@ impl ScriptKind {
         }
     }
 
-    pub fn of(tag: &Tag) -> ScriptKind {
+    pub(crate) fn of(tag: &Tag) -> ScriptKind {
         ScriptKind::parse(tag.attr(AttrName::Type).unwrap_or(""))
     }
 }
 
-pub fn stage(doc: &Doc, removed: &[Range<usize>], licenses: Licenses) -> Vec<Edit> {
+pub(crate) fn stage(doc: &Doc, removed: &[Range<usize>], licenses: Licenses) -> Vec<Edit> {
     doc.tags()
         .par_iter()
         .filter(|t| t.element == Element::Script && !t.in_svg && !removed.contains(&t.span))
@@ -48,7 +49,7 @@ pub fn stage(doc: &Doc, removed: &[Range<usize>], licenses: Licenses) -> Vec<Edi
         .collect()
 }
 
-pub fn minify(code: &str, kind: ScriptKind, licenses: Licenses) -> Option<String> {
+pub(crate) fn minify(code: &str, kind: ScriptKind, licenses: Licenses) -> Option<String> {
     let allocator = Allocator::default();
     let source_type = match kind {
         ScriptKind::Classic => SourceType::default().with_script(true),
@@ -96,12 +97,12 @@ fn rewrite(doc: &Doc, tag: &Tag, licenses: Licenses) -> Option<Edit> {
         ScriptKind::Special | ScriptKind::Data => return None,
     };
     let source = tag.attr(AttrName::Src);
-    if source.is_some()
-        && !(kind == ScriptKind::Module
-            && source?.starts_with("data:")
-            && unique_source(doc, source?))
-    {
-        return None;
+    if let Some(src) = source {
+        let inlinable =
+            kind == ScriptKind::Module && data::is_data_url(src) && unique_source(doc, src);
+        if !inlinable {
+            return None;
+        }
     }
     let code = doc.script_text(tag)?;
     if looks_minified(&code) || source.is_some() && !self_contained(&code) {
