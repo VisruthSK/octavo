@@ -13,7 +13,7 @@ use oxipng::{Options as PngOptions, StripChunks};
 use ravif::Encoder;
 use rayon::prelude::*;
 use rgb::FromSlice;
-use std::{cmp::Reverse, io::Cursor, num::NonZeroU32};
+use std::{cmp::Reverse, collections::HashMap, io::Cursor, num::NonZeroU32};
 
 const RENDERING_CHUNKS: [[u8; 4]; 10] = [
     *b"cICP", *b"iCCP", *b"sRGB", *b"gAMA", *b"cHRM", *b"pHYs", *b"eXIf", *b"acTL", *b"fcTL",
@@ -33,7 +33,6 @@ struct Decoded {
 struct EncodedUri<'a> {
     attr: AttrName,
     value: &'a str,
-    decoded: Option<Decoded>,
     converted: Option<String>,
 }
 
@@ -58,10 +57,6 @@ impl Effort {
     }
 }
 
-fn flat<'i, 'a>(images: &'i [Candidate<'a>]) -> Vec<&'i EncodedUri<'a>> {
-    images.iter().flat_map(|image| image.uris.iter()).collect()
-}
-
 fn jobs_mut<'i, 'a>(images: &'i mut [Candidate<'a>]) -> Vec<&'i mut EncodedUri<'a>> {
     images
         .iter_mut()
@@ -83,34 +78,45 @@ pub(crate) fn stage(doc: &Doc, lossy: Option<ImageEncoding>) -> Vec<Edit> {
                 .map(|attr| EncodedUri {
                     attr: attr.name.clone(),
                     value: &attr.value,
-                    decoded: None,
                     converted: None,
                 })
                 .collect(),
         })
         .collect();
-    let jobs = jobs_mut(&mut images);
-    jobs.into_par_iter().for_each(|uri| {
-        uri.decoded = decode(uri.value);
-    });
-    let mut largest_first: Vec<(usize, u64)> = flat(&images)
-        .into_iter()
+    let mut slot_of: HashMap<&str, usize> = HashMap::new();
+    let mut distinct: Vec<&str> = Vec::new();
+    let slots: Vec<usize> = images
+        .iter()
+        .flat_map(|image| image.uris.iter())
+        .map(|uri| uri.value)
+        .map(|value| {
+            *slot_of.entry(value).or_insert_with(|| {
+                distinct.push(value);
+                distinct.len() - 1
+            })
+        })
+        .collect();
+    let decoded: Vec<Option<Decoded>> = distinct.par_iter().map(|value| decode(value)).collect();
+    let mut largest_first: Vec<(usize, u64)> = decoded
+        .iter()
         .enumerate()
-        .filter_map(|(at, uri)| uri.decoded.as_ref().map(|decoded| (at, decoded.pixels)))
+        .filter_map(|(at, image)| image.as_ref().map(|image| (at, image.pixels)))
         .collect();
     largest_first.sort_by_key(|&(_, pixels)| Reverse(pixels));
-    let uris = flat(&images);
-    let converted: Vec<(usize, String)> = largest_first
+    let mut converted: Vec<Option<String>> = vec![None; distinct.len()];
+    let finished: Vec<(usize, String)> = largest_first
         .into_par_iter()
         .with_max_len(1)
         .filter_map(|(at, _)| {
-            let decoded = uris[at].decoded.as_ref()?;
-            reencode(decoded, lossy).map(|uri| (at, uri))
+            let uri = reencode(decoded[at].as_ref()?, lossy)?;
+            Some((at, uri))
         })
         .collect();
-    let mut jobs = jobs_mut(&mut images);
-    for (at, uri) in converted {
-        jobs[at].converted = Some(uri);
+    for (at, uri) in finished {
+        converted[at] = Some(uri);
+    }
+    for (uri, &slot) in jobs_mut(&mut images).into_iter().zip(&slots) {
+        uri.converted = converted[slot].clone();
     }
     images
         .into_iter()

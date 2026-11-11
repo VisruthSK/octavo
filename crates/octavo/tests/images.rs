@@ -180,3 +180,38 @@ fn recompression_keeps_the_chunks_that_change_how_colours_render() {
     }
     assert!(!names.contains(b"tEXt"), "{names:?}");
 }
+
+#[test]
+fn repeated_images_are_recompressed_once_and_distinct_ones_stay_independent() {
+    let first = png_with_comment(&"metadata ".repeat(300));
+    let second = photographic_png();
+    let uri = |png: &[u8]| format!("data:image/png;base64,{}", STANDARD.encode(png));
+    let tags: String = (0..50)
+        .map(|n| {
+            format!(
+                "<img alt=\"{n}\" src=\"{}\">",
+                uri(if n % 10 == 0 { &second } else { &first })
+            )
+        })
+        .collect();
+    let out = optimized(
+        &format!("<!DOCTYPE html><html><body>{tags}</body></html>"),
+        Mode::Safe,
+    )
+    .html;
+    let shrunk_first = format!(
+        "data:image/png;base64,{}",
+        STANDARD.encode(embedded_png(
+            &optimized(&page("src", &first), Mode::Safe).html
+        ))
+    );
+    let shrunk_second = format!(
+        "data:image/png;base64,{}",
+        STANDARD.encode(embedded_png(
+            &optimized(&page("src", &second), Mode::Safe).html
+        ))
+    );
+    assert_eq!(out.matches(&shrunk_first).count(), 45, "{}", out.len());
+    assert_eq!(out.matches(&shrunk_second).count(), 5);
+    assert!(out.len() < tags.len() / 2);
+}
