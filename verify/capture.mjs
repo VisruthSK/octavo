@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
 
 export const scenarios = [
-  { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light" },
+  { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light", pixels: true },
   { name: "desktop-dark", viewport: { width: 1280, height: 900 }, colorScheme: "dark" },
   { name: "mobile", viewport: { width: 390, height: 844 }, colorScheme: "light" },
   { name: "tablet", viewport: { width: 768, height: 1024 }, colorScheme: "light" },
@@ -38,46 +38,55 @@ function seedRandom() {
   };
 }
 
-async function observe({ lossy, probe, motion }) {
+async function observe({ lossy, probe, motion, pixels }) {
   const describe = (element, pseudo) => {
     const style = getComputedStyle(element, pseudo);
     if (pseudo && style.content === "none") return "";
     const noImage = style.backgroundImage === "none";
     const legacyBox = style.display.includes("box");
-    const entries = [];
+    const prefix = pseudo ?? "";
+    let text = "";
     for (const name of style) {
       if (name.startsWith("--")) continue;
-      if (noImage && name.startsWith("background-position")) continue;
+      const position = name.startsWith("background-position");
+      if (noImage && position) continue;
       if (!legacyBox && name.startsWith("-webkit-box-")) continue;
-      const value = style.getPropertyValue(name).trim();
-      entries.push(`${pseudo}${name}:${name.startsWith("background-position") ? value.replace(/\b0px\b/g, "0%") : value};`);
+      const value = style.getPropertyValue(name);
+      text += `${prefix}${name}:${position ? value.replace(/\b0px\b/g, "0%") : value};`;
     }
-    return entries.sort().join("");
+    return text;
   };
   if (probe) return describe(document.querySelectorAll(probe.selector)[probe.index], null);
 
+  const remembered = (globalThis[Symbol.for("octavo.fingerprints")] ??= new Map());
   const fingerprint = async (uri) => {
-    const image = new Image();
-    image.src = uri;
-    await image.decode();
-    const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const context = canvas.getContext("2d");
-    context.drawImage(image, 0, 0);
-    let hash = 2166136261;
-    if (!lossy) for (const byte of context.getImageData(0, 0, canvas.width, canvas.height).data) hash = Math.imul(hash ^ byte, 16777619);
-    return `${canvas.width}x${canvas.height}:${hash >>> 0}`;
+    const key = `${lossy}:${uri}`;
+    if (!remembered.has(key)) {
+      const image = new Image();
+      image.src = uri;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+      const pixels = lossy ? [] : [...new Uint8Array(await crypto.subtle.digest("SHA-256", context.getImageData(0, 0, canvas.width, canvas.height).data))];
+      remembered.set(key, `${canvas.width}x${canvas.height}:${pixels.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`);
+    }
+    return remembered.get(key);
   };
   const clone = document.documentElement.cloneNode(true);
   clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
-  for (const img of clone.querySelectorAll("img")) {
-    for (const attribute of ["src", "data-src"]) {
+  const embedded = [...clone.querySelectorAll("img")].flatMap((img) =>
+    ["src", "data-src"].flatMap((attribute) => {
       const value = img.getAttribute(attribute);
-      if (!value?.startsWith(lossy ? "data:image/" : "data:image/png")) continue;
-      img.removeAttribute(attribute);
-      img.setAttribute(`pixels-${attribute}`, await fingerprint(value).catch(() => value));
-    }
+      return value?.startsWith(lossy ? "data:image/" : "data:image/png") ? [{ img, attribute, value }] : [];
+    }),
+  );
+  const prints = await Promise.all(embedded.map(({ value }) => (pixels ? fingerprint(value).catch(() => value) : "skipped")));
+  for (const [at, { img, attribute }] of embedded.entries()) {
+    img.removeAttribute(attribute);
+    img.setAttribute(`pixels-${attribute}`, prints[at]);
   }
   const elements = [...document.body.querySelectorAll("*")];
   const position = new Map(elements.map((element, at) => [element, at]));
@@ -193,7 +202,7 @@ export async function capture(browser, file, scenario, lossy) {
     const record = async (label, extra = {}) => {
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
       const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" }).catch(() => null);
-      states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion })), screenshot, ...extra });
+      states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, pixels: scenario.pixels })), screenshot, ...extra });
     };
     await record("load", {
       forced: scripted ? await forcedStates(page) : [],
