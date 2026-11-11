@@ -1,0 +1,111 @@
+[
+  {
+    "id": "linked-stylesheet-is-rejected",
+    "category": "validation",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-self-contained"
+    },
+    "bytes": 157,
+    "sha256": "696ec230beb4158a3eec3b74c71d242838830d8a507118b7b378a254943a4ce4"
+  },
+  {
+    "id": "nothing-to-gain",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "keeps"
+    },
+    "bytes": 66,
+    "sha256": "c4adb522ac1bab11a4501f55ccf0349273c181b2ccbf5fd1e635a99fd49665ee"
+  },
+  {
+    "id": "plain-text-is-rejected",
+    "category": "validation",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-html"
+    },
+    "bytes": 33,
+    "sha256": "9a98e070b2e457e061b5384eea65716a5b2877b3365446976a6faf3f6f521a4f"
+  },
+  {
+    "id": "runtime-built-class-names-survive",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".built-3{"
+      ],
+      "removes": [
+        ".gone0{"
+      ]
+    },
+    "bytes": 1187,
+    "sha256": "cd1de362bfa53ee88fbe971130dee43431eb30d6939a7ce7a48ba3351174582a"
+  },
+  {
+    "id": "script-text-inside-a-comment-is-left-alone",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<!-- <script>not code</script> -->"
+      ]
+    },
+    "bytes": 1150,
+    "sha256": "9a70269506050b36bfdd990e2d4d914b6642b9e34e045d778fc5c25279a3ddb4"
+  },
+  {
+    "id": "textarea-content-is-not-markup",
+    "category": "parsing",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "<textarea><script>if (a < b) {}</script></textarea>"
+      ]
+    },
+    "bytes": 1155,
+    "sha256": "24a56406e7c8f89cbe9d7a3602ca265712b0e423b4dd37a857e31a96e78d3c61"
+  },
+  {
+    "id": "twenty-thousand-paragraphs",
+    "category": "scale",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes"
+    },
+    "bytes": 669994,
+    "sha256": "c209dcb70cbb82a129d36d895fc61711ae651d89e5ed0230274393a42ec88396"
+  },
+  {
+    "id": "unused-rules-are-pruned",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".shown{"
+      ],
+      "removes": [
+        ".gone0{",
+        ".gone39{"
+      ]
+    },
+    "bytes": 1147,
+    "sha256": "1c25b1b497346c2b060fc57514a0de4081be9e1ff4823e32af293c30fce10d56"
+  }
+]

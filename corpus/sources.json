@@ -1,0 +1,24 @@
+[
+  {
+    "name": "quarto-cli",
+    "url": "https://github.com/quarto-dev/quarto-cli/archive/refs/tags/v1.11.9.tar.gz",
+    "sha256": "dbcd45ec45554f4aca64fadc25defdd54bb8da83e1e279e42cb1aef144a2e2ea",
+    "prefix": "quarto-cli-1.11.9/tests/docs/",
+    "license": "GPL-2.0-or-later, used only as test input and never redistributed",
+    "smoke": {
+      "html": 6,
+      "slides": 5,
+      "dashboard": 1
+    },
+    "pool": {
+      "html": 330,
+      "slides": 122,
+      "dashboard": 30
+    },
+    "select": {
+      "html": 80,
+      "slides": 70,
+      "dashboard": 10
+    }
+  }
+]

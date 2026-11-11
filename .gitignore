@@ -3,3 +3,4 @@ node_modules/
 corpus/html/
 out/
 corpus/render.log
+corpus/.cache/
