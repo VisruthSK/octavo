@@ -1,0 +1,17 @@
+---
+title: "Lightbox"
+format:
+  html:
+    embed-resources: true
+lightbox: true
+---
+
+```{r}
+#| fig-cap: "One"
+plot(cars)
+```
+
+```{r}
+#| fig-cap: "Two"
+hist(rnorm(500))
+```

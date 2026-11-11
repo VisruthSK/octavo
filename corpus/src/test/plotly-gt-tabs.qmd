@@ -1,0 +1,24 @@
+---
+title: "Mixed widgets"
+format:
+  html:
+    embed-resources: true
+    theme: quartz
+    code-fold: true
+execute: {warning: false}
+---
+
+::: {.panel-tabset}
+## Plotly
+```{r}
+plotly::plot_ly(ggplot2::economics, x = ~date, y = ~psavert, type = "scatter", mode = "lines")
+```
+## gt
+```{r}
+gt::gt(head(iris, 12))
+```
+## DT
+```{r}
+DT::datatable(head(iris, 40))
+```
+:::

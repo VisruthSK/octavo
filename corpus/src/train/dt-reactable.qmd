@@ -1,0 +1,16 @@
+---
+title: "Tables"
+format:
+  html:
+    embed-resources: true
+    theme: minty
+execute: {warning: false}
+---
+
+```{r}
+DT::datatable(mtcars, options = list(pageLength = 8))
+```
+
+```{r}
+reactable::reactable(iris[1:30, ], searchable = TRUE, filterable = TRUE)
+```

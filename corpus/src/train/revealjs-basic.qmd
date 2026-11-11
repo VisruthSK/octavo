@@ -1,0 +1,26 @@
+---
+title: "Deck"
+format:
+  revealjs:
+    embed-resources: true
+    theme: simple
+    slide-number: true
+    transition: fade
+execute: {warning: false}
+---
+
+## Slide 1
+
+- One
+- Two {.fragment}
+
+## Plot
+
+```{r}
+library(ggplot2)
+ggplot(mtcars, aes(wt, mpg)) + geom_point() + geom_smooth(method = "lm", formula = y ~ x)
+```
+
+## Math
+
+$$\int_0^1 x^2 dx = \tfrac13$$

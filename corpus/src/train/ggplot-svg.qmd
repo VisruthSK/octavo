@@ -1,0 +1,18 @@
+---
+title: "ggplot svg"
+format:
+  html:
+    embed-resources: true
+    fig-format: svg
+    theme: lux
+execute: {warning: false}
+---
+
+```{r}
+library(ggplot2)
+ggplot(iris, aes(Sepal.Length, Sepal.Width, colour = Species)) + geom_point() + facet_wrap(~Species)
+```
+
+```{r}
+ggplot(ggplot2::economics, aes(date, unemploy)) + geom_line()
+```

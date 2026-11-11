@@ -1,0 +1,24 @@
+---
+title: "Dash 2"
+format:
+  dashboard:
+    embed-resources: true
+    theme: cosmo
+    orientation: columns
+execute: {warning: false}
+---
+
+## Column {width=40%}
+
+```{r}
+#| title: "Hist"
+library(ggplot2)
+ggplot(faithful, aes(waiting)) + geom_histogram(bins = 20)
+```
+
+## Column
+
+```{r}
+#| title: "Reactable"
+reactable::reactable(mtcars[1:20, ])
+```

@@ -1,0 +1,24 @@
+---
+title: "ggplot png"
+format:
+  html:
+    embed-resources: true
+    fig-format: png
+    fig-dpi: 110
+execute: {warning: false}
+---
+
+```{r}
+#| label: fig-scatter
+#| fig-cap: "Scatter"
+library(ggplot2)
+ggplot(mtcars, aes(wt, mpg, colour = factor(cyl))) + geom_point(size = 3)
+```
+
+```{r}
+#| label: fig-hist
+#| fig-cap: "Histogram"
+ggplot(faithful, aes(eruptions)) + geom_histogram(bins = 25)
+```
+
+See @fig-scatter and @fig-hist.

@@ -1,0 +1,18 @@
+---
+title: "Basic"
+format:
+  html:
+    embed-resources: true
+---
+
+## Intro
+
+Plain text with a [link](https://example.com), `code`, and a table.
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+::: {.callout-note}
+A note callout.
+:::

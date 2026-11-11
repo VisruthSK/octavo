@@ -1,0 +1,42 @@
+---
+title: "Article"
+author: "Test"
+date: 2026-01-01
+bibliography: refs.bib
+format:
+  html:
+    embed-resources: true
+    toc: true
+    number-sections: true
+    theme: [pulse]
+execute: {warning: false}
+---
+
+# Methods {#sec-m}
+
+Model per @gelman2020. See @sec-r.
+
+```{r}
+#| label: fig-a
+#| fig-cap: "Density"
+library(ggplot2)
+ggplot(mpg, aes(hwy, fill = drv)) + geom_density(alpha = .5)
+```
+
+# Results {#sec-r}
+
+::: {.callout-note collapse="true"}
+## Details
+Collapsed callout.
+:::
+
+::: {.panel-tabset}
+## Table
+```{r}
+knitr::kable(head(mpg))
+```
+## Plot
+```{r}
+ggplot(mpg, aes(displ, hwy)) + geom_point()
+```
+:::

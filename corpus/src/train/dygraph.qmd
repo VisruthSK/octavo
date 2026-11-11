@@ -1,0 +1,12 @@
+---
+title: "Dygraph"
+format:
+  html:
+    embed-resources: true
+    page-layout: full
+---
+
+```{r}
+library(dygraphs)
+dygraph(nhtemp, main = "New Haven temperatures") |> dyRangeSelector()
+```

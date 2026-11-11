@@ -1,0 +1,32 @@
+---
+title: "Citations"
+bibliography: refs.bib
+format:
+  html:
+    embed-resources: true
+    toc: true
+    reference-location: margin
+    citation-location: margin
+    theme: journal
+---
+
+## Intro
+
+Bayesian workflow is described in @gelman2020 and sampling in @carpenter2017.[^a]
+
+[^a]: A footnote.
+
+::: {.column-margin}
+A margin note.
+:::
+
+## Table
+
+| x | y |
+|---|---|
+| 1 | 2 |
+| 3 | 4 |
+
+: A table {#tbl-a}
+
+See @tbl-a.

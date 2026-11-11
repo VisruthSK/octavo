@@ -1,0 +1,34 @@
+---
+title: "Theme toggle"
+format:
+  html:
+    embed-resources: true
+    theme:
+      light: flatly
+      dark: darkly
+    toc: true
+    toc-location: left
+    code-line-numbers: true
+    code-annotations: hover
+execute: {warning: false}
+---
+
+## Section A
+
+```r
+x <- 1:10   # <1>
+mean(x)     # <2>
+```
+1. Make a vector.
+2. Average it.
+
+## Section B
+
+::: {.callout-tip}
+## Tip
+A tip with **bold** text.
+:::
+
+::: {.callout-important}
+Important stuff.
+:::

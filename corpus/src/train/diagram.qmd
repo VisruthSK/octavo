@@ -1,0 +1,24 @@
+---
+title: "Diagram"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    theme: [darkly, cosmo]
+    code-copy: true
+---
+
+```{mermaid}
+graph LR
+  A --> B --> C
+```
+
+```{dot}
+digraph G { a -> b; b -> c; }
+```
+
+## Section
+
+Content with a figure caption.
+
+

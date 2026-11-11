@@ -1,0 +1,28 @@
+---
+title: "Dark Deck"
+format:
+  revealjs:
+    embed-resources: true
+    theme: night
+    code-line-numbers: true
+---
+
+## Hello
+
+::: {.columns}
+::: {.column width="50%"}
+Left
+:::
+::: {.column width="50%"}
+Right
+:::
+:::
+
+## Diagram
+
+```{mermaid}
+flowchart TD
+  A[Start] --> B{Choice}
+  B -->|yes| C[Go]
+  B -->|no| D[Stop]
+```

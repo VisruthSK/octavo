@@ -1,0 +1,17 @@
+---
+title: "Plotly"
+format:
+  html:
+    embed-resources: true
+    theme: cosmo
+execute: {warning: false}
+---
+
+```{r}
+library(plotly)
+plot_ly(mtcars, x = ~wt, y = ~mpg, color = ~factor(cyl), type = "scatter", mode = "markers")
+```
+
+```{r}
+plot_ly(iris, x = ~Species, y = ~Sepal.Length, type = "box")
+```

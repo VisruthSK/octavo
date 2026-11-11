@@ -1,0 +1,15 @@
+---
+title: "gt"
+format:
+  html:
+    embed-resources: true
+    theme: sandstone
+execute: {warning: false}
+---
+
+```{r}
+library(gt)
+gt(head(mtcars, 10), rownames_to_stub = TRUE) |>
+  tab_header(title = "Cars") |>
+  fmt_number(columns = everything(), decimals = 1)
+```

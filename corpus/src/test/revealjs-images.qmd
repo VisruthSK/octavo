@@ -1,0 +1,28 @@
+---
+title: "Image deck"
+format:
+  revealjs:
+    embed-resources: true
+    theme: [dark]
+    fig-format: png
+    incremental: true
+---
+
+## Many plots
+
+```{r}
+library(ggplot2)
+set.seed(1)
+ggplot(diamonds[sample(nrow(diamonds), 800), ], aes(carat, price, colour = cut)) + geom_point()
+```
+
+## Another
+
+```{r}
+ggplot(mpg, aes(class, hwy)) + geom_boxplot()
+```
+
+## Text
+
+- a
+- b

@@ -1,0 +1,14 @@
+---
+title: "SVG heavy"
+format:
+  html:
+    embed-resources: true
+    fig-format: svg
+    theme: [lumen]
+---
+
+```{r}
+library(ggplot2)
+set.seed(1)
+ggplot(diamonds[sample(nrow(diamonds), 2000), ], aes(carat, price)) + geom_point(alpha=.3) + facet_wrap(~cut)
+```

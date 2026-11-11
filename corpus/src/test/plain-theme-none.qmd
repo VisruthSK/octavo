@@ -1,0 +1,16 @@
+---
+title: "Minimal"
+format:
+  html:
+    embed-resources: true
+    theme: none
+---
+
+Just text, a `code` span, and a list.
+
+1. one
+2. two
+
+```r
+f <- function(x) x + 1
+```

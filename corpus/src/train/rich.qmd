@@ -1,0 +1,48 @@
+---
+title: "Rich"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    code-fold: true
+    code-tools: true
+    theme: cosmo
+    anchor-sections: true
+    smooth-scroll: true
+    html-math-method: katex
+---
+
+## Tabs
+
+::: {.panel-tabset}
+## One
+First tab.
+## Two
+Second tab.
+:::
+
+## Math
+
+$$ e^{i\pi} + 1 = 0 $$
+
+Inline $x^2 + y^2 = z^2$.
+
+## Callouts
+
+::: {.callout-warning collapse="true"}
+## Folded
+Hidden content.
+:::
+
+## Code
+
+```{.python}
+def f(x):
+    return x * 2
+```
+
+## Footnote
+
+Text with a footnote.[^1]
+
+[^1]: The note.

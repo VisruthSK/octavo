@@ -1,0 +1,28 @@
+---
+title: "Dash"
+format:
+  dashboard:
+    embed-resources: true
+execute: {warning: false}
+---
+
+## Row
+
+```{r}
+#| content: valuebox
+#| title: "Cars"
+list(icon = "car-front", color = "primary", value = nrow(mtcars))
+```
+
+## Row
+
+```{r}
+#| title: "Plot"
+library(plotly)
+plot_ly(mtcars, x = ~wt, y = ~mpg, type = "scatter", mode = "markers")
+```
+
+```{r}
+#| title: "Table"
+DT::datatable(head(mtcars, 15))
+```
