@@ -222,17 +222,42 @@ fn describe(face: &FontFaceRule) -> Option<Face> {
         }
         _ => None,
     })?;
-    let uri = face.properties.iter().find_map(|property| match property {
-        FontFaceProperty::Source(sources) => sources.iter().find_map(|source| match source {
-            Source::Url(url) if url.url.url.starts_with("data:") => Some(url.url.url.to_string()),
+    let sources = face
+        .properties
+        .iter()
+        .rev()
+        .find_map(|property| match property {
+            FontFaceProperty::Source(sources) => Some(sources),
             _ => None,
-        }),
-        _ => None,
-    })?;
+        })?;
+    let uri = sources
+        .iter()
+        .filter_map(|source| match source {
+            Source::Url(url) if url.url.url.starts_with("data:") => {
+                preference(url.format.as_ref()).map(|rank| (rank, url.url.url.to_string()))
+            }
+            _ => None,
+        })
+        .min_by_key(|(rank, _)| *rank)
+        .map(|(_, uri)| uri)?;
     Some(Face {
         family: family.trim_matches(QUOTES).to_string(),
         uri,
     })
+}
+
+fn preference(format: Option<&FontFormat>) -> Option<u8> {
+    match format {
+        Some(FontFormat::WOFF2) => Some(0),
+        Some(FontFormat::WOFF) => Some(1),
+        Some(FontFormat::TrueType | FontFormat::OpenType) | None => Some(2),
+        Some(
+            FontFormat::EmbeddedOpenType
+            | FontFormat::Collection
+            | FontFormat::SVG
+            | FontFormat::String(_),
+        ) => None,
+    }
 }
 
 struct Apply<'a> {
@@ -266,6 +291,16 @@ impl<'i> Visitor<'i> for Apply<'_> {
 }
 
 fn keep_one_source(face: &mut FontFaceRule<'_>, uri: &str) {
+    let last = face
+        .properties
+        .iter()
+        .rposition(|property| matches!(property, FontFaceProperty::Source(_)));
+    let mut index = 0;
+    face.properties.retain(|property| {
+        let superseded = matches!(property, FontFaceProperty::Source(_)) && Some(index) != last;
+        index += 1;
+        !superseded
+    });
     for property in &mut face.properties {
         let FontFaceProperty::Source(sources) = property else {
             continue;

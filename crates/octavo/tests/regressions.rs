@@ -247,3 +247,17 @@ fn only_textual_data_counts_as_words_the_page_can_use() {
     assert!(!out.contains(".onlyinbinary"), "{out}");
     assert!(out.contains(".onlyintext{"), "{out}");
 }
+
+#[test]
+fn a_font_face_with_legacy_sources_keeps_one_woff2_copy_from_the_last_src() {
+    let font = include_bytes!("data/octavo-test.ttf");
+    let css = format!(
+        "@font-face{{font-family:Octavo Test;src:url({eot});src:url({eot}) format(\"embedded-opentype\"),url({ttf}) format(\"truetype\")}}body{{font-family:Octavo Test}}",
+        eot = data_uri("application/vnd.ms-fontobject", b"not a usable font"),
+        ttf = data_uri("font/ttf", font),
+    );
+    let out = safe(&page(&format!("<style>{css}</style>"), "<p>A</p>"));
+    assert!(out.contains("data:font/woff2"), "{out}");
+    assert!(!out.contains("fontobject"), "{out}");
+    assert!(!out.contains("data:font/ttf"), "{out}");
+}
