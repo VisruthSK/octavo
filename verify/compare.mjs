@@ -11,10 +11,13 @@ const missingFrom = (reference, candidate = "") => {
 };
 
 const CHANNEL_ROUNDING = 1;
+const FAINT_LEVELS = 3;
+const FAINT_PIXEL_BUDGET = 8;
 
 export function differences(left, right) {
   let count = 0;
   let rounded = 0;
+  const faint = [];
   let [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Infinity, Infinity, -1, -1];
   let [minX, minY, maxX, maxY] = [Infinity, Infinity, -1, -1];
   let first = "";
@@ -32,10 +35,21 @@ export function differences(left, right) {
         if (worst > 0) rounded += 1;
         continue;
       }
+      if (worst <= FAINT_LEVELS) {
+        faint.push([x, y, at]);
+        continue;
+      }
       count += 1;
       first ||= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
       [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
     }
+  }
+  const spread = count > 0 || faint.length > FAINT_PIXEL_BUDGET;
+  if (!spread) rounded += faint.length;
+  else for (const [x, y, at] of faint) {
+    count += 1;
+    first ||= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
+    [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
   }
   return { count, rounded, box: [minX, minY, maxX, maxY], anyBox: [anyMinX, anyMinY, anyMaxX, anyMaxY], where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
 }
