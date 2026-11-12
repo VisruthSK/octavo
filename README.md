@@ -128,7 +128,7 @@ The level decides what the output depends on. The effort decides how hard the co
 |---|---|---|---|
 | `--woff2-quality` | 0 to 11 | 9 | 11 |
 | `--png-preset` (oxipng) | 0 to 6 | by image size | 6 |
-| `--brotli-quality` (packed blob) | 0 to 11 | 7, only when a quick trial shows it saves at least 1% over DEFLATE after paying for Brotli's decoder | 11, always |
+| `--brotli-quality` (packed blob) | 0 to 11 | 6, kept only when the page ends up smaller than with DEFLATE, counting Brotli's decoder | 11, always |
 
 On a 288 KB font, WOFF2 quality 9 takes 26 ms and quality 11 takes 293 ms for 9 percent more bytes, which is a small share of a whole document. That is why the default is 9.
 
@@ -254,7 +254,7 @@ Pushing a version tag runs the CI suite and the full corpus first. The binaries 
 ## Limits
 
 - `packed` rebuilds stylesheets with JavaScript while the page is parsed, so it needs JavaScript.
-- The brotli decoder runs through `new Function`. A page served with an HTTP `Content-Security-Policy` that forbids `unsafe-eval` cannot use it. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file.
+- The brotli decoder runs through `new Function`, and `packed` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, either allow `unsafe-eval` for the packed pages or use `--level scripts`, which never needs it.
 - Modules, import maps and elements whose attributes contain character references are never packed.
 
 ## Quarto integration

@@ -18,10 +18,6 @@ use std::{borrow::Cow, collections::BTreeMap, num::NonZeroUsize, ops::Range, syn
 const MIN_BLOB: usize = 256;
 const MIN_FRAGMENT: usize = 1024;
 const DEFLATE_CHUNK: usize = 512 * 1024;
-const PROBE_QUALITY: u8 = 5;
-const DEFAULT_QUALITY: u8 = 7;
-const QUALITY_7_TYPICAL_RATIO_TO_PROBE: f64 = 0.99;
-const SMALLEST_WORTHWHILE_BROTLI_GAIN: f64 = 0.01;
 const LOADER: &str = include_str!("../loader/loader.js");
 const BROTLI_DECODER: &str = include_str!("../loader/brotli.js");
 
@@ -191,24 +187,10 @@ impl<'a> Blobs<'a> {
             .map(|t| t.encode_utf16().count().to_string())
             .collect();
         let bytes = all.as_bytes();
-        let (deflated, brotlied) = match tuning.brotli_quality {
-            Some(quality) => {
-                let (deflated, brotlied) =
-                    rayon::join(|| deflate_chunks(bytes), || brotli(bytes, quality.min(11)));
-                (deflated, Some(brotlied))
-            }
-            None => {
-                let (deflated, probe) =
-                    rayon::join(|| deflate_chunks(bytes), || brotli(bytes, PROBE_QUALITY));
-                let best_case = (probe.len() as f64 * QUALITY_7_TYPICAL_RATIO_TO_PROBE) as usize
-                    + brotli_decoder_deflated().len();
-                let deflated_size: usize = deflated.iter().map(Vec::len).sum();
-                let worthwhile = deflated_size as f64 * (1.0 - SMALLEST_WORTHWHILE_BROTLI_GAIN);
-                let brotlied =
-                    ((best_case as f64) < worthwhile).then(|| brotli(bytes, DEFAULT_QUALITY));
-                (deflated, brotlied)
-            }
-        };
+        let quality = tuning
+            .brotli_quality
+            .map_or(Tuning::DEFAULT_BROTLI_QUALITY, |quality| quality.min(11));
+        let (deflated, brotlied) = rayon::join(|| deflate_chunks(bytes), || brotli(bytes, quality));
         let literals: Vec<String> = deflated.par_iter().map(|chunk| literal(chunk)).collect();
         let lengths: Vec<String> = bytes
             .chunks(DEFLATE_CHUNK)
@@ -218,9 +200,6 @@ impl<'a> Blobs<'a> {
             &format!("chunks([{}],[{}])", literals.join(","), lengths.join(",")),
             &sizes,
         );
-        let Some(brotlied) = brotlied else {
-            return plain;
-        };
         let compact = assemble(
             &format!("{}(bytes({}))", brotli_decoder(), literal(&brotlied)),
             &sizes,

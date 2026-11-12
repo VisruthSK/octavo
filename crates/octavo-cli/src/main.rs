@@ -1,7 +1,9 @@
 use anstream::{eprintln, println};
 use anstyle::{AnsiColor, Style};
 use bytesize::ByteSize;
-use clap::{Args, CommandFactory, Parser, ValueEnum, builder::Styles, value_parser};
+use clap::{
+    Args, CommandFactory, FromArgMatches, Parser, ValueEnum, builder::Styles, value_parser,
+};
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{
     Compression, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform, Tuning, Warning,
@@ -68,7 +70,7 @@ enum CompletionShell {
 
 fn print_completions(shell: CompletionShell) {
     use clap_complete::{Shell, generate};
-    let mut command = Cli::command();
+    let mut command = command();
     let mut out = std::io::stdout();
     match shell {
         CompletionShell::Bash => generate(Shell::Bash, &mut command, "octavo", &mut out),
@@ -139,7 +141,6 @@ struct Optimize {
         requires = "lossy_images",
         value_parser = value_parser!(u8).range(1..=100),
         help_heading = "Images",
-        help = "Quality from 1 to 100 [default: 60 for avif, 80 for webp]"
     )]
     image_quality: Option<u8>,
     #[arg(
@@ -148,7 +149,6 @@ struct Optimize {
         requires = "lossy_images",
         value_parser = parse_nonzero_side,
         help_heading = "Images",
-        help = "Shrink images whose longest side is over this many pixels [default: 3840]"
     )]
     max_image_side: Option<NonZeroU32>,
     #[arg(
@@ -183,7 +183,6 @@ struct Optimize {
         value_parser = clap::value_parser!(u8).range(0..=11),
         conflicts_with = "maximum",
         help_heading = "Compression",
-        help = "Quality of re-encoded fonts [default: 9, slowest: 11]"
     )]
     woff2_quality: Option<u8>,
     #[arg(
@@ -192,7 +191,6 @@ struct Optimize {
         value_parser = clap::value_parser!(u8).range(0..=6),
         conflicts_with = "maximum",
         help_heading = "Compression",
-        help = "oxipng preset for PNG images [default: chosen by image size, slowest: 6]"
     )]
     png_preset: Option<u8>,
     #[arg(
@@ -201,7 +199,6 @@ struct Optimize {
         value_parser = clap::value_parser!(u8).range(0..=11),
         conflicts_with = "maximum",
         help_heading = "Compression",
-        help = "Quality of the packed blob [default: 9, slowest: 11]"
     )]
     brotli_quality: Option<u8>,
     #[arg(
@@ -223,8 +220,52 @@ fn default_cache_dir() -> Option<PathBuf> {
     dirs::cache_dir().map(|directory| directory.join("octavo"))
 }
 
+fn command() -> clap::Command {
+    let avif = ImageEncoding::new(ImageFormat::Avif);
+    let webp = ImageEncoding::new(ImageFormat::Webp);
+    let side = avif
+        .max_side
+        .map_or_else(String::new, |side| format!(" [default: {side}]"));
+    let (balanced, maximum) = (Tuning::BALANCED, Tuning::MAXIMUM);
+    Cli::command()
+        .mut_arg("image_quality", |arg| {
+            arg.help(format!(
+                "Quality from 1 to 100 [default: {} for avif, {} for webp]",
+                avif.quality.get(),
+                webp.quality.get()
+            ))
+        })
+        .mut_arg("max_image_side", |arg| {
+            arg.help(format!(
+                "Shrink images whose longest side is over this many pixels{side}"
+            ))
+        })
+        .mut_arg("woff2_quality", |arg| {
+            arg.help(format!(
+                "Quality of re-encoded fonts [default: {}, slowest: {}]",
+                balanced.woff2_quality, maximum.woff2_quality
+            ))
+        })
+        .mut_arg("png_preset", |arg| {
+            arg.help(format!(
+                "oxipng preset for PNG images [default: chosen by image size, slowest: {}]",
+                maximum.png_preset.unwrap_or_default()
+            ))
+        })
+        .mut_arg("brotli_quality", |arg| {
+            arg.help(format!(
+                "Quality of the packed blob [default: {}, slowest: {}]",
+                Tuning::DEFAULT_BROTLI_QUALITY,
+                maximum.brotli_quality.unwrap_or_default()
+            ))
+        })
+}
+
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli = match Cli::from_arg_matches(&command().get_matches()) {
+        Ok(cli) => cli,
+        Err(error) => error.exit(),
+    };
     if let Some(shell) = cli.completions {
         print_completions(shell);
         return ExitCode::SUCCESS;
