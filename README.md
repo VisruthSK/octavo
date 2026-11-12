@@ -1,19 +1,17 @@
 # Octavo
 
-Octavo makes Quarto HTML files smaller. Give it a document rendered with `embed-resources: true` and it writes a single, self-contained file that opens offline and looks the same. Articles with little else in them shrink ten to twenty-five times. Slide decks full of images shrink to roughly half, because the images are most of the file.
+Octavo makes Quarto HTML files smaller. Give it a document rendered with `embed-resources: true` and it writes one self-contained file that opens offline and renders the same. A plain article shrinks 25 times (1.2 MB to 48 KB). Across Quarto's own 465 test documents the median shrinks 12.8 times. Documents whose weight is mostly images shrink about 2 times, because the images are most of the file.
 
 ```sh
 octavo report.html                          # writes report.min.html
 octavo deck.html small.html --lossy-images  # AVIF, much smaller, not pixel-exact
-octavo report.html --maximum                # slowest, smallest output
+octavo report.html --maximum                # slowest, smallest output. Not reccomended.
 octavo --audit report.html                  # what each step would save
 ```
 
-Octavo does not implement a CSS minifier, a JavaScript compressor or an image codec. It knows where Quarto's weight comes from and when removing it is safe, and it hands each job to a library built for it. The libraries are listed [below](#the-libraries-doing-the-work).
+Octavo reads the document, works out what the page can reach, and hands each format to a library built for it: lightningcss for CSS, oxc for JavaScript, oxipng for PNG, HarfBuzz for fonts. The libraries are listed [below](#the-libraries-doing-the-real-work).
 
 ## Install
-
-Every release has a prebuilt binary for Linux, macOS and Windows. The one-line installers download the right one:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/VisruthSK/octavo/releases/latest/download/octavo-cli-installer.sh | sh
@@ -23,14 +21,16 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/VisruthSK/octavo/releas
 powershell -ExecutionPolicy Bypass -c "irm https://github.com/VisruthSK/octavo/releases/latest/download/octavo-cli-installer.ps1 | iex"
 ```
 
-To build from source, run `cargo install octavo-cli`. The font subsetter is HarfBuzz, compiled from C++, so you need a C++ compiler. On Windows with MSVC, the compiler stops with `C1128: number of sections exceeded object file format limit` unless you pass `/bigobj`, so set it first. Builds inside this repository do that for you.
+### Build
+
+To build from source, run `cargo install octavo-cli`. The font subsetter is HarfBuzz, compiled from C++, so you need a C++ compiler. On Windows with MSVC, set `CXXFLAGS` to `/bigobj` first, because the compiler stops with `C1128: number of sections exceeded object file format limit` without it. Builds inside this repository set it for you.
 
 ```powershell
 $env:CXXFLAGS = "/bigobj"
 cargo install octavo-cli
 ```
 
-## Shell completions
+### Shell completions
 
 `octavo --completions <shell>` prints a completion script and exits. It supports bash, zsh, fish, elvish, PowerShell and nushell.
 
@@ -49,42 +49,78 @@ mkdir ($nu.default-config-dir | path join completions)
 octavo --completions nushell | save --force ($nu.default-config-dir | path join completions octavo.nu)
 ```
 
-Then add `use completions/octavo.nu *` to your nushell `config.nu`. For PowerShell, put the line in your profile to keep it.
+For nushell, add `use completions/octavo.nu *` to `config.nu`. For PowerShell, put the line in your profile to keep it.
 
-## Where the bytes go
+## Results
 
-A near-empty Quarto article is about 1.2 MB, and almost none of it is your content. `embed-resources` inlines a full copy of Bootstrap's CSS (around 950 KB), an icon font, Bootstrap's JavaScript, Popper, Tippy, Clipboard.js and Anchor.js, plus the theme and highlighting styles. A page with no code block and no footnote uses almost none of that.
+Output size as a share of the input, on Quarto's own test documents (every one that renders to self-contained HTML), measured at each level:
 
-Octavo reads the document, works out what the page can actually reach, and removes the rest. What remains is minified, recompressed, and optionally packed into one compressed blob that a 2 KB loader unpacks while the page loads.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/levels-dark.svg">
+  <img alt="Bar chart of output size as a share of the original at each level, for pages, slide decks, dashboards and all documents" src="docs/images/levels-light.svg" width="760">
+</picture>
 
-| Document | Before | After |
-|---|---|---|
-| Plain article | 1.2 MB | 46 KB |
-| Article with figures | 1.3 MB | 137 KB |
-| `gt` table | 1.8 MB | 310 KB |
-| Plotly report | 5.7 MB | 1.6 MB |
+| Documents | Count | Input | `safe` | `scripts` | `packed` | Median shrink at `packed` |
+|---|---|---|---|---|---|---|
+| HTML pages | 357 | 536 MiB | 23.6% | 18.8% | 12.1% | 18.2x |
+| Slide decks | 86 | 293 MiB | 23.2% | 18.8% | 16.2% | 6.5x |
+| Dashboards | 22 | 66 MiB | 28.0% | 21.4% | 7.9% | 17.1x |
+| **All** | **465** | **895 MiB** | **23.8%** | **19.0%** | **13.2%** | **12.8x** |
 
-Widget libraries such as Plotly and reveal.js ship their own minified JavaScript. That code is the floor for those pages.
+Per document, the 10th and 90th percentiles of the shrink at `packed` are 5.6x and 28.4x. Slide decks shrink less than pages because most of their size is images, which Octavo recompresses without changing a pixel. Nine image-heavy decks of 4 to 14 MB, 85 MiB in total, come out at 39 MiB.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/distribution-dark.svg">
+  <img alt="Histogram of the shrink factor per document at the packed level, with the median at 12.8 times" src="docs/images/distribution-light.svg" width="760">
+</picture>
+
+Single documents, at `packed`:
+
+| Document | Before | After | Shrink |
+|---|---|---|---|
+| Plain article | 1.20 MB | 48 KB | 25x |
+| Article with figures | 1.26 MB | 147 KB | 8.6x |
+| ggplot2 figure (PNG) | 1.23 MB | 114 KB | 10.8x |
+| Dashboard with cards | 5.35 MB | 540 KB | 9.9x |
+| `gt` table | 1.78 MB | 335 KB | 5.3x |
+| reveal.js deck | 3.94 MB | 715 KB | 5.5x |
+| Plotly report | 5.70 MB | 1.66 MB | 3.4x |
+
+Widget libraries such as Plotly and reveal.js ship their own minified JavaScript, and that code is the floor for those pages. A file that is already minified has little left to remove.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/speed-dark.svg">
+  <img alt="Scatter plot of optimization time against input size, with lines of constant throughput" src="docs/images/speed-light.svg" width="760">
+</picture>
+
+The median throughput is about 10 MiB/s for pages and 12 MiB/s for decks. Of the 22 pages, 21 take under half a second, and decks of about 14 MB take 1.1 to 1.4 seconds.
+
+### Where the bytes go
+
+A near-empty Quarto article is about 1.2 MB, and almost none of it is your content. `embed-resources` inlines Bootstrap's stylesheet (433 KB, stored as 649 KB of percent-encoded text), the Bootstrap Icons font with its 2,078 icon rules (342 KB), the scripts for Bootstrap, Tippy, Popper, Clipboard.js and Anchor.js (about 160 KB), and the theme and highlighting styles. A page with no code block and no footnote uses almost none of that.
 
 ## How it works
 
-Octavo scans the document once and builds a word index of everything the page can reach. A short serial prefix removes unused Quarto libraries, because later stages depend on which scripts survive. After that the independent stages run in parallel on a rayon work queue. Each stage reads the shared scan and returns edits to byte ranges. The edits are merged and applied to the original text in one pass, so anything Octavo does not understand stays exactly as it was.
+Octavo scans the document once and builds a word index of everything the page can reach. Image recompression starts immediately and runs alongside the rest. Quarto detection decides which bundled libraries the page never calls. Once it has decided, JavaScript minification starts, and in parallel the word index is completed and the stylesheet stage runs. Each stage reads the shared scan and returns edits to byte ranges. The edits are merged and applied to the original text in one pass, so anything Octavo does not understand stays exactly as it was.
 
-The stylesheet stage parses each stylesheet into a syntax tree once. Pruning, minification and the font facts all come from that one tree, and the font stage rewrites its `@font-face` rules in place instead of parsing the CSS again.
+The stylesheet stage parses each stylesheet into a syntax tree once. Pruning, minification and the font facts all come from that tree, and the font stage rewrites its `@font-face` rules in place.
 
 ```mermaid
 flowchart TD
     A[Quarto HTML] --> B[Scan tags once]
-    B --> Q[quarto: remove runtime libraries the page never calls]
-    Q --> W[Index every word the page and its scripts use]
-    W --> J[js: minify scripts]
+    B --> I[images: recompress PNG, optionally AVIF or WebP]
+    B --> M[Index words in the markup]
+    B --> S[Index words in each script]
+    M --> Q[quarto: remove libraries the page never calls]
+    Q --> J[js: minify scripts]
+    Q --> W[Complete the word index]
+    S --> W
     W --> C[css: parse once, prune, minify]
-    W --> I[images: recompress PNG, optionally AVIF or WebP]
-    C --> F[fonts: rewrite @font-face from the same tree, subset icon fonts]
-    J --> M[Merge edits]
-    F --> M
-    I --> M
-    M --> P[Apply all edits in one pass and rescan]
+    C --> F[fonts: rewrite @font-face, subset icon fonts]
+    I --> E[Merge edits]
+    J --> E
+    F --> E
+    E --> P[Apply all edits in one pass and rescan]
     P --> L{level}
     L -->|safe| O[Optimized HTML]
     L -->|scripts or packed| K[pack: compress into one blob, add loader]
@@ -93,20 +129,20 @@ flowchart TD
 
 | Stage | What it does | What stops it |
 |---|---|---|
-| `quarto` | Removes Bootstrap JavaScript, Popper, Tippy, Clipboard.js and Anchor.js when the markup never uses them, and stubs the globals Quarto's own runtime calls regardless | The markup uses the library, or another script mentions it |
-| `js` | Minifies scripts, and turns data-URI module scripts into inline modules | The script does not parse, or is already minified |
-| `css` | Deletes rules that need a class, id or tag found nowhere in the markup or any script, then minifies. Custom property values are kept verbatim | A rule the parser rejects, and rules whose `calc()` arithmetic would lose precision, are kept exactly as written and the rest of the sheet is still optimized |
-| `fonts` | Keeps the one source browsers use (the last `src`, preferring WOFF2, then WOFF, then TrueType and OpenType, and dropping legacy EOT and SVG copies), converts it to WOFF2, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. Text fonts are also subsetted to the characters the document uses (see below) | The family name is written with escapes |
-| `images` | Recompresses embedded PNGs losslessly. With `--lossy-images`, re-encodes PNG and JPEG as AVIF (or WebP), shrinking anything wider than 3840 px | Lossless skips images over 40 megapixels |
-| `pack` | Gathers scripts, styles, stylesheet links, inline SVG, images and data blocks into one compressed blob, restored in place by a synchronous loader | A Content-Security-Policy meta tag; modules and import maps are never packed |
+| `quarto` | Removes Bootstrap JavaScript, Popper, Tippy, Clipboard.js and Anchor.js when the markup never uses them, and stubs the globals that Quarto's own runtime calls regardless | The markup uses the library, or another script mentions it |
+| `js` | Minifies scripts and turns data-URI module scripts into inline modules | The script does not parse, or is already minified |
+| `css` | Deletes rules that need a class, id or tag found nowhere in the markup or any script, then minifies. Custom property values are kept verbatim | A rule the parser rejects, or whose `calc()` arithmetic would lose precision, is kept as written and the rest of the sheet is still optimized |
+| `fonts` | Keeps the one source browsers use (the last `src`, preferring WOFF2, then WOFF, then TrueType and OpenType), converts it to WOFF2, drops legacy EOT and SVG copies, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. Text fonts stay whole unless you pass `--subset-fonts` | The family name is written with escapes |
+| `images` | Recompresses embedded PNGs losslessly. With `--lossy-images`, re-encodes PNG and JPEG as AVIF or WebP and shrinks anything wider than 3840 px | Lossless recompression skips images over 40 megapixels |
+| `pack` | Gathers scripts, styles, stylesheet links, inline SVG, images and data blocks into one compressed blob, restored in place by a synchronous loader. The blob uses DEFLATE or Brotli, whichever gives the smaller page | A Content-Security-Policy meta tag. Modules and import maps are never packed |
 
 ### What Octavo knows about Quarto
 
 All Quarto-specific knowledge is in one small table in `quarto.rs`:
 
-- Which bundled library each Quarto feature needs. Tippy and Popper power footnote, citation and cross-reference popups and code annotations. Bootstrap's JavaScript is needed for `data-bs-*` components. Clipboard.js is needed for `code-copy-button`. Anchor.js is needed for `anchored` headings.
-- That Quarto's own scripts (ids starting `quarto-html-`) call those globals unconditionally. When a library is removed, Octavo leaves a null object in its place so those calls do nothing instead of throwing.
-- How to recognise each library from its banner comment, so a script that only mentions `bootstrap` is not mistaken for it.
+- Which bundled library each Quarto feature needs. Tippy and Popper power footnote, citation and cross-reference popups and code annotations. Bootstrap's JavaScript serves `data-bs-*` components, Clipboard.js serves `code-copy-button`, and Anchor.js serves `anchored` headings.
+- Quarto's own scripts (ids starting `quarto-html-`) call those globals unconditionally. When a library is removed, Octavo leaves a null object in its place so those calls do nothing and do not throw.
+- Each library is recognized by its banner comment, so a script that only mentions `bootstrap` is not mistaken for it.
 
 Everything else in the code only knows about HTML, CSS, JavaScript, fonts and images.
 
@@ -116,42 +152,63 @@ Everything else in the code only knows about HTML, CSS, JavaScript, fonts and im
 |---|---|
 | `safe` | Minify and prune. Stylesheets and scripts stay real elements, so the page works with JavaScript off. |
 | `scripts` | Also packs scripts and data blocks. Stylesheets and SVG stay real. |
-| `packed` | Packs everything. **The page needs JavaScript to be styled.** Use it for documents that already need JavaScript. |
+| `packed` | Packs everything. The page needs JavaScript to be styled, so use it for documents that already need JavaScript. |
 
-Output size shrinks in the order `safe`, `scripts`, `packed`: `safe` is the largest and `packed` the smallest.
+Output size shrinks in the order `safe`, `scripts`, `packed`.
+
+`--audit` prints what each step saves at the chosen level and writes nothing:
+
+```
+step               count     before      after      saved
+dead-library           3   93.5 KiB      160 B   93.4 KiB
+script-minified        7   57.7 KiB   20.4 KiB   37.3 KiB
+stylesheet-pruned      6    2.3 MiB  411.8 KiB    1.9 MiB
+packed                 1  751.1 KiB  458.1 KiB  293.0 KiB
+
+packed level: 2.8 MiB -> 458.1 KiB (6.3x smaller)
+```
+
+Each row covers only the part of the file that step changed, and the steps run in the order shown.
 
 ### Compression effort
 
-The level decides what the output depends on. The effort decides how hard the compressors work, and it applies at every level. The default is a balance: output a few percent above the smallest possible, in a fraction of the time. `--maximum` uses the slowest settings everywhere. Three flags set the values yourself, and none can be combined with `--maximum`:
+The level decides what the output depends on. The effort decides how hard the compressors work, and it applies at every level. The default balances size against time. `--maximum` uses the slowest settings everywhere. Three flags set the values yourself, and none can be combined with `--maximum`:
 
 | Flag | Range | Balanced | Maximum |
 |---|---|---|---|
 | `--woff2-quality` | 0 to 11 | 9 | 11 |
 | `--png-preset` (oxipng) | 0 to 6 | by image size | 6 |
-| `--brotli-quality` (packed blob) | 0 to 11 | 6, kept only when the page ends up smaller than with DEFLATE, counting Brotli's decoder | 11, always |
+| `--brotli-quality` (packed blob) | 0 to 11 | 6, used when the page ends up smaller than with DEFLATE, counting Brotli's decoder | 11, always tried |
 
-On a 288 KB font, WOFF2 quality 9 takes 26 ms and quality 11 takes 293 ms for 9 percent more bytes, which is a small share of a whole document. That is why the default is 9.
+On a 288 KB font, WOFF2 quality 9 takes 26 ms and quality 11 takes 293 ms for 9 percent more bytes.
 
-Fonts converted whole are remembered in your user cache directory (`~/.cache/octavo` on Linux, `~/Library/Caches/octavo` on macOS, `%LOCALAPPDATA%octavo` on Windows), in a `fonts` subfolder with one file per distinct font, named by a hash of its bytes and quality. Anything else Octavo remembers later gets its own subfolder beside it. Documents from the same theme embed the same fonts, so later runs skip the slowest step. Subsetted fonts are never stored. `--cache-dir <directory>` chooses another place and `--no-cache` turns the cache off.
+### Fonts
+
+Fonts converted whole are remembered in your user cache directory (`~/.cache/octavo` on Linux, `~/Library/Caches/octavo` on macOS, `%LOCALAPPDATA%\octavo` on Windows), in a `fonts` subfolder with one file per distinct font, named by a hash of its bytes and quality. Documents from the same theme embed the same fonts, so later runs skip the slowest step. Subsetted fonts are never stored. `--cache-dir <directory>` chooses another place and `--no-cache` turns the cache off.
+
+Text fonts stay whole by default. `--subset-fonts` cuts them to the characters the document uses plus the Latin letters, digits and punctuation, which is often the largest saving in a themed document, because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [HarfBuzz](https://harfbuzz.github.io/) and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive and layout is identical. Chromium on Linux draws some hinted static fonts, Fira Sans among them, with slightly different stroke shading after subsetting, and the checker reports that as pixel differences. Text that JavaScript adds later with characters outside the kept set falls back to a system font. Icon fonts are always subsetted to the glyphs the CSS can reach.
+
+### Licenses
+
+Bundled libraries carry license banners, and the MIT, BSD and Apache licenses require them to travel with copies. Octavo keeps them by default, which costs 400 bytes to 2 KB per document. Subsetting a font discards the copyright and license fields in its name table, so Octavo copies those fields (copyright line, license description, license URL) into a comment beside the font's `@font-face`, which the SIL Open Font License allows. `--strip-licenses` removes all of these notices for people who ship them another way.
 
 ### What Octavo refuses
 
-Octavo stops with a clear error instead of guessing when the input is not what it expects:
+Octavo stops with an error when the input is not what it expects:
 
 - A file with no `<html>` element is not an HTML document.
 - A document that links to local files (`site_libs/bootstrap.min.css`, `figure.png`) was not rendered with `embed-resources: true`. The error lists the files.
 
 Resources loaded from the network (a CDN script, a web font) do not stop the run. They are reported as warnings, because the page cannot work offline.
 
-### Subsetting text fonts
+## Limits
 
-Text fonts are kept whole by default. `--subset-fonts` cuts them to the characters the document uses, plus the Latin letters, digits and punctuation, which shrinks themed documents by 30 to 56 percent because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [HarfBuzz](https://harfbuzz.github.io/)'s subsetter and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive, and layout is identical. It is not the default because on Linux Chromium draws some hinted fonts, Fira Sans among them, with slightly different strokes after subsetting, which the checker reports as pixel differences. Text that JavaScript adds later with characters outside the kept set falls back to a system font. Icon fonts are always subsetted to the glyphs the CSS can reach.
+- `packed` rebuilds stylesheets with JavaScript while the page is parsed, so it needs JavaScript.
+- The Brotli decoder runs through `new Function`, and `packed` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` header that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, allow `unsafe-eval` for the packed pages or use `--level scripts`, which never needs it.
+- Modules, import maps and elements whose attributes contain character references are never packed.
+- `--subset-fonts` can change how some hinted fonts are drawn on Linux, as described under [Fonts](#fonts).
 
-### Licenses
-
-Bundled libraries carry license banners, and MIT, BSD and Apache require them to travel with copies. Octavo keeps them by default (about 400 bytes to 2 KB per document, a few hundred after compression). Subsetting a font discards the copyright and license fields in its name table, so Octavo copies those fields (copyright line, license description, license URL) into a comment beside the font's `@font-face`. The SIL Open Font License allows a human-readable header for this. `--strip-licenses` removes all of these notices for people who ship them another way.
-
-## The libraries doing the work
+## The libraries doing the real work
 
 | Job | Library |
 |---|---|
@@ -166,11 +223,11 @@ Bundled libraries carry license banners, and MIT, BSD and Apache require them to
 | Encode lossy WebP | [`gamut-webp`](https://crates.io/crates/gamut-webp) |
 | Resize images | [`fast_image_resize`](https://crates.io/crates/fast_image_resize) |
 | Deflate the packed blob | [`libdeflater`](https://crates.io/crates/libdeflater), level 12 |
-| Brotli for large packed blobs | [`brotli`](https://crates.io/crates/brotli) |
+| Brotli for the packed blob | [`brotli`](https://crates.io/crates/brotli) |
 | Text-safe encoding of the blob | [`base91`](https://crates.io/crates/base91) |
 | Name cached fonts | [`blake3`](https://crates.io/crates/blake3) |
 
-Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The only non-Rust code in the build is the WOFF2 encoder behind `woofwoof` and libdeflate behind `oxipng` and `libdeflater`. Everything else is pure Rust.
+Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The non-Rust code in the build is HarfBuzz, the WOFF2 encoder behind `woofwoof`, and libdeflate behind `oxipng` and `libdeflater`.
 
 ## As a library
 
@@ -208,17 +265,19 @@ let out = simplify(&html, options)?.pack(Mode::Packed);
 
 ## Verification
 
-`verify/` opens the original and the optimized file in Chromium and compares them. A browser is found automatically (Chrome, Chromium or Edge, or Playwright's own build); set `CHROME_PATH` to choose one. It compares:
+`verify/` opens the original and the optimized file in Chromium and compares them. A browser is found automatically (Chrome, Chromium or Edge, or Playwright's own build). Set `CHROME_PATH` to choose one. It compares:
 
 - console errors and network requests
 - the serialized DOM and the accessibility tree
 - the computed style of every element, including pseudo-elements and forced hover, focus and active states
-- loaded fonts and full-page screenshots, which must match pixel for pixel, allowing one level out of 255 in a colour channel for rendering rounding, and up to twelve isolated pixels off by at most eight levels for antialiasing noise (computed styles and layout boxes are still compared exactly, and every tolerated pixel is counted in the report)
+- loaded fonts and full-page screenshots
 - every running animation: its target, timing and keyframes, so a pruned `@keyframes` rule is caught
 
-This runs in desktop light, desktop dark, mobile, tablet, print, JavaScript-off and animations-on scenarios, followed by an interaction sweep: colour-scheme toggle, tabs, collapses, hovers, key presses and scrolling. `Math.random` is seeded so widget ids repeat, and transitions are switched off (except in the animations-on scenario) so timing cannot leak into the comparison.
+Screenshots must match pixel for pixel. The checker allows one level out of 255 in a colour channel for rendering rounding, and up to twelve isolated pixels off by at most eight levels for antialiasing noise. Computed styles and layout boxes are always compared exactly, and every tolerated pixel is counted in the report. A linear gradient and its mirror image compare as equal, because they paint the same pixels.
 
-When a comparison finds a difference, both pages are captured a second time. A difference counts only if neither page shows it against its own second capture and it appears again between the two new captures, so a one-off flake is dropped and a real change is not. `verify/verifier.test.mjs` checks the checker: it breaks a page in a dozen specific ways (a dropped keyframes, hover, dark, print or media rule, a colour off by one, a 0.02 px layout shift) and each must be caught.
+This runs in desktop light, desktop dark, mobile, tablet, print, JavaScript-off and animations-on scenarios, followed by an interaction sweep: colour-scheme toggle, tabs, collapses, hovers, key presses and scrolling. `Math.random` is seeded so widget ids repeat, and transitions are switched off (except in the animations-on scenario) so timing does not leak into the comparison.
+
+When a comparison finds a difference, both pages are captured up to three more times, with the later captures waiting longer. A difference counts only if it appears in every capture and neither page ever disagrees with its own recaptures. A page that settles into different stable states on different loads is therefore not reported as a difference, and a real change always is. `verify/verifier.test.mjs` checks the checker: it breaks a page in a dozen specific ways (a dropped keyframes, hover, dark, print or media rule, a colour off by one, a 0.02 px layout shift) and each must be caught.
 
 With `--lossy-images`, pass `--lossy` to the checker. Image bytes are then not compared, dimensions still are, and screenshots may differ by up to 2% of pixels.
 
@@ -235,7 +294,7 @@ On a busy machine, large pages loaded side by side can land in different timing 
 
 ### The corpus
 
-`corpus/` holds the test corpus: about 300 hand-written adversarial and realistic fixtures (parsing, CSS, scripts, images, fonts, Quarto-style pages, libraries, large pages), and every document in Quarto's own test suite that renders to self-contained HTML, across HTML pages, slides and dashboards. Every fixture states its expected outcome up front: optimize, keep unchanged, or reject.
+`corpus/` holds the test corpus: 318 hand-written adversarial and realistic fixtures (parsing, CSS, scripts, images, fonts, Quarto-style pages, libraries, large pages) and the 465 documents from Quarto's own test suite that render to self-contained HTML, across pages, slides and dashboards. Every fixture states its expected outcome up front: optimize, keep unchanged, or reject.
 
 ```sh
 cargo build --release
@@ -245,17 +304,11 @@ node verify/corpus.mjs --tier smoke --browser
 node verify/corpus.mjs --tier full --browser --jobs 2
 ```
 
-The full tier runs all three levels and is slow, so CI splits it across 24 shards and runs it before every release tag, not on every push. A quick sample of about 70 documents runs on every push and pull request. See [`corpus/README.md`](corpus/README.md) for the format and how to add documents.
+The full tier runs all three levels and is slow, so CI splits it across 24 shards and runs it before every release tag. A sample of 71 documents runs on every push and pull request. See [`corpus/README.md`](corpus/README.md) for the format and how to add documents.
 
 ## Releases
 
-Pushing a version tag runs the CI suite and the full corpus first. The binaries are built, and the GitHub release is created, only if both pass.
-
-## Limits
-
-- `packed` rebuilds stylesheets with JavaScript while the page is parsed, so it needs JavaScript.
-- The brotli decoder runs through `new Function`, and `packed` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, either allow `unsafe-eval` for the packed pages or use `--level scripts`, which never needs it.
-- Modules, import maps and elements whose attributes contain character references are never packed.
+Pushing a version tag runs the CI suite and the full corpus first. The binaries are built and the GitHub release is created only if both pass.
 
 ## Quarto integration
 

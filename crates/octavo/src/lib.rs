@@ -3,7 +3,8 @@
 //!
 //! A document goes through a fixed series of stages: dead Quarto runtime
 //! libraries are removed, scripts and stylesheets are minified and pruned,
-//! fonts are converted to WOFF2 and subsetted, and images are recompressed.
+//! fonts are converted to WOFF2 (icon fonts are subsetted to the glyphs the
+//! CSS can reach), and images are recompressed.
 //! Each stage reads the document and returns edits to byte ranges, so
 //! anything Octavo does not understand stays exactly as it was.
 //!

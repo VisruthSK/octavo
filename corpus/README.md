@@ -1,15 +1,37 @@
 # Octavo corpus
 
-About 300 hand-written documents that exercise Octavo on realistic output, on scale, and on inputs built to break it, plus the real Quarto documents described below. Nothing large is committed. Each document is a small module that builds its text deterministically, and `manifest.json` records its size and SHA-256 so drift is caught.
+The corpus is 783 documents that Octavo is tested against: 318 hand-written fixtures and 465 documents from Quarto's own test suite. Each one states what Octavo should do with it, and the runner checks that outcome at every level and, with `--browser`, that the optimized page renders the same as the original in Chromium.
 
-## Layout
+| Source | Documents | Purpose |
+|---|---|---|
+| Hand-written fixtures | 318 | Realistic output, scale, and inputs built to break the optimizer |
+| Quarto's test documents | 465 (357 pages, 86 slide decks, 22 dashboards) | Real output across Quarto's formats and features |
 
-- `spec.mjs` defines what a document is and validates it. `specs.mjs` loads every `docs/*.mjs` file. `build.mjs` writes `.cache/<id>.html` and `manifest.json`.
-- `docs/<topic>.mjs` default-exports an array of specs. Add a file per topic; do not edit other topics' files.
-- `../verify/corpus.mjs` runs the release binary over the corpus and writes `out/corpus/report.md` and `report.json`.
-- `spec.test.mjs` checks the specs and the manifest (`node --test corpus`).
+The hand-written fixtures fall into eleven categories: `quarto` (58), `css` (49), `parsing` (48), `libraries` (40), `images` (37), `scale` (26), `fonts` (18), `javascript` (18), `script-tags` (16), `modules` (6) and `validation` (2).
 
-## Writing a document
+Nothing large is committed. Fixtures are small modules that build their text deterministically, and `manifest.json` records each one's size and SHA-256 so any change to the generated text is visible. Quarto's documents are rendered on demand from a pinned release.
+
+## Tiers
+
+Every document belongs to a tier. `smoke` is a small sample that covers every category and format. `full` is the rest.
+
+| Tier | Hand-written | Quarto | Runs |
+|---|---|---|---|
+| `smoke` | 59 | 12 | On every push and pull request |
+| `full` | 259 | 453 | Before every release tag, split across 24 shards in CI |
+
+## Hand-written fixtures
+
+```
+corpus/
+  spec.mjs        what a document is, and validation
+  specs.mjs       loads every docs/*.mjs
+  docs/<topic>.mjs   one array of specs per topic
+  build.mjs       writes .cache/<id>.html and manifest.json
+  spec.test.mjs   checks the specs and the manifest (node --test corpus)
+```
+
+A document is an object:
 
 ```js
 {
@@ -21,48 +43,69 @@ About 300 hand-written documents that exercise Octavo on realistic output, on sc
 }
 ```
 
-- `id` and `category` are lowercase words joined by hyphens. The id is unique across the corpus and names the behavior, not the implementation.
-- `tier` is `smoke` for a small, fast, representative subset (at most a quarter of the corpus, every category has at least one) and `full` for the rest.
-- `build` takes no arguments, returns the document text, and is deterministic. Use `random(seed)` from `spec.mjs` for pseudo-random content, never `Math.random` or the clock.
-- `expect` is written from what Octavo promises, before running anything:
-  - `{ outcome: "optimizes" }` the output is smaller and renders identically in Chromium. Add `retains: [...]` (text that must still be present) and `removes: [...]` (text that must be gone). These are checked on the `safe` level output, where the text is not packed.
-  - `{ outcome: "accepts" }` Octavo optimizes the input or leaves it as it was, but never rejects it. Use it for real-world documents where the gain is not the point.
-  - `{ outcome: "keeps" }` Octavo finds nothing to gain and leaves the file as it was.
-  - `{ outcome: "rejects", error: "not-html" | "not-self-contained" }` the input is refused with that error.
-- Set `browser: false` on an `optimizes` document only when it cannot be rendered meaningfully (for example a page that is intentionally enormous). Say why in the id.
+- `id` and `category` are lowercase words joined by hyphens. The id is unique and names the behavior, not the implementation.
+- `build` takes no arguments, returns the document text and is deterministic. Pseudo-random content comes from `random(seed)` in `spec.mjs`, never from `Math.random` or the clock.
+- `expect` states what Octavo promises, written before running anything:
 
-When the runner disagrees with an expectation, decide which side is wrong. If Octavo has a bug, leave the expectation as it is and report the bug; never edit an expectation to match a bug.
+| Outcome | Meaning | Count |
+|---|---|---|
+| `optimizes` | The output is smaller and renders identically in Chromium. `retains` lists text that must survive and `removes` lists text that must be gone, both checked on the `safe` output, where nothing is packed | 304 |
+| `keeps` | Octavo finds nothing to gain and returns the file unchanged | 5 |
+| `rejects` | The input is refused, with the error `not-html` or `not-self-contained` | 8 |
+| `accepts` | Octavo may optimize the input or leave it as it was, but never rejects it. It suits real-world documents where the gain is not the point | 1 |
 
-## Fonts with real features
+An `optimizes` document is compared in the browser unless it sets `browser: false`. 98 fixtures do: the 58 Quarto-shaped ones, which check through `retains` and `removes` which bundled libraries are removed, 25 scale documents that are too large to render meaningfully, and 15 others whose input is not a page a browser can compare.
 
-`fonts.json` pins two popular open fonts from Google Fonts by URL and SHA-256: Fira Sans (static) and Inter (variable). `node corpus/build.mjs` downloads them into `.cache/fonts/` and verifies the hash, and the fixtures in `docs/features.mjs` embed them to use tabular and old-style numbers, stylistic sets, small caps, fractions, superscripts and kerning. The fonts are licensed under the SIL Open Font License, used only as test input and never committed.
+When the runner disagrees with an expectation, the expectation stays and the disagreement is reported as an Octavo bug.
 
-## Real documents from upstream
+### Fonts with real features
 
-`sources.json` pins upstream repositories by URL and SHA-256. Octavo uses every document in them that renders to self-contained HTML, not a sample.
+`fonts.json` pins two open fonts from Google Fonts by URL and SHA-256: Fira Sans (static, hinted) and Inter (variable). `node corpus/build.mjs` downloads them into `.cache/fonts/` and verifies the hash. The fixtures in `docs/features.mjs` embed them to exercise tabular and old-style numbers, stylistic sets, small caps, fractions, superscripts and kerning. Both fonts are licensed under the SIL Open Font License, are used only as test input and are never committed.
 
-`corpus/selection.json` is the committed list. It names each document, its format (html, slides or dashboard) and its tier. A small subset spread across the formats by measured features (size, script, style, image and font weight, and which Quarto features it uses) is marked `smoke`, and the rest is `full`. Because the list is committed, every run renders the same documents, and a document that fails to render is an error, not a skip.
+## Quarto's test documents
 
-- `node corpus/upstream.mjs [--tier smoke|full] [--jobs N] [--shard K/N]` renders the listed documents into `.cache/rendered/` and writes `index.json`. The runner picks them up automatically (`--no-upstream` skips them) and expects `accepts` plus browser equivalence. `--shard` renders one share, which is how CI splits the full tier.
-- `node corpus/upstream.mjs --select` rebuilds `selection.json`. It downloads and extracts the example documents, keeps the ones that need no R, Python or Julia and no project files, renders each with Quarto in its own format, and drops the ones that fail, need the network or are not self-contained, printing a count per reason. It is only needed when `sources.json` changes. The corpus workflow runs it with the `select` tier, so the renders happen in CI.
+`sources.json` pins a Quarto release by URL and SHA-256. `selection.json` lists every document in it that renders to self-contained HTML without R, Python or Julia and without project files, with its format (`html`, `slides` or `dashboard`) and tier. Because the list is committed, every run renders the same documents, and a document that fails to render is an error.
 
-Nothing rendered is committed, because the HTML depends on the Quarto version. Set `QUARTO` to the executable when it is not on `PATH`.
+```sh
+node corpus/upstream.mjs [--tier smoke|full] [--jobs N] [--shard K/N]
+node corpus/upstream.mjs --select
+```
+
+The first command renders the listed documents with Quarto into `.cache/rendered/` and writes `index.json`. `--shard` renders one share, which is how CI splits the full tier. The second command rebuilds `selection.json`: it extracts the example documents, renders each in its own format, and drops those that fail, need the network or are not self-contained, printing a count per reason. It is needed only when `sources.json` changes. Nothing rendered is committed, because the HTML depends on the Quarto version. Set `QUARTO` to the executable when it is not on `PATH`.
+
+## Benchmark pages
+
+`src/` holds small Quarto sources (articles, figures, tables, citations, dashboards, reveal.js decks, Plotly and SVG pages). The pages built with R need the matching R packages, such as ggplot2, gt, plotly, DT and dygraphs. `render.sh` renders them with Quarto into `html/train` and `html/test`, which are not committed. `verify/bench.mjs` runs Octavo over those renders and reports the size before and after and the time:
+
+```sh
+node verify/bench.mjs packed corpus/html/train corpus/html/test
+```
 
 ## Running
 
 ```sh
 cargo build --release
 node corpus/build.mjs            # regenerate manifest.json and .cache
-node corpus/build.mjs --check    # fail if manifest.json is stale
+node corpus/build.mjs --check    # fail if manifest.json is out of date
 node verify/corpus.mjs --tier smoke --browser
 node verify/corpus.mjs --tier full --browser --filter '^css-'
 ```
 
-Flags: `--tier smoke|full`, `--levels safe,scripts,packed`, `--browser`, `--filter <regex on id>`, `--jobs <n>`, `--shard K/N` (a share of the hand-written documents, matching the same flag on `upstream.mjs`), `--binary <path>`, `--out <dir>`.
+| Flag | Meaning |
+|---|---|
+| `--tier smoke\|full` | Which tier to run. The default is `smoke` |
+| `--levels safe,scripts,packed` | Which levels to run. The default is `safe,packed` for `smoke` and all three for `full` |
+| `--browser` | Compare each optimized page with the original in Chromium |
+| `--filter <regex>` | Run only documents whose id matches |
+| `--jobs <n>` | Documents processed at once |
+| `--shard K/N` | One share of the documents, matching the flag on `upstream.mjs` |
+| `--no-upstream` | Skip Quarto's documents |
+| `--binary <path>` | The Octavo binary to run |
+| `--out <dir>` | Where the report is written. The default is `out/corpus` |
 
 ## What the runner checks
 
-- The outcome matches the expectation, the error text matches, the output is never larger than the input, and `retains` and `removes` hold.
-- With `--browser`, each optimized page is compared with the original across the scenarios in `verify/capture.mjs`.
-- Slowdown watchdog: any document slower than 100 times the corpus median time per byte (plus a fixed startup allowance) is re-run once and fails if it is still over.
-- The report compares each level with a naive minifier (comments and inter-tag whitespace removed) and with Brotli applied to the original.
+- The outcome matches the expectation, the error matches for rejected inputs, the output is never larger than the input, and `retains` and `removes` hold.
+- With `--browser`, each optimized page is compared with the original in the scenarios defined in `verify/capture.mjs`: desktop light and dark, mobile, tablet, print, JavaScript off and animations on, plus an interaction sweep.
+- A document that takes more than 100 times the corpus median time per byte, plus a fixed startup allowance, is run again once and fails if it is still over.
+- The report lists size and time per document and level, compares each level with a naive minifier (comments and whitespace between tags removed) and with Brotli applied to the original, and totals the sizes by category and level. `report.md` and `report.json` are written to the output directory.
