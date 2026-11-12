@@ -130,6 +130,19 @@ pub struct Options {
     /// and the copyright and license fields of a subsetted font move into a
     /// comment beside its `@font-face`.
     pub strip_licenses: bool,
+    /// Keep PNG images as PNG. By default an 8-bit PNG without colour
+    /// profile, gamma or animation chunks is re-encoded as lossless WebP when
+    /// that is smaller, which decodes to the same pixels. Every current
+    /// browser reads WebP, and on screenshots and charts it is often a third
+    /// of the PNG's size.
+    pub keep_png: bool,
+    /// The most memory, in bytes, that the lossless WebP encoder may use at
+    /// once across all images, or `None` for [`Options::DEFAULT_IMAGE_MEMORY`].
+    /// The encoder needs about 26 bytes per pixel, so an 81 megapixel image
+    /// needs about 2.1 GB. Images that need more than the limit stay PNG, and
+    /// the others wait for memory, so a lower limit costs time and a higher one
+    /// costs memory.
+    pub image_memory: Option<u64>,
     /// The root of the cache that remembers work between runs, with one
     /// subfolder per kind of entry. Today that is `fonts`: fonts converted
     /// whole, which are the slowest step in most documents and repeat across
@@ -141,6 +154,13 @@ pub struct Options {
     /// How hard the compressors for fonts, PNG images and the packed blob
     /// work. It is independent of the [`Mode`].
     pub compression: Compression,
+}
+
+impl Options {
+    /// The memory limit for the lossless WebP encoder when
+    /// [`Options::image_memory`] is `None`: 2.5 GiB, which fits one 81
+    /// megapixel image at a time.
+    pub const DEFAULT_IMAGE_MEMORY: u64 = 2_684_354_560;
 }
 
 /// How much time to spend compressing.
@@ -631,7 +651,18 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         Licenses::Keep
     };
     let (images, (removals, scripts, styles)) = rayon::join(
-        || images::stage(&doc, options.images, options.compression.tuning()),
+        || {
+            images::stage(
+                &doc,
+                options.images,
+                options.compression.tuning(),
+                (!options.keep_png).then(|| {
+                    options
+                        .image_memory
+                        .unwrap_or(Options::DEFAULT_IMAGE_MEMORY)
+                }),
+            )
+        },
         || {
             let (markup, parts) = rayon::join(|| doc.markup(), || doc.word_parts());
             let removals = quarto::stage(&doc, &markup);

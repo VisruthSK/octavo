@@ -47,6 +47,7 @@ html-escape = "0.3.1"
 skrifa = { package = "fontcull-skrifa", version = "0.39.2" }
 skera = "0.10.0"
 read-fonts = { version = "0.47.0", default-features = false, features = ["std"] }
+webp = { version = "0.3.1", default-features = false },
 
 [dev-dependencies]
 flate2 = "1"
