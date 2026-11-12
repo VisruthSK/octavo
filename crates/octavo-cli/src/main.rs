@@ -357,7 +357,7 @@ fn audit(input: &Path, level: Mode) -> Result<(), String> {
     }
     println!(
         "
-{level}: {}",
+{level} level: {}",
         summary(src.len(), out.html.len())
     );
     Ok(())
