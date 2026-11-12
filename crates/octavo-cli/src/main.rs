@@ -154,6 +154,19 @@ struct Optimize {
     max_image_side: Option<NonZeroU32>,
     #[arg(
         long,
+        help_heading = "Images",
+        help = "Keep PNG images as PNG. By default an 8-bit PNG becomes lossless WebP when that is smaller, with the same pixels"
+    )]
+    keep_png: bool,
+    #[arg(
+        long,
+        value_name = "MIB",
+        conflicts_with = "keep_png",
+        help_heading = "Images"
+    )]
+    image_memory: Option<u64>,
+    #[arg(
+        long,
         help_heading = "Sites",
         help = "Rewrite a site directory where it is, which cannot be undone. Needed when the output is the input. Run site mode on a complete, fresh render: rules that no page uses are removed"
     )]
@@ -242,6 +255,12 @@ fn command() -> clap::Command {
                 webp.quality.get()
             ))
         })
+        .mut_arg("image_memory", |arg| {
+            arg.help(format!(
+                "Memory the lossless WebP encoder may use at once, in MiB. Larger images stay PNG [default: {}]",
+                Options::DEFAULT_IMAGE_MEMORY / 1_048_576
+            ))
+        })
         .mut_arg("max_image_side", |arg| {
             arg.help(format!(
                 "Shrink images whose longest side is over this many pixels{side}"
@@ -293,6 +312,8 @@ fn main() -> ExitCode {
         image_quality,
         subset_fonts,
         max_image_side,
+        keep_png,
+        image_memory,
         in_place,
         strip_licenses,
         cache_dir,
@@ -320,6 +341,8 @@ fn main() -> ExitCode {
         images,
         subset_text_fonts: subset_fonts,
         strip_licenses,
+        keep_png,
+        image_memory: image_memory.map(|mib| mib.saturating_mul(1_048_576)),
         cache_directory: if no_cache {
             None
         } else {

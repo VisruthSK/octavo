@@ -46,6 +46,7 @@ indexmap = "2.14.2"
 html-escape = "0.3.1"
 skrifa = { package = "fontcull-skrifa", version = "0.39.2" }
 hb-subset = { package = "mkwebfont_hb-subset", version = "0.5.0" }
+webp = { version = "0.3.1", default-features = false }
 
 [dev-dependencies]
 flate2 = "1"

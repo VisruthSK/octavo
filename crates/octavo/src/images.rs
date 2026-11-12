@@ -13,7 +13,13 @@ use oxipng::{Options as PngOptions, StripChunks};
 use ravif::Encoder;
 use rayon::prelude::*;
 use rgb::FromSlice;
-use std::{cmp::Reverse, collections::HashMap, io::Cursor, num::NonZeroU32};
+use std::{
+    cmp::Reverse,
+    collections::HashMap,
+    io::Cursor,
+    num::NonZeroU32,
+    sync::{Condvar, Mutex},
+};
 
 const RENDERING_CHUNKS: [[u8; 4]; 10] = [
     *b"cICP", *b"iCCP", *b"sRGB", *b"gAMA", *b"cHRM", *b"pHYs", *b"eXIf", *b"acTL", *b"fcTL",
@@ -31,6 +37,12 @@ const PRESET_TIME_BUDGET_NANOSECONDS: u64 = 75_000_000;
 // AVIF speed 10 encodes about 65 percent faster than speed 8, but made three of five
 // sample images 44 to 62 percent larger, so it is kept for the largest images only.
 const LARGE_IMAGE_PIXELS: u64 = 8_000_000;
+// libwebp's lossless encoder adds about 22 bytes per pixel to the decoded image, measured on
+// 13 and 81 megapixel images, and images are encoded in parallel, so they share a budget.
+const WEBP_BYTES_PER_PIXEL: u64 = 28;
+// Method 2 at quality 50 gave the best size for its time on 3 to 81 megapixel graphics, at about
+// 65 ns per pixel. Method 1 at quality 20 takes half as long for a result 10 points larger.
+const WEBP_THOROUGH_PIXELS: u64 = 20_000_000;
 
 struct Decoded {
     image: data::DataUri,
@@ -64,7 +76,12 @@ fn jobs_mut<'i, 'a>(images: &'i mut [Candidate<'a>]) -> Vec<&'i mut EncodedUri<'
         .collect()
 }
 
-pub(crate) fn stage(doc: &Doc, lossy: Option<ImageEncoding>, tuning: Tuning) -> Vec<Edit> {
+pub(crate) fn stage(
+    doc: &Doc,
+    lossy: Option<ImageEncoding>,
+    tuning: Tuning,
+    webp_memory: Option<u64>,
+) -> Vec<Edit> {
     let mut images: Vec<Candidate> = doc
         .tags()
         .iter()
@@ -103,12 +120,13 @@ pub(crate) fn stage(doc: &Doc, lossy: Option<ImageEncoding>, tuning: Tuning) -> 
         .filter_map(|(at, image)| image.as_ref().map(|image| (at, image.pixels)))
         .collect();
     largest_first.sort_by_key(|&(_, pixels)| Reverse(pixels));
+    let budget = webp_memory.map(MemoryBudget::new);
     let mut converted: Vec<Option<String>> = vec![None; distinct.len()];
     let finished: Vec<(usize, String)> = largest_first
         .into_par_iter()
         .with_max_len(1)
         .filter_map(|(at, _)| {
-            let uri = reencode(decoded[at].as_ref()?, lossy, tuning)?;
+            let uri = reencode(decoded[at].as_ref()?, lossy, tuning, budget.as_ref())?;
             Some((at, uri))
         })
         .collect();
@@ -155,18 +173,128 @@ fn decode(uri: &str) -> Option<Decoded> {
     })
 }
 
-fn reencode(decoded: &Decoded, lossy: Option<ImageEncoding>, tuning: Tuning) -> Option<String> {
+fn reencode(
+    decoded: &Decoded,
+    lossy: Option<ImageEncoding>,
+    tuning: Tuning,
+    webp: Option<&MemoryBudget>,
+) -> Option<String> {
     lossy
         .and_then(|encoding| encode(decoded, encoding))
-        .or_else(|| recompress(decoded, tuning))
+        .or_else(|| recompress(decoded, tuning, webp))
 }
 
-fn recompress(decoded: &Decoded, tuning: Tuning) -> Option<String> {
+fn recompress(decoded: &Decoded, tuning: Tuning, webp: Option<&MemoryBudget>) -> Option<String> {
     if decoded.image.mime != Mime::ImagePng {
         return None;
     }
-    let smaller = recompress_png(&decoded.image.bytes, decoded.pixels, tuning)?;
-    Some(data::encode_base64(Mime::ImagePng, &smaller))
+    let png = recompress_png(&decoded.image.bytes, decoded.pixels, tuning);
+    let kept = png.as_ref().map_or(decoded.image.bytes.len(), Vec::len);
+    let converted = webp
+        .and_then(|budget| lossless_webp(decoded, budget))
+        .filter(|bytes| bytes.len() < kept);
+    match converted {
+        Some(bytes) => Some(data::encode_base64(Mime::ImageWebp, &bytes)),
+        None => png.map(|bytes| data::encode_base64(Mime::ImagePng, &bytes)),
+    }
+}
+
+struct MemoryBudget {
+    total: u64,
+    free: Mutex<u64>,
+    freed: Condvar,
+}
+
+struct Held<'a> {
+    budget: &'a MemoryBudget,
+    amount: u64,
+}
+
+impl MemoryBudget {
+    fn new(total: u64) -> MemoryBudget {
+        MemoryBudget {
+            total,
+            free: Mutex::new(total),
+            freed: Condvar::new(),
+        }
+    }
+
+    fn take(&self, amount: u64) -> Option<Held<'_>> {
+        if amount > self.total {
+            return None;
+        }
+        let mut free = self.free.lock().ok()?;
+        while *free < amount {
+            free = self.freed.wait(free).ok()?;
+        }
+        *free -= amount;
+        Some(Held {
+            budget: self,
+            amount,
+        })
+    }
+}
+
+impl Drop for Held<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut free) = self.budget.free.lock() {
+            *free += self.amount;
+        }
+        self.budget.freed.notify_all();
+    }
+}
+
+fn png_converts_exactly(png: &[u8]) -> bool {
+    let Some(mut rest) = png.strip_prefix(b"\x89PNG\r\n\x1a\n".as_slice()) else {
+        return false;
+    };
+    let mut seen_header = false;
+    while rest.len() >= 12 {
+        let Ok(length) = <[u8; 4]>::try_from(&rest[..4]).map(u32::from_be_bytes) else {
+            return false;
+        };
+        let length = length as usize;
+        let kind = &rest[4..8];
+        let Some(chunk) = rest.get(8..8 + length) else {
+            return false;
+        };
+        if !seen_header {
+            if kind != b"IHDR" || chunk.len() < 13 || chunk[8] == 16 {
+                return false;
+            }
+            seen_header = true;
+        } else if matches!(
+            kind,
+            b"cICP" | b"iCCP" | b"gAMA" | b"cHRM" | b"eXIf" | b"acTL"
+        ) {
+            return false;
+        }
+        let Some(next) = rest.get(12 + length..) else {
+            return false;
+        };
+        rest = next;
+    }
+    seen_header
+}
+
+fn lossless_webp(decoded: &Decoded, budget: &MemoryBudget) -> Option<Vec<u8>> {
+    if !png_converts_exactly(&decoded.image.bytes) {
+        return None;
+    }
+    let _held = budget.take(decoded.pixels.checked_mul(WEBP_BYTES_PER_PIXEL)?)?;
+    let rgba = image::load_from_memory_with_format(&decoded.image.bytes, image::ImageFormat::Png)
+        .ok()?
+        .into_rgba8();
+    let mut config = webp::WebPConfig::new().ok()?;
+    let thorough = decoded.pixels <= WEBP_THOROUGH_PIXELS;
+    config.lossless = 1;
+    config.exact = 1;
+    config.method = if thorough { 2 } else { 1 };
+    config.quality = if thorough { 50.0 } else { 20.0 };
+    let encoded = webp::Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height())
+        .encode_advanced(&config)
+        .ok()?;
+    Some(encoded.to_vec())
 }
 
 fn recompress_png(bytes: &[u8], pixels: u64, tuning: Tuning) -> Option<Vec<u8>> {
