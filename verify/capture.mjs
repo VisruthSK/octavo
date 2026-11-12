@@ -85,7 +85,35 @@ export function trackTimers() {
   };
 }
 
-async function observe({ lossy, probe, motion, pixels }) {
+async function fingerprints({ lossy, linked }) {
+  const remembered = (globalThis[Symbol.for("octavo.fingerprints")] ??= new Map());
+  const fingerprint = async (uri) => {
+    const key = `${lossy}:${uri}`;
+    if (!remembered.has(key)) {
+      const image = new Image();
+      image.src = uri;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+      const pixels = lossy ? [] : [...new Uint8Array(await crypto.subtle.digest("SHA-256", context.getImageData(0, 0, canvas.width, canvas.height).data))];
+      remembered.set(key, `${canvas.width}x${canvas.height}:${pixels.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`);
+    }
+    return remembered.get(key);
+  };
+  if (linked) return [];
+  const embedded = [...document.querySelectorAll("img")].flatMap((img) =>
+    ["src", "data-src"].flatMap((attribute) => {
+      const value = img.getAttribute(attribute);
+      return value && (lossy ? value.startsWith("data:image/") : /^data:image\/(png|webp)[;,]/.test(value)) ? [value] : [];
+    }),
+  );
+  return Promise.all(embedded.map((value) => fingerprint(value).catch(() => value)));
+}
+
+function observe({ lossy, probe, motion, linked, prints = [] }) {
   const describe = (element, pseudo) => {
     const style = getComputedStyle(element, pseudo);
     if (pseudo && style.content === "none") return "";
@@ -117,35 +145,17 @@ async function observe({ lossy, probe, motion, pixels }) {
     };
   }
 
-  const remembered = (globalThis[Symbol.for("octavo.fingerprints")] ??= new Map());
-  const fingerprint = async (uri) => {
-    const key = `${lossy}:${uri}`;
-    if (!remembered.has(key)) {
-      const image = new Image();
-      image.src = uri;
-      await image.decode();
-      const canvas = document.createElement("canvas");
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      const context = canvas.getContext("2d");
-      context.drawImage(image, 0, 0);
-      const pixels = lossy ? [] : [...new Uint8Array(await crypto.subtle.digest("SHA-256", context.getImageData(0, 0, canvas.width, canvas.height).data))];
-      remembered.set(key, `${canvas.width}x${canvas.height}:${pixels.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`);
-    }
-    return remembered.get(key);
-  };
   const clone = document.documentElement.cloneNode(true);
   clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
   const embedded = [...clone.querySelectorAll("img")].flatMap((img) =>
     ["src", "data-src"].flatMap((attribute) => {
       const value = img.getAttribute(attribute);
-      return value?.startsWith(lossy ? "data:image/" : "data:image/png") ? [{ img, attribute, value }] : [];
+      return value && (lossy ? value.startsWith("data:image/") : /^data:image\/(png|webp)[;,]/.test(value)) ? [{ img, attribute }] : [];
     }),
   );
-  const prints = await Promise.all(embedded.map(({ value }) => (pixels ? fingerprint(value).catch(() => value) : "skipped")));
   for (const [at, { img, attribute }] of embedded.entries()) {
     img.removeAttribute(attribute);
-    img.setAttribute(`pixels-${attribute}`, prints[at]);
+    img.setAttribute(`pixels-${attribute}`, prints[at] ?? "skipped");
   }
   const elements = [...document.body.querySelectorAll("*:not(script):not(style):not(link):not(noscript)")];
   const position = new Map(elements.map((element, at) => [element, at]));
@@ -472,7 +482,7 @@ export async function hasInteractions(browser, file) {
 
 const PATIENCE = 4;
 
-export async function capture(browser, file, scenario, lossy, { interact = true, patient = false } = {}) {
+export async function capture(browser, file, scenario, lossy, { interact = true, patient = false, linked = false } = {}) {
   const pace = patient ? PATIENCE : 1;
   const scripted = scenario.javaScriptEnabled !== false;
   const context = await browser.newContext({
@@ -508,12 +518,16 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
+    if (scripted) await page.evaluate(() => document.fonts.ready);
+    else await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 3000 }).catch(() => {});
+    await wait();
 
     const states = [];
     const record = async (label, extra = {}) => {
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
       const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" }).catch(() => null);
-      states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, pixels: scenario.pixels })), screenshot, ...extra });
+      const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
+      states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints })), screenshot, ...extra });
     };
     await wait();
     const forced = scripted && !scenario.motion ? await forcedStates(page) : { states: [], checks: emptyChecks(0) };
