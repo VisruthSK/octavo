@@ -332,17 +332,6 @@ struct Savings {
     after: usize,
 }
 
-fn describe(transform: Transform) -> &'static str {
-    match transform {
-        Transform::DeadLibrary => "unused Quarto libraries replaced by stubs",
-        Transform::MinifiedScript => "scripts minified",
-        Transform::PrunedStylesheet => "unused CSS removed, then minified",
-        Transform::RecompressedPng => "PNG images recompressed losslessly",
-        Transform::ReencodedImage => "images re-encoded in a smaller format",
-        Transform::Packed => "scripts, styles and images compressed into one blob",
-    }
-}
-
 fn audit(input: &Path, level: Mode) -> Result<(), String> {
     let src = read(input)?;
     let out = optimize(&src, level).map_err(|error| format!("{}: {error}", input.display()))?;
@@ -354,23 +343,23 @@ fn audit(input: &Path, level: Mode) -> Result<(), String> {
         total.after += step.after;
     }
     println!(
-        "{DIM}Audit at the {level} level. Each row covers only the part of the file that step changed, in the order the steps run.{DIM:#}\n"
-    );
-    println!(
-        "{DIM}{:<18} {:<51} {:>5} {:>10} {:>10} {:>10}{DIM:#}",
-        "step", "what it did", "count", "before", "after", "saved"
+        "{DIM}{:<18} {:>5} {:>10} {:>10} {:>10}{DIM:#}",
+        "step", "count", "before", "after", "saved"
     );
     for (name, total) in totals {
         println!(
-            "{name:<18} {:<51} {:>5} {:>10} {:>10} {GOOD}{:>10}{GOOD:#}",
-            describe(name),
+            "{name:<18} {:>5} {:>10} {:>10} {GOOD}{:>10}{GOOD:#}",
             total.count,
             size(total.before),
             size(total.after),
             size(total.before.saturating_sub(total.after)),
         );
     }
-    println!("\nWhole file: {}", summary(src.len(), out.html.len()));
+    println!(
+        "
+{level}: {}",
+        summary(src.len(), out.html.len())
+    );
     Ok(())
 }
 
