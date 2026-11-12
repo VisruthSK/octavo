@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Site mode: `octavo <directory>` optimizes the stylesheets, scripts, fonts and PNG images that a rendered site's pages share, once for the whole site and under the same file names. The library function is `optimize_directory`. `verify/site.mjs` compares every page of the original and the optimized site in Chromium.
+
 ## [0.1.0-alpha.1]
 
 First pre-release. The command line and the library API can still change. On Quarto's own 465 test documents the median page shrinks 12.8 times at the `packed` level.

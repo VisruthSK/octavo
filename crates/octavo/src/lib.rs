@@ -33,9 +33,11 @@ mod images;
 mod js;
 mod pack;
 mod quarto;
+mod site;
 mod words;
 
 pub use check::Url;
+pub use site::{SiteChange, SiteError, SiteKind, SiteReport, optimize_directory};
 
 use doc::{Doc, Edit, Edits};
 use std::{

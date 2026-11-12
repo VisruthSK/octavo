@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const scenarios = [
@@ -199,18 +200,38 @@ const HOVER = 3;
 const NAVIGATION = 4;
 const ALWAYS_OBSERVED = new Set([HOVER]);
 
-async function digestOf(page) {
-  return page.evaluate(async () => {
+async function digestOf(page, forms = []) {
+  return page.evaluate(async (forms) => {
     const clone = document.documentElement.cloneNode(true);
     clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
     for (const node of clone.querySelectorAll('[src^="data:"], [data-src^="data:"]')) {
       node.removeAttribute("src");
       node.removeAttribute("data-src");
     }
-    const text = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
+    const html = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
+    const text = forms.reduce((current, form) => current.split(form).join("{site}"), html);
     const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
     return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-  });
+  }, forms);
+}
+
+function rootForms(root) {
+  if (!root) return [];
+  const slashed = resolve(root).replaceAll("\\", "/");
+  const withoutDrive = slashed.replace(/^[A-Za-z]:/, "");
+  const url = pathToFileURL(resolve(root)).href;
+  const forms = new Set([url, decodeURI(url), `file://${slashed}`, slashed, withoutDrive, encodeURI(slashed), encodeURI(withoutDrive)]);
+  return [...forms].filter((form) => form.length > 3).sort((a, b) => b.length - a.length);
+}
+
+function scrubDeep(value, forms) {
+  if (!forms.length) return value;
+  if (typeof value === "string") return forms.reduce((text, form) => text.split(form).join("{site}"), value);
+  if (Array.isArray(value)) return value.map((item) => scrubDeep(item, forms));
+  if (value && typeof value === "object" && !ArrayBuffer.isView(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrubDeep(item, forms)]));
+  }
+  return value;
 }
 
 export async function hasInteractions(browser, file) {
@@ -226,8 +247,9 @@ export async function hasInteractions(browser, file) {
 
 const PATIENCE = 4;
 
-export async function capture(browser, file, scenario, lossy, { interact = true, patient = false } = {}) {
+export async function capture(browser, file, scenario, lossy, { interact = true, patient = false, root } = {}) {
   const pace = patient ? PATIENCE : 1;
+  const forms = rootForms(root);
   const wait = (page, { quiet = 150 } = {}) => settle(page, { quiet: quiet * pace, limit: 3000 * pace });
   const scripted = scenario.javaScriptEnabled !== false;
   const context = await browser.newContext({
@@ -263,12 +285,12 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
     await record("load", { forced, accessibility });
     if (interact && scripted && !scenario.media && !scenario.motion) {
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
-      let previous = await digestOf(page);
+      let previous = await digestOf(page, forms);
       states[0].digest = previous;
       for (const [index, interact] of interactions.entries()) {
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
         await wait(page, { quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : 150 });
-        const digest = await digestOf(page);
+        const digest = await digestOf(page, forms);
         if (digest === previous && !ALWAYS_OBSERVED.has(index)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });
           continue;
@@ -277,7 +299,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
         await record(`interaction ${index}`, { digest });
       }
     }
-    return { states, errors, requests };
+    return scrubDeep({ states, errors, requests }, forms);
   } finally {
     await context.close();
   }

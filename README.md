@@ -201,11 +201,44 @@ Octavo stops with an error when the input is not what it expects:
 
 Resources loaded from the network (a CDN script, a web font) do not stop the run. They are reported as warnings, because the page cannot work offline.
 
+## Sites
+
+`octavo <directory>` optimizes the shared files of a rendered Quarto website once, instead of once per page. Point it at the output of a normal `quarto render` (the `_site` directory), not at pages rendered with `embed-resources: true`:
+
+```sh
+octavo _site                  # writes _site.min
+octavo _site public           # writes public
+octavo _site _site            # rewrites in place
+node verify/site.mjs _site _site.min   # compare every page in Chromium
+```
+
+Octavo reads every page, builds one index of the words used by all pages and all scripts, and then changes each shared file once:
+
+| File | What happens |
+|---|---|
+| Stylesheets that a page links, and any they import | Rules are pruned against the whole site's index, so a rule stays if any page needs it, and the sheet is minified |
+| Scripts that a page loads | Minified, as a module or a classic script according to how the page loads it |
+| WOFF, TrueType and OpenType fonts | Converted to WOFF2, and the `url()` that names them is rewritten. The original font is removed unless another file mentions its name |
+| PNG images | Recompressed without changing a pixel |
+
+Pages and every other file are copied unchanged, and files keep their names, so the site works as before and browsers still cache each shared file once. Text fonts are never subsetted and images are never re-encoded lossily in this mode. A browser that has cached a file under its old content needs to revalidate it, so serve optimized files with a new URL or a short cache lifetime.
+
+A visitor's download, with each file Brotli-compressed as a static host sends it and shared files fetched once:
+
+| Site | Pages | First page | Five pages | Same site after `octavo` |
+|---|---|---|---|---|
+| Text pages | 5 | 351 KB | 379 KB | 260 KB and 287 KB |
+| Blog with a grid listing | 6 | 439 KB | 525 KB | 348 KB and 433 KB |
+| Listings with 30 screenshots | 15 | 1,413 KB | 1,989 KB | 1,093 KB and 1,524 KB |
+
+The same pages rendered with `embed-resources: true` each carry their own copy of the dependencies: 617 KB for the first page of the text site and 4.3 MB for five, because 49% to 89% of the bytes are copies repeated across pages. Octavo shrinks those pages, but a reader of several pages still downloads several times what the normal site sends, so use per-page embedding for documents that are read once and site mode for sites.
+
 ## Limits
 
 - `packed` rebuilds stylesheets with JavaScript while the page is parsed, so it needs JavaScript.
 - The Brotli decoder runs through `new Function`, and `packed` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` header that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, allow `unsafe-eval` for the packed pages or use `--level scripts`, which never needs it.
 - Modules, import maps and elements whose attributes contain character references are never packed.
+- Site mode follows static references (`<link>`, `<script src>`, `@import` and `url()`). A file that a script loads at run time under a name Octavo cannot see is left as it is, and a stylesheet that no page links is not pruned.
 - `--subset-fonts` can change how some hinted fonts are drawn on Linux, as described under [Fonts](#fonts).
 
 ## The libraries doing the real work
