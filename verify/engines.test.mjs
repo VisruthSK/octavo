@@ -26,10 +26,8 @@ test("every engine is listed and described", () => {
   }
 });
 
-test("chromium forces the pseudo states through the protocol and the others with real events", () => {
-  assert.equal(capabilities("chromium").states, "protocol");
-  assert.equal(capabilities("firefox").states, "pointer");
-  assert.equal(capabilities("webkit").states, "pointer");
+test("every engine applies the forced states with real pointer and keyboard events", () => {
+  for (const name of engineNames) assert.equal(capabilities(name).forcedStates, "pointer", name);
 });
 
 test("every engine has a pixel tolerance", () => {

@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import { capabilities } from "./browser.mjs";
+import { capabilities } from "./engines.mjs";
 
 export const SCENARIOS = {
   "desktop-light": { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light", pixels: true },
@@ -103,7 +103,19 @@ async function observe({ lossy, probe, motion, pixels }) {
     }
     return text;
   };
-  if (probe) return describe(document.querySelectorAll(probe.selector)[probe.index], null);
+  if (probe) {
+    const element = document.querySelectorAll(probe.selector)[probe.index];
+    if (!element) return { style: "", states: {} };
+    return {
+      style: describe(element, null),
+      states: {
+        hover: element.matches(":hover"),
+        focus: element.matches(":focus"),
+        focusVisible: element.matches(":focus-visible"),
+        active: element.matches(":active"),
+      },
+    };
+  }
 
   const remembered = (globalThis[Symbol.for("octavo.fingerprints")] ??= new Map());
   const fingerprint = async (uri) => {
@@ -181,52 +193,130 @@ async function observe({ lossy, probe, motion, pixels }) {
   };
 }
 
+const GUARD = () => {
+  const hold = (event) => event.stopImmediatePropagation();
+  const block = (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  for (const type of ["mousedown", "mouseup"]) document.addEventListener(type, hold, true);
+  document.addEventListener("click", block, true);
+  window.octavoGuard = { hold, block };
+};
+
+const UNGUARD = () => {
+  if (!window.octavoGuard) return;
+  for (const type of ["mousedown", "mouseup"]) document.removeEventListener(type, window.octavoGuard.hold, true);
+  document.removeEventListener("click", window.octavoGuard.block, true);
+  delete window.octavoGuard;
+};
+
+const STATES = ["hover", "focus", "active"];
+
+const emptyChecks = (elements) => ({ elements, hover: 0, focus: 0, focusVisible: 0, active: 0 });
+
+async function focusWithTab(page, index) {
+  for (let step = 0; step < 80; step++) {
+    await page.keyboard.press("Tab");
+    const at = await page.evaluate((probe) => {
+      const target = document.querySelectorAll(probe.selector)[probe.index];
+      const active = document.activeElement;
+      const key = active ? `${active.tagName}:${active.id}:${(active.textContent || "").slice(0, 16)}` : "";
+      const state = (window.octavoTab ??= { key: "", stuck: 0 });
+      state.stuck = state.key === key ? state.stuck + 1 : 0;
+      state.key = key;
+      if (!target || !active || active === document.body) return { reached: false, passed: false, stuck: state.stuck > 2 };
+      if (active === target) return { reached: true, passed: false, stuck: false };
+      const passed = Boolean(target.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return { reached: false, passed, stuck: state.stuck > 2 };
+    }, { selector: INTERACTIVE, index });
+    if (at.reached) return true;
+    if (at.passed || at.stuck) return false;
+  }
+  return false;
+}
+
 async function pointerStates(page) {
   const interactive = page.locator(INTERACTIVE);
   const count = Math.min(await interactive.count(), 40);
   const states = [];
-  const observed = (label, index) =>
-    page.evaluate(observe, { probe: { selector: INTERACTIVE, index } }).then((style) => states.push([label + " on interactive #" + index, style]));
-  for (let index = 0; index < count; index++) {
-    const element = interactive.nth(index);
-    const box = await element.boundingBox().catch(() => null);
-    if (!box) {
-      for (const state of ["hover", "focus", "active"]) states.push([`:${state} on interactive #${index}`, "hidden"]);
-      continue;
+  const checks = emptyChecks(0);
+  const scroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
+  const restore = () => page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), scroll);
+  const probe = (index) => page.evaluate(observe, { probe: { selector: INTERACTIVE, index } });
+  await page.evaluate(GUARD);
+  try {
+    for (let index = 0; index < count; index++) {
+      const element = interactive.nth(index);
+      await element.scrollIntoViewIfNeeded().catch(() => {});
+      let box = await element.boundingBox().catch(() => null);
+      if (!box || !box.width || !box.height) {
+        for (const state of STATES) states.push([`:${state} on interactive #${index}`, "hidden"]);
+        continue;
+      }
+      checks.elements += 1;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      let seen = await probe(index);
+      if (!seen.states.hover) {
+        await page.waitForTimeout(50);
+        seen = await probe(index);
+      }
+      states.push([`:hover on interactive #${index}`, seen.style]);
+      if (seen.states.hover) checks.hover += 1;
+      await page.evaluate(() => document.activeElement?.blur());
+      if (capabilities().focusVisible) {
+        await page.keyboard.press("Shift");
+        await element.focus({ timeout: 1000 }).catch(() => {});
+      } else {
+        await focusWithTab(page, index);
+      }
+      seen = await probe(index);
+      states.push([`:focus on interactive #${index}`, seen.style]);
+      if (seen.states.focus) checks.focus += 1;
+      if (seen.states.focusVisible) checks.focusVisible += 1;
+      await page.evaluate(() => document.activeElement?.blur());
+      await restore();
+      await page.mouse.down();
+      seen = await probe(index);
+      states.push([`:active on interactive #${index}`, seen.style]);
+      if (seen.states.active) checks.active += 1;
+      await page.mouse.up();
+      await restore();
     }
-    const x = box.x + box.width / 2;
-    const y = box.y + box.height / 2;
-    await page.mouse.move(x, y);
-    await observed(":hover", index);
-    await page.keyboard.press("Shift");
-    await element.focus({ timeout: 1000 }).catch(() => {});
-    await observed(":focus", index);
-    await page.evaluate(() => document.activeElement?.blur());
-    await page.mouse.down();
-    await observed(":active", index);
-    await page.mouse.move(-1, -1);
-    await page.mouse.up();
+  } finally {
+    await page.evaluate(UNGUARD);
+    await page.mouse.move(0, 0).catch(() => {});
+    await restore();
   }
-  return states;
+  return { states, checks };
 }
 
-async function forcedStates(page) {
-  if (capabilities().states === "pointer") return pointerStates(page);
+async function protocolStates(page) {
   const session = await page.context().newCDPSession(page);
   await session.send("DOM.enable");
   await session.send("CSS.enable");
   const { root } = await session.send("DOM.getDocument", { depth: 0 });
   const { nodeIds } = await session.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector: INTERACTIVE });
   const states = [];
+  const checks = emptyChecks(Math.min(nodeIds.length, 40));
   for (const [index, nodeId] of nodeIds.slice(0, 40).entries()) {
     for (const state of [["hover"], ["focus", "focus-visible"], ["active"]]) {
       await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: state });
-      states.push([`:${state[0]} on interactive #${index}`, await page.evaluate(observe, { probe: { selector: INTERACTIVE, index } })]);
+      const seen = await page.evaluate(observe, { probe: { selector: INTERACTIVE, index } });
+      states.push([`:${state[0]} on interactive #${index}`, seen.style]);
     }
+    checks.hover += 1;
+    checks.focus += 1;
+    checks.focusVisible += 1;
+    checks.active += 1;
     await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [] });
   }
   await session.detach();
-  return states;
+  return { states, checks };
+}
+
+async function forcedStates(page) {
+  return capabilities().forcedStates === "protocol" ? protocolStates(page) : pointerStates(page);
 }
 
 const QUIET = 150;
@@ -426,10 +516,10 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
       states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, pixels: scenario.pixels })), screenshot, ...extra });
     };
     await wait();
-    const forced = scripted && !scenario.motion ? await forcedStates(page) : [];
+    const forced = scripted && !scenario.motion ? await forcedStates(page) : { states: [], checks: emptyChecks(0) };
     const accessibility = await settledAccessibilityTree(page);
     await wait();
-    await record("load", { forced, accessibility });
+    await record("load", { forced: forced.states, accessibility });
     const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
     if (interact && scripted && scenario.sweep) {
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
@@ -447,7 +537,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
         await record(`interaction ${index}`, { digest });
       }
     }
-    return { states, errors, requests, base };
+    return { states, errors, requests, base, checks: forced.checks };
   } finally {
     await context.close();
   }

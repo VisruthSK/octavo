@@ -3,21 +3,21 @@ export const engineNames = ["chromium", "firefox", "webkit"];
 const table = {
   chromium: {
     label: "Chromium",
-    states: "protocol",
+    forcedStates: "pointer",
     focusVisible: true,
     subtle: true,
     pixel: { channel: 1, faint: 8, budget: 12 },
   },
   firefox: {
     label: "Firefox",
-    states: "pointer",
+    forcedStates: "pointer",
     focusVisible: true,
     subtle: true,
     pixel: { channel: 1, faint: 8, budget: 12 },
   },
   webkit: {
     label: "WebKit",
-    states: "pointer",
+    forcedStates: "pointer",
     focusVisible: true,
     subtle: true,
     pixel: { channel: 1, faint: 8, budget: 12 },
@@ -36,7 +36,7 @@ export const engineNotice = (name = engineName()) => `${capabilities(name).label
 
 export const pixelTolerance = (name = engineName()) => capabilities(name).pixel;
 
-export const forcedStates = (name = engineName()) => capabilities(name).states;
+export const forcedStates = (name = engineName()) => capabilities(name).forcedStates;
 
 export const focusVisible = (name = engineName()) => capabilities(name).focusVisible;
 

@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeBrowser, verify, withTimeout } from "./verify.mjs";
+import { checksOf, engineName, engineNames } from "./engines.mjs";
 
 after(closeBrowser);
 
@@ -28,6 +29,8 @@ const base = [
   "a.link{color:rgb(0,0,200)}",
   "a.link{transition:color 2s}",
   "a.link:hover{color:rgb(200,0,0)}",
+  "a.link:focus{color:rgb(0,200,0)}",
+  "a.link:active{color:rgb(200,200,0)}",
   "@media (max-width:500px){h1{font-size:12px}}",
   "@media (min-width:700px) and (max-width:900px){h1{font-size:40px}}",
   "@media (prefers-color-scheme:dark){body{background:rgb(0,0,0);color:rgb(255,255,255)}}",
@@ -52,10 +55,24 @@ test("an identical copy passes every scenario", async () => {
   assert.deepEqual(await scenariosFailing(page(base), page(base)), []);
 });
 
+test(`the self-test runs in ${engineName()}`, () => {
+  assert.ok(engineNames.includes(engineName()));
+});
+
+test("every forced state is applied on every engine", async () => {
+  const report = await verify(write("original", page(base)), write("changed", page(base)));
+  for (const { scenario, checks } of report) {
+    if (scenario === "motion" || scenario === "no-js") continue;
+    assert.deepEqual(checksOf(checks), [], scenario);
+  }
+});
+
 const breakages = [
   ["a dropped keyframes rule", (css) => css.replace("@keyframes slide{from{margin-left:0}to{margin-left:100px}}", ""), "motion"],
   ["a changed animation duration", (css) => css.replace("2s infinite", "3s infinite"), "motion"],
   ["a dropped hover rule", (css) => css.replace("a.link:hover{color:rgb(200,0,0)}", ""), "desktop-light"],
+  ["a dropped focus rule", (css) => css.replace("a.link:focus{color:rgb(0,200,0)}", ""), "desktop-light"],
+  ["a dropped active rule", (css) => css.replace("a.link:active{color:rgb(200,200,0)}", ""), "desktop-light"],
   ["a dropped mobile media rule", (css) => css.replace("@media (max-width:500px){h1{font-size:12px}}", ""), "mobile"],
   ["a dropped tablet media rule", (css) => css.replace("@media (min-width:700px) and (max-width:900px){h1{font-size:40px}}", ""), "tablet"],
   ["a dropped dark rule", (css) => css.replace("@media (prefers-color-scheme:dark){body{background:rgb(0,0,0);color:rgb(255,255,255)}}", ""), "desktop-dark"],

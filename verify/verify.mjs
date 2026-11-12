@@ -2,6 +2,7 @@ import { cpus } from "node:os";
 import { launch } from "./browser.mjs";
 import { capture, hasInteractions, scenariosFor } from "./capture.mjs";
 import { compare, signature } from "./compare.mjs";
+import { checksOf, engineNotice } from "./engines.mjs";
 
 export const pages = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
 
@@ -186,7 +187,7 @@ export async function verifyLevels(original, entries, { lossy = false } = {}) {
           entry.sweep,
         );
         timing.compare += elapsed(startedCompare);
-        reports[plans.indexOf(plan)].push({ scenario: scenario.name, issues, rounded });
+        reports[plans.indexOf(plan)].push({ scenario: scenario.name, issues, rounded, checks: before.checks });
       }
     }
   }
@@ -214,8 +215,12 @@ if (process.argv[1].endsWith("verify.mjs")) {
     ({ scenario }) => !(flags.includes("--allow-js-required") && scenario === "no-js"),
   );
   await closeBrowser();
+  console.log(engineNotice());
   for (const { scenario, issues } of report) {
     console.log(scenario.padEnd(14), issues.length ? "FAIL" : "ok", ...issues.map((issue) => `\n    ${issue}`));
+  }
+  for (const { scenario, checks } of report) {
+    for (const text of checksOf(checks)) console.log(`${scenario}: degraded, ${text}`);
   }
   process.exit(report.some(({ issues }) => issues.length) ? 1 : 0);
 }

@@ -69,6 +69,8 @@ export function differences(left, right, tolerance = pixelTolerance()) {
   const budget = tolerance.budget;
   let count = 0;
   let rounded = 0;
+  let different = 0;
+  let max = 0;
   const faint = [];
   let [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Infinity, Infinity, -1, -1];
   let [minX, minY, maxX, maxY] = [Infinity, Infinity, -1, -1];
@@ -82,7 +84,11 @@ export function differences(left, right, tolerance = pixelTolerance()) {
         Math.abs(left.data[at + 2] - right.data[at + 2]),
         Math.abs(left.data[at + 3] - right.data[at + 3]),
       );
-      if (worst > 0) [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Math.min(anyMinX, x), Math.min(anyMinY, y), Math.max(anyMaxX, x), Math.max(anyMaxY, y)];
+      if (worst > 0) {
+        different += 1;
+        max = Math.max(max, worst);
+        [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Math.min(anyMinX, x), Math.min(anyMinY, y), Math.max(anyMaxX, x), Math.max(anyMaxY, y)];
+      }
       if (worst <= rounding) {
         if (worst > 0) rounded += 1;
         continue;
@@ -103,7 +109,7 @@ export function differences(left, right, tolerance = pixelTolerance()) {
     first ||= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
     [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
   }
-  return { count, rounded, box: [minX, minY, maxX, maxY], anyBox: [anyMinX, anyMinY, anyMaxX, anyMaxY], where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
+  return { count, rounded, different, max, box: [minX, minY, maxX, maxY], anyBox: [anyMinX, anyMinY, anyMaxX, anyMaxY], where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
 }
 
 function compareScreenshots(a, b, lossy, stats) {

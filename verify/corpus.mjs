@@ -9,6 +9,7 @@ import { readRendered, renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
 import { scenariosFor } from "./capture.mjs";
 import { engineName, engineNotice } from "./browser.mjs";
+import { checksOf } from "./engines.mjs";
 
 const SLOWDOWN_LIMIT = 100;
 const RATE_FLOOR_BYTES = 256 * 1024;
@@ -140,6 +141,8 @@ const timing = { original: 0, optimized: 0, compare: 0, cached: 0 };
 const browserCache = { hits: 0, misses: 0 };
 let browserName = "";
 const engineTag = engineName() === "chromium" ? "" : `[${engineName()}] `;
+const browserChecks = { scenarios: new Set(), totals: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0 }, degraded: [] };
+
 if (browser) {
   const { closeBrowser, pages, verifyLevels } = await import("./verify.mjs");
   const { browserIdentity } = await import("./browser.mjs");
@@ -180,6 +183,13 @@ if (browser) {
     for (const [at, plan] of plans.entries()) {
       const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
       const report = measured.reports[at];
+      for (const { scenario, checks } of report) {
+        if (!checks) continue;
+        browserChecks.scenarios.add(scenario);
+        for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) browserChecks.totals[state] += checks[state] ?? 0;
+        const missing = checksOf(checks);
+        if (missing.length) browserChecks.degraded.push({ id: entry.id, scenario, missing });
+      }
       if (plan.revalidate) await revalidateVerdict(
         plan.key,
         true,
@@ -281,6 +291,20 @@ lines.push(
   ``,
   `Total browser verification: ${total.toFixed(1)} s for ${browserCache.hits + browserCache.misses} comparisons (${browserCache.hits} cached) by ${browserName}.`,
 );
+if (browser) {
+  const totals = browserChecks.totals;
+  lines.push(
+    ``,
+    `## Browser checks`,
+    ``,
+    `Engine ${engineNotice()} compared the scenarios ${[...browserChecks.scenarios].join(", ")}.`,
+    `Forced hover, focus and active states were applied with real pointer and keyboard events in every scenario with scripts, and were left out in the motion scenario, where the animations run, and in the no-js scenario, where scripts are off.`,
+    `Checked ${totals.elements} elements: hover applied to ${totals.hover}, focus to ${totals.focus}, focus visible to ${totals.focusVisible}, active to ${totals.active}.`,
+    ``,
+    `Degraded checks: ${browserChecks.degraded.length ? browserChecks.degraded.length : "none"}.`,
+    ...browserChecks.degraded.map((entry) => `- ${entry.id} (${entry.scenario}): ${entry.missing.join(", ")}`),
+  );
+}
 
 writeFileSync(join(outDirectory, "report.md"), `${lines.join("\n")}\n`);
 writeFileSync(join(outDirectory, "report.json"), `${JSON.stringify(results.map(({ input, output, ...rest }) => rest), null, 2)}\n`);
