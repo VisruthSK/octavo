@@ -264,7 +264,7 @@ let out = simplify(&html, options)?.pack(Mode::Packed);
 
 ## Verification
 
-`verify/` opens the original and the optimized file in Chromium and compares them. A browser is found automatically (Chrome, Chromium or Edge, or Playwright's own build). Set `CHROME_PATH` to choose one. Set `OCTAVO_BROWSER=firefox` or `OCTAVO_BROWSER=webkit` to run the same comparison in Playwright's Firefox or WebKit build (`npx playwright-core install firefox webkit`). The original and the optimized page always run in the same engine. Firefox and WebKit skip the forced hover, focus and active states, which need Chromium's DevTools protocol, and the report says so. It compares:
+`verify/` opens the original and the optimized file in a browser and compares them. The engine is Chromium by default: a browser is found automatically (Chrome, Chromium or Edge, or Playwright's own build), and `CHROME_PATH` chooses one. Set `OCTAVO_BROWSER=firefox` or `OCTAVO_BROWSER=webkit` to run the same comparison in Playwright's Firefox or WebKit build (`npx playwright-core install firefox webkit`). The original and the optimized page always run in the same engine. Every engine runs the same scenarios and the same checks: the hover, focus and active states of the first forty interactive elements are applied with a real pointer, a real focus and a real mouse press, so no engine needs a path of its own. The report lists the scenarios that ran and the checks that could not be applied. It compares:
 
 - console errors and network requests
 - the serialized DOM and the accessibility tree
@@ -272,17 +272,19 @@ let out = simplify(&html, options)?.pack(Mode::Packed);
 - loaded fonts and full-page screenshots
 - every running animation: its target, timing and keyframes, so a pruned `@keyframes` rule is caught
 
-Screenshots must match pixel for pixel. The checker allows one level out of 255 in a colour channel for rendering rounding, and up to twelve isolated pixels off by at most eight levels for antialiasing noise. Computed styles and layout boxes are always compared exactly, and every tolerated pixel is counted in the report. A linear gradient and its mirror image compare as equal, because they paint the same pixels.
+Screenshots must match pixel for pixel. The checker allows one level out of 255 in a colour channel for rendering rounding, and up to twelve isolated pixels off by at most eight levels for antialiasing noise. The tolerance comes from measurement: rendering the same pages twice in the same engine and counting the pixels that differ. Chromium differed in 0 of 275,589,552 pixels, Firefox in 0 of 10,383,312 and WebKit in 0 of 10,383,312, and no colour channel moved at all, so all three engines keep that tolerance. `node verify/noise.mjs` repeats the measurement and writes the numbers to `out/noise/noise.json`. Computed styles and layout boxes are always compared exactly, and every tolerated pixel is counted in the report. A linear gradient and its mirror image compare as equal, because they paint the same pixels.
 
 This runs in desktop light, desktop dark, mobile, tablet, print, JavaScript-off and animations-on scenarios, followed by an interaction sweep: colour-scheme toggle, tabs, collapses, hovers, key presses and scrolling. `Math.random` is seeded so widget ids repeat, and transitions are switched off (except in the animations-on scenario) so timing does not leak into the comparison.
 
-When a comparison finds a difference, both pages are captured up to three more times, with the later captures waiting longer. A difference counts only if it appears in every capture and neither page ever disagrees with its own recaptures. A page that settles into different stable states on different loads is therefore not reported as a difference, and a real change always is. `verify/verifier.test.mjs` checks the checker: it breaks a page in a dozen specific ways (a dropped keyframes, hover, dark, print or media rule, a colour off by one, a 0.02 px layout shift) and each must be caught.
+When a comparison finds a difference, both pages are captured up to three more times, with the later captures waiting longer. A difference counts only if it appears in every capture and neither page ever disagrees with its own recaptures. A page that settles into different stable states on different loads is therefore not reported as a difference, and a real change always is. `verify/verifier.test.mjs` checks the checker: it breaks a page in a dozen specific ways (a dropped keyframes, hover, focus, active, dark, print or media rule, a colour off by one, a 0.02 px layout shift) and each must be caught. The same test runs on every engine, and it fails when a forced state could not be applied to the page at all.
 
 With `--lossy-images`, pass `--lossy` to the checker. Image bytes are then not compared, dimensions still are, and screenshots may differ by up to 2% of pixels.
 
 ```sh
 cargo test
 cd verify && npm install && node --test
+OCTAVO_BROWSER=firefox node --test
+OCTAVO_BROWSER=webkit node --test
 node verify.mjs original.html optimized.html [--allow-js-required]
 node bench.mjs packed ../corpus/html/train ../corpus/html/test
 ```
