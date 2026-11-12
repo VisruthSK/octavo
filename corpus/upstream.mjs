@@ -99,9 +99,9 @@ export const featureOf = (path) => {
   return top === "smoke-all" ? `${top}/${next}` : top;
 };
 
-const render = (file, outputDirectory) =>
+const render = (file, outputDirectory, embed = true) =>
   new Promise((done) => {
-    const child = spawn(quarto, ["render", file, "-M", "embed-resources:true", "--output-dir", outputDirectory, "--quiet"], {
+    const child = spawn(quarto, ["render", file, ...(embed ? ["-M", "embed-resources:true"] : []), "--output-dir", outputDirectory, "--quiet"], {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
@@ -249,6 +249,18 @@ export async function renderSelected({ jobs = 4, tier = "full", shard } = {}) {
   done.sort((a, b) => a.id.localeCompare(b.id));
   writeFileSync(indexPath, `${JSON.stringify(done, null, 2)}\n`);
   return done;
+}
+
+export async function renderLinked(entry, outputDirectory) {
+  const source = readJson(sourcesPath).find((candidate) => candidate.name === entry.source.name);
+  const file = join(extract(source, await download(source)), entry.source.path);
+  return inDirectory(dirname(file), async () => {
+    rmSync(outputDirectory, { recursive: true, force: true });
+    mkdirSync(outputDirectory, { recursive: true });
+    const outcome = await render(file, outputDirectory, false);
+    const page = readdirSync(outputDirectory).find((name) => name.endsWith(".html"));
+    return { ...outcome, page: page ? join(outputDirectory, page) : null };
+  });
 }
 
 export const renderedPath = (id) => join(rendered, `${id}.html`);
