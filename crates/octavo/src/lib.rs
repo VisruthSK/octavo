@@ -660,7 +660,9 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         .chain(styles)
         .chain(images)
         .collect();
+    let edits = Edits::new(edits);
     let applied = edits
+        .kept()
         .iter()
         .map(|edit| Applied {
             transform: edit.transform,
@@ -669,7 +671,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             after: edit.text.len(),
         })
         .collect();
-    let html = Edits::new(edits).apply(src);
+    let html = edits.apply(src);
     Ok(Simplified {
         scanned: html::Scanned::new(html),
         compression: options.compression,

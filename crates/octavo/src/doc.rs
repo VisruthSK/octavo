@@ -39,6 +39,10 @@ impl Edits {
         Edits { items }
     }
 
+    pub(crate) fn kept(&self) -> &[Edit] {
+        &self.items
+    }
+
     pub(crate) fn apply(&self, src: &str) -> String {
         let mut out = String::with_capacity(src.len());
         let mut at = 0;
@@ -153,5 +157,45 @@ impl<'a> Doc<'a> {
         }
         words.add_text(&self.src[at..]);
         words
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Target;
+
+    fn edit(span: Range<usize>, text: &str, transform: Transform) -> Edit {
+        Edit {
+            span,
+            text: text.to_string(),
+            transform,
+            target: Target::Resource("x".to_string()),
+        }
+    }
+
+    #[test]
+    fn an_overlapping_edit_is_neither_applied_nor_kept() {
+        let edits = Edits::new(vec![
+            edit(0..6, "a", Transform::MinifiedScript),
+            edit(3..9, "b", Transform::PrunedStylesheet),
+            edit(9..12, "c", Transform::RecompressedPng),
+        ]);
+        let kept: Vec<Transform> = edits.kept().iter().map(|edit| edit.transform).collect();
+        assert_eq!(
+            kept,
+            [Transform::MinifiedScript, Transform::RecompressedPng]
+        );
+        assert_eq!(edits.apply("0123456789ab"), "a678c");
+    }
+
+    #[test]
+    fn equal_spans_keep_the_first_proposal() {
+        let edits = Edits::new(vec![
+            edit(2..4, "x", Transform::DeadLibrary),
+            edit(2..4, "y", Transform::MinifiedScript),
+        ]);
+        assert_eq!(edits.kept().len(), 1);
+        assert_eq!(edits.apply("abcdef"), "abxef");
     }
 }
