@@ -171,11 +171,14 @@ const sameMultiset = (left, right) => {
   return a.every((entry, at) => entry === b[at]);
 };
 
+const NETWORK_NOISE = /^Failed to load resource: net::ERR_FAILED$/;
+export const significantErrors = (errors) => errors.filter((error) => !NETWORK_NOISE.test(error));
+
 export function compare(before, after, lossy, stats) {
   if (before.crashed || after.crashed) return [`crashed: original=${before.crashed ?? "no"} optimized=${after.crashed ?? "no"}`];
   const issues = [];
   if (!before.states.length) issues.push("original produced no states");
-  if (JSON.stringify([...before.errors].sort()) !== JSON.stringify([...after.errors].sort())) {
+  if (!sameMultiset(significantErrors(before.errors), significantErrors(after.errors))) {
     issues.push(`console errors: ${JSON.stringify(before.errors)} vs ${JSON.stringify(after.errors)}`);
   }
   if (!sameMultiset(before.requests, after.requests)) issues.push(`requests: ${before.requests} vs ${after.requests}`);

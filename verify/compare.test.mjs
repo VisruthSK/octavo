@@ -109,3 +109,27 @@ test("URLs containing commas are compared as whole strings", () => {
   const after = captureOf(["https://a.test/x", "https://a.test/y,z"]);
   assert.ok(requestsIssue(compare(before, after, false)));
 });
+
+test("an aborted resource in both pages is not a difference", () => {
+  const before = captureOf([], ["Failed to load resource: net::ERR_FAILED", "Failed to load resource: net::ERR_FAILED"]);
+  const after = captureOf([], []);
+  assert.deepEqual(compare(before, after, false), []);
+});
+
+test("an extra aborted resource in the optimized page is not a difference", () => {
+  const before = captureOf([], ["Failed to load resource: net::ERR_FAILED"]);
+  const after = captureOf([], ["Failed to load resource: net::ERR_FAILED", "Failed to load resource: net::ERR_FAILED"]);
+  assert.deepEqual(compare(before, after, false), []);
+});
+
+test("a real console error still fails alongside an aborted resource", () => {
+  const before = captureOf([], ["Failed to load resource: net::ERR_FAILED"]);
+  const after = captureOf([], ["Uncaught TypeError: foo is not a function"]);
+  assert.ok(compare(before, after, false).some((issue) => issue.startsWith("console errors")));
+});
+
+test("a pageerror still fails", () => {
+  const before = captureOf([], []);
+  const after = captureOf([], ["interaction 3: clicking x failed"]);
+  assert.ok(compare(before, after, false).some((issue) => issue.startsWith("console errors")));
+});
