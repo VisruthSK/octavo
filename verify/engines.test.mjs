@@ -17,15 +17,15 @@ test("an unknown engine is refused with its name", () => {
   assert.throws(() => engineName({ OCTAVO_BROWSER: "toString" }), /not toString/);
 });
 
-test("only chromium forces pseudo-class states", () => {
-  assert.equal(capabilities("chromium").forcedStates, true);
-  assert.equal(capabilities("firefox").forcedStates, false);
-  assert.equal(capabilities("webkit").forcedStates, false);
+test("only chromium forces pseudo-class states through the protocol", () => {
+  assert.equal(capabilities("chromium").states, "protocol");
+  assert.equal(capabilities("firefox").states, "pointer");
+  assert.equal(capabilities("webkit").states, "pointer");
 });
 
-test("the report names what a non-chromium engine skips", () => {
+test("the report names how a non-chromium engine applies states", () => {
   assert.equal(engineNotice("chromium"), "chromium");
-  assert.match(engineNotice("webkit"), /^webkit .*not checked/);
+  assert.match(engineNotice("webkit"), /^webkit .*real pointer and keyboard events/);
 });
 
 test("chromium launch options are passed through and other engines drop chromium flags", () => {

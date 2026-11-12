@@ -181,8 +181,37 @@ async function observe({ lossy, probe, motion, pixels }) {
   };
 }
 
+async function pointerStates(page) {
+  const interactive = page.locator(INTERACTIVE);
+  const count = Math.min(await interactive.count(), 40);
+  const states = [];
+  const observed = (label, index) =>
+    page.evaluate(observe, { probe: { selector: INTERACTIVE, index } }).then((style) => states.push([label + " on interactive #" + index, style]));
+  for (let index = 0; index < count; index++) {
+    const element = interactive.nth(index);
+    const box = await element.boundingBox().catch(() => null);
+    if (!box) {
+      for (const state of ["hover", "focus", "active"]) states.push([`:${state} on interactive #${index}`, "hidden"]);
+      continue;
+    }
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await observed(":hover", index);
+    await page.keyboard.press("Shift");
+    await element.focus({ timeout: 1000 }).catch(() => {});
+    await observed(":focus", index);
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.mouse.down();
+    await observed(":active", index);
+    await page.mouse.move(-1, -1);
+    await page.mouse.up();
+  }
+  return states;
+}
+
 async function forcedStates(page) {
-  if (!capabilities().forcedStates) return [];
+  if (capabilities().states === "pointer") return pointerStates(page);
   const session = await page.context().newCDPSession(page);
   await session.send("DOM.enable");
   await session.send("CSS.enable");

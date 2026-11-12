@@ -92,10 +92,16 @@ export const engineName = (env = process.env) => {
   return name;
 };
 
-export const capabilities = (name = engineName()) => ({ forcedStates: name === "chromium" });
+const profiles = {
+  chromium: { states: "protocol" },
+  firefox: { states: "pointer" },
+  webkit: { states: "pointer" },
+};
+
+export const capabilities = (name = engineName()) => profiles[name];
 
 export const engineNotice = (name = engineName()) =>
-  capabilities(name).forcedStates ? name : `${name} (forced hover, focus and active states are not checked)`;
+  capabilities(name).states === "protocol" ? name : `${name} (hover, focus and active states are applied with real pointer and keyboard events)`;
 
 export const launchOptions = (name, options, executablePath) => {
   if (name === "chromium") return { executablePath, ...options };
