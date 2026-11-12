@@ -11,6 +11,25 @@ octavo --audit report.html                  # what each step would save
 
 Octavo does not implement a CSS minifier, a JavaScript compressor or an image codec. It knows where Quarto's weight comes from and when removing it is safe, and it hands each job to a library built for it. The libraries are listed [below](#the-libraries-doing-the-work).
 
+## Install
+
+Every release has a prebuilt binary for Linux, macOS and Windows. The one-line installers download the right one:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/VisruthSK/octavo/releases/latest/download/octavo-cli-installer.sh | sh
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/VisruthSK/octavo/releases/latest/download/octavo-cli-installer.ps1 | iex"
+```
+
+To build from source, run `cargo install octavo-cli`. The font subsetter is HarfBuzz, compiled from C++, so you need a C++ compiler. On Windows with MSVC, the compiler stops with `C1128: number of sections exceeded object file format limit` unless you pass `/bigobj`, so set it first. Builds inside this repository do that for you.
+
+```powershell
+$env:CXXFLAGS = "/bigobj"
+cargo install octavo-cli
+```
+
 ## Where the bytes go
 
 A near-empty Quarto article is about 1.2 MB, and almost none of it is your content. `embed-resources` inlines a full copy of Bootstrap's CSS (around 950 KB), an icon font, Bootstrap's JavaScript, Popper, Tippy, Clipboard.js and Anchor.js, plus the theme and highlighting styles. A page with no code block and no footnote uses almost none of that.
@@ -88,7 +107,7 @@ The level decides what the output depends on. The effort decides how hard the co
 |---|---|---|---|
 | `--woff2-quality` | 0 to 11 | 9 | 11 |
 | `--png-preset` (oxipng) | 0 to 6 | by image size | 6 |
-| `--brotli-quality` (packed blob) | 0 to 11 | 9, only when a quick trial shows it saves at least 1% over DEFLATE after paying for Brotli's decoder | 11, always |
+| `--brotli-quality` (packed blob) | 0 to 11 | 7, only when a quick trial shows it saves at least 1% over DEFLATE after paying for Brotli's decoder | 11, always |
 
 On a 288 KB font, WOFF2 quality 9 takes 26 ms and quality 11 takes 293 ms for 9 percent more bytes, which is a small share of a whole document. That is why the default is 9.
 
