@@ -78,25 +78,35 @@ const eachLimited = async (items, limit, work) => {
   );
 };
 
+const RECAPTURES = 3;
+
 async function confirmed(original, file, scenario, before, after, lossy, interact) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
   if (!issues.length) return { issues, rounded: stats.roundedPixels };
   const kept = await slots.using(async () => {
-    const [before2, after2] = await Promise.all([
-      resilient((open) => capture(open, original, scenario, lossy, { interact })).catch(crashed),
-      resilient((open) => capture(open, file, scenario, lossy, { interact })).catch(crashed),
-    ]);
-    const noise = new Set([...compare(before, before2, lossy), ...compare(after, after2, lossy)].map(signature));
-    const reproduced = new Set(compare(before2, after2, lossy).map(signature));
-    const stable = issues.filter((issue) => !noise.has(signature(issue)) && reproduced.has(signature(issue)));
-    if (!stable.length) return stable;
-    const [before3, after3] = await Promise.all([
-      resilient((open) => capture(open, original, scenario, lossy, { interact, patient: true })).catch(crashed),
-      resilient((open) => capture(open, file, scenario, lossy, { interact, patient: true })).catch(crashed),
-    ]);
-    const lasting = new Set(compare(before3, after3, lossy).map(signature));
-    return stable.filter((issue) => lasting.has(signature(issue)));
+    const pairs = [{ before, after }];
+    for (let round = 0; round < RECAPTURES; round++) {
+      const patient = round > 0;
+      const [again, optimizedAgain] = await Promise.all([
+        resilient((open) => capture(open, original, scenario, lossy, { interact, patient })).catch(crashed),
+        resilient((open) => capture(open, file, scenario, lossy, { interact, patient })).catch(crashed),
+      ]);
+      pairs.push({ before: again, after: optimizedAgain });
+      if (!compare(again, optimizedAgain, lossy).length) break;
+    }
+    const seen = (left, right) => new Set(compare(left, right, lossy).map(signature));
+    const across = pairs.map((pair) => seen(pair.before, pair.after));
+    const within = [];
+    for (const side of ["before", "after"]) {
+      for (let i = 0; i < pairs.length; i++) {
+        for (let j = i + 1; j < pairs.length; j++) within.push(seen(pairs[i][side], pairs[j][side]));
+      }
+    }
+    return issues.filter((issue) => {
+      const key = signature(issue);
+      return across.every((set) => set.has(key)) && within.every((set) => !set.has(key));
+    });
   }, pages);
   return { issues: kept, rounded: stats.roundedPixels };
 }
