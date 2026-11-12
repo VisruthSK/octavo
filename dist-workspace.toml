@@ -11,10 +11,10 @@ ci = "github"
 installers = ["shell", "powershell"]
 # Files to include in each archive besides the licenses and README
 include = ["THIRD-PARTY-LICENSES.txt"]
-allow-dirty = ["ci"]
-# Workflow edits (such as Dependabot action bumps) are expected
 github-attestations = true
-plan-jobs = ["./ci", "./corpus"]
+publish-prereleases = true
+# The gates run after the builds and before the GitHub Release is created. A failed gate stops the release.
+publish-jobs = ["./ci", "./corpus"]
 github-build-setup = "../build-setup.yml"
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = [
