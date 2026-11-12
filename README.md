@@ -208,7 +208,7 @@ Resources loaded from the network (a CDN script, a web font) do not stop the run
 ```sh
 octavo _site                  # writes _site.min
 octavo _site public           # writes public
-octavo _site _site            # rewrites in place
+octavo _site _site --in-place  # rewrites in place, which cannot be undone
 node verify/site.mjs _site _site.min   # compare every page in Chromium
 ```
 
@@ -220,6 +220,8 @@ Octavo reads every page, builds one index of the words used by all pages and all
 | Scripts that a page loads | Minified, as a module or a classic script according to how the page loads it |
 | WOFF, TrueType and OpenType fonts | Converted to WOFF2, and the `url()` that names them is rewritten. The original font is removed unless another file mentions its name |
 | PNG images | Recompressed without changing a pixel |
+
+Run it on a complete, fresh render of the site. Octavo removes every style rule that no page in the directory uses, so a partial or incremental build, or a page published later from another build, can lose styling. Write to a separate output, which is the default, and run it again when pages change. Rewriting a directory in place needs `--in-place`, because it cannot be undone.
 
 Pages and every other file are copied unchanged, and files keep their names, so the site works as before and browsers still cache each shared file once. Text fonts are never subsetted and images are never re-encoded lossily in this mode. A browser that has cached a file under its old content needs to revalidate it, so serve optimized files with a new URL or a short cache lifetime.
 

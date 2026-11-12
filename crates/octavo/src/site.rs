@@ -123,6 +123,12 @@ fn io_error(path: &Path, source: io::Error) -> SiteError {
 ///   `url()` that names them;
 /// - recompresses PNG images without changing a pixel.
 ///
+/// Pruning is only correct for the whole site: a rule that no page in
+/// `input` uses is removed, so `input` must be a complete, fresh render. A
+/// partial or incremental build, or a page published later from another
+/// build, can lose styling. Writing over the input cannot be undone, so prefer
+/// a separate `output` and run again when pages change.
+///
 /// Pages and every other file are copied unchanged, and files keep their
 /// names, so the pages work as before and browsers still cache the shared
 /// files once. Passing the same directory as `input` and `output` rewrites the

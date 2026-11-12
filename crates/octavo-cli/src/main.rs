@@ -154,6 +154,12 @@ struct Optimize {
     max_image_side: Option<NonZeroU32>,
     #[arg(
         long,
+        help_heading = "Sites",
+        help = "Rewrite a site directory where it is, which cannot be undone. Needed when the output is the input. Run site mode on a complete, fresh render: rules that no page uses are removed"
+    )]
+    in_place: bool,
+    #[arg(
+        long,
         help_heading = "Fonts",
         help = "Keep only the characters each text font needs. Often a large saving, but on Linux some hinted fonts draw with slightly different strokes"
     )]
@@ -287,6 +293,7 @@ fn main() -> ExitCode {
         image_quality,
         subset_fonts,
         max_image_side,
+        in_place,
         strip_licenses,
         cache_dir,
         no_cache,
@@ -339,7 +346,7 @@ fn main() -> ExitCode {
                     .to_string(),
             )
         } else {
-            run_site(&input, output, &options)
+            run_site(&input, output, &options, in_place)
         }
     } else if audit_only {
         audit(&input, level)
@@ -439,7 +446,12 @@ fn spinner() -> ProgressBar {
     bar
 }
 
-fn run_site(input: &Path, output: Option<PathBuf>, options: &Options) -> Result<(), String> {
+fn run_site(
+    input: &Path,
+    output: Option<PathBuf>,
+    options: &Options,
+    in_place: bool,
+) -> Result<(), String> {
     let started = Instant::now();
     let output = match output {
         Some(output) => output,
@@ -450,6 +462,14 @@ fn run_site(input: &Path, output: Option<PathBuf>, options: &Options) -> Result<
             root.with_file_name(name)
         }
     };
+    let same = fs::canonicalize(&output)
+        .is_ok_and(|existing| fs::canonicalize(input).is_ok_and(|root| root == existing));
+    if same && !in_place {
+        return Err(format!(
+            "{} is both the input and the output. Pass --in-place to rewrite it, which cannot be undone, or choose another output",
+            output.display()
+        ));
+    }
     let progress = spinner();
     progress.set_message("optimizing the shared files");
     let report = optimize_directory(input, &output, options).map_err(|e| e.to_string())?;
