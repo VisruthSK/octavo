@@ -1,13 +1,13 @@
 # Octavo corpus
 
-The corpus is 799 documents that Octavo is tested against, plus 61 Quarto projects: 334 hand-written fixtures, 465 documents from Quarto's own test suite, 6 hand-written projects and 55 projects from that suite. Each one states what Octavo should do with it, and the runner checks that outcome at every level and, with `--browser`, that the optimized page renders the same as the original in Chromium.
+The corpus is 799 documents that Octavo is tested against, plus 62 Quarto projects: 334 hand-written fixtures, 465 documents from Quarto's own test suite, 8 hand-written projects and 54 projects from that suite. Each one states what Octavo should do with it, and the runner checks that outcome at every level and, with `--browser`, that the optimized page renders the same as the original in Chromium.
 
 | Source | Documents | Purpose |
 |---|---|---|
 | Hand-written fixtures | 334 | Realistic output, scale, inputs built to break the optimizer, and pages that link files |
 | Quarto's test documents | 465 (357 pages, 86 slide decks, 22 dashboards) | Real output across Quarto's formats and features |
-| Hand-written projects | 6 | Whole sites and a book with navigation, search, themes, listings, custom assets and deep nesting |
-| Quarto's test projects | 55 | Real multi-page projects rendered without `embed-resources` |
+| Hand-written projects | 8 | Whole sites and a book with navigation, search, themes, listings, custom assets and deep nesting |
+| Quarto's test projects | 54 | Real multi-page projects rendered without `embed-resources` |
 
 The hand-written fixtures fall into twelve categories: `quarto` (58), `css` (49), `parsing` (48), `libraries` (40), `images` (37), `scale` (26), `fonts` (18), `javascript` (18), `linking` (16), `script-tags` (16), `modules` (6) and `validation` (2).
 
@@ -30,7 +30,7 @@ corpus/
   specs.mjs       loads every docs/*.mjs
   docs/<topic>.mjs   one array of specs per topic
   build.mjs       writes .cache/<id>.html and manifest.json
-  spec.test.mjs   checks the specs and the manifest (node --test corpus)
+  spec.test.mjs   checks the specs and the manifest (node --test "corpus/**/*.test.mjs")
 ```
 
 A document is an object:
@@ -87,18 +87,20 @@ The corpus runner passes `--no-fetch`, so a document with a link to the web is n
 
 ## Quarto projects
 
-`projects.json` lists the projects in the pinned Quarto release that render to HTML without R, Python or Julia, without extensions, filters or pre and post render scripts, and with at least three `.qmd` or `.md` files. Each is rendered once to confirm it works. `remote` marks projects whose pages load a script or stylesheet from the web, such as MathJax. Smoke picks six local projects of at most ten pages, chosen to differ from each other in size, scripts, styles, images, fonts and features.
+`projects.json` lists the projects in the pinned Quarto release that render to HTML without R, Python or Julia, without extensions, filters or pre and post render scripts, and with at least three `.qmd` or `.md` files. Each is rendered once to confirm it works. `remote` marks projects whose pages load a script or stylesheet from the web, such as MathJax. Smoke picks five local projects of at most ten pages, chosen to differ from each other in size, scripts, styles, images, fonts and features. One smoke-all project is not selected: the brand-icon-small-favicon-book pages link `logos/small.png`, a file the pinned release does not ship, and a page that links a missing file cannot be embedded, so Octavo refuses it, correctly. `node corpus/projects.mjs --select` renders and selects blindly, so rerunning it can pick the same project again: drop it by hand afterwards, or expect the linked route to fail.
 
-`corpus/projects/<name>/` holds a hand-written project: a real `_quarto.yml` and `.qmd` files, an `expect.json`, and an optional `assets.mjs` that returns binary files (deterministic images, the pinned Fira Sans font) to add before rendering.
+`corpus/projects/<name>/` holds a hand-written project: a real `_quarto.yml` and `.qmd` files, an `expect.json`, and an optional `assets.mjs` that returns binary files (deterministic images, the pinned Fira Sans fonts) to add before rendering.
 
 | Project | Tier | What it exercises |
 |---|---|---|
-| `site-full` | smoke | Navbar, sidebar, search, light and dark themes, an about page, tabsets, collapsible callouts, cross-references, a figure and a listing |
+| `site-full` | smoke | Navbar, sidebar, search, light and dark themes, an about page, tabsets, collapsible callouts, a folded code block, cross-references, a figure and a listing |
 | `book-appendix` | smoke | A preface, four chapters and an appendix, cross-references across chapters, a table, a callout and search |
-| `site-custom-assets` | smoke | Custom scss, a stylesheet that imports another that imports a third and uses `url()`, a local font, a classic script and a module that imports a module, at two depths |
+| `site-custom-assets` | smoke | Custom scss, a stylesheet that imports another that imports a third and uses `url()`, a local woff2 font beside a legacy ttf, a classic script and a module that imports a module, at two depths |
 | `blog-categories` | full | A categorised listing of posts that each have a thumbnail, a table listing, an about page |
 | `site-deep-nesting` | full | Pages five directories deep, one image referenced at four depths, extra `resources:`, navigation across levels |
 | `listing-grid-images` | full | A grid listing whose cards use thumbnails from different directories |
+| `site-root-relative` | full | Pages three directories deep with a root-relative `url()` in the theme stylesheet, resolved against the site root at deploy time |
+| `site-resources` | full | `resources:` copies an extra directory verbatim, including a file that no page links, beside files linked from two depths |
 
 `expect.json` is written before the project is first run and states:
 
@@ -110,6 +112,7 @@ The corpus runner passes `--no-fetch`, so a document with a link to the web is n
 | `interactions` | Steps to click and what must hold afterwards, run on the normal site first (a failure there means the spec is wrong) and then on the optimized site |
 | `prune` | Selectors that site mode must remove from the stylesheets and selectors it must keep |
 | `site` | Files that must be present or absent in the optimized site, such as the WOFF2 file that replaces a TTF |
+| `linked` | Text that must and must not appear in the standalone pages, such as a `data:` reference to a root-relative file |
 
 An expectation in `interactions` can check `exists`, `count`, `countAtMost`, `class`, `notClass`, `attr`, `computed` (a computed style), `text` and `loaded` (images decoded).
 
@@ -129,7 +132,7 @@ node corpus/projects.mjs --select
 
 `verify/projects.mjs` takes `--tier`, `--filter`, `--shard K/N`, `--browser`, `--binary` and `--out` (default `out/projects`). Set `QUARTO` if `quarto` is not on the path. `--select` renders every eligible project and rewrites `projects.json`.
 
-To add a project, create `corpus/projects/<name>/` with the sources and an `expect.json`, then run `node --test corpus/projects.test.mjs`, which checks the schema and that the project needs no engine or extension.
+To add a project, create `corpus/projects/<name>/` with the sources and an `expect.json`, write the assertions before running it, then run `node --test "corpus/**/*.test.mjs"`, which checks the schema and that the project needs no engine or extension. Bare `node --test` from `corpus/` discovers the same files; `node --test corpus` does not work on Node 21 and later, which treat a directory argument as a file to load.
 
 ## Benchmark pages
 
