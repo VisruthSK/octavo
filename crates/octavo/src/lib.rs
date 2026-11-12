@@ -140,8 +140,8 @@ pub struct Options {
     pub keep_png: bool,
     /// The most memory, in bytes, that the lossless WebP encoder may use at
     /// once across all images, or `None` for [`Options::DEFAULT_IMAGE_MEMORY`].
-    /// The encoder needs about 26 bytes per pixel, so an 81 megapixel image
-    /// needs about 2.1 GB. Images that need more than the limit stay PNG, and
+    /// The encoder needs about 20 bytes per pixel, so an 81 megapixel image
+    /// needs about 1.6 GB. Images that need more than the limit stay PNG, and
     /// the others wait for memory, so a lower limit costs time and a higher one
     /// costs memory.
     pub image_memory: Option<u64>,
