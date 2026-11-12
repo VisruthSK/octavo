@@ -323,4 +323,16 @@ jobs:
         with:
           pattern: corpus-report-*
           path: reports
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: engines-report-*
+          path: engines
       - run: node verify/merge-reports.mjs reports
+      - name: Engine problems
+        if: always()
+        run: |
+          for report in engines/*/report.md; do
+            [ -f "$report" ] || continue
+            echo "### $(basename "$report")" >> "$GITHUB_STEP_SUMMARY"
+            sed -n '/^## Problems/,/^## Browser/p' "$report" >> "$GITHUB_STEP_SUMMARY"
+          done
