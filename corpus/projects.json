@@ -588,23 +588,6 @@
     "tier": "full"
   },
   {
-    "id": "quarto-cli-smoke-all-brand-logo-brand-icon-small-favicon-book",
-    "root": "smoke-all/brand/logo/brand-icon-small-favicon-book",
-    "group": "book",
-    "pages": 4,
-    "sources": 4,
-    "remote": false,
-    "quarto": "1.11.9",
-    "markers": [
-      "sidebar",
-      "darkToggle",
-      "search",
-      "citations",
-      "toc"
-    ],
-    "tier": "smoke"
-  },
-  {
     "id": "quarto-cli-smoke-all-brand-logo-project-subdirs",
     "root": "smoke-all/brand/logo/project-subdirs",
     "group": "website",
