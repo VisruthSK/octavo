@@ -142,3 +142,106 @@ fn an_embedded_page_can_be_optimized() {
         out.html
     );
 }
+
+#[test]
+fn an_import_becomes_part_of_the_stylesheet() {
+    let mut files = Files::new(&[
+        (
+            "theme.css",
+            b"@import 'fonts/face.css';\n.theme { color: red; }",
+        ),
+        ("fonts/face.css", b"@font-face { src: url(f.woff2); }"),
+        ("fonts/f.woff2", b"font bytes"),
+    ]);
+    let embedded = embed_resources(
+        &page(r#"<link rel="stylesheet" href="theme.css">"#),
+        &mut files,
+    );
+    let css = decoded(&embedded.html, r#"href="data:text/css;base64,"#);
+    assert!(!css.contains("@import"), "{css}");
+    assert!(
+        css.contains(".theme") && css.contains("@font-face"),
+        "{css}"
+    );
+    assert!(css.contains("data:font/woff2;base64,"), "{css}");
+    assert_eq!(embedded.embedded, 3);
+}
+
+#[test]
+fn an_import_with_a_media_query_stays_an_import() {
+    let mut files = Files::new(&[
+        ("theme.css", b"@import url(print.css) print;"),
+        ("print.css", b".p { color: red; }"),
+    ]);
+    let embedded = embed_resources(
+        &page(r#"<link rel="stylesheet" href="theme.css">"#),
+        &mut files,
+    );
+    let css = decoded(&embedded.html, r#"href="data:text/css;base64,"#);
+    assert!(
+        css.contains("@import") && css.contains("data:text/css;base64,"),
+        "{css}"
+    );
+}
+
+#[test]
+fn a_plain_script_is_inlined_and_a_deferred_one_keeps_a_data_url() {
+    let mut files = Files::new(&[
+        ("a.js", b"let a = 1;"),
+        ("b.js", b"let b = 2;"),
+        ("c.js", b"let c = \"</script>\";"),
+    ]);
+    let embedded = embed_resources(
+        &page(
+            r#"<script src="a.js" integrity="x" crossorigin="anonymous"></script><script src="b.js" defer></script><script src="c.js"></script>"#,
+        ),
+        &mut files,
+    );
+    assert!(
+        embedded.html.contains("<script>let a = 1;</script>"),
+        "{}",
+        embedded.html
+    );
+    assert!(
+        embedded
+            .html
+            .contains(r#"<script src="data:application/javascript;base64,"#)
+    );
+    assert_eq!(
+        embedded.html.matches("data:application/javascript").count(),
+        2
+    );
+    assert!(is_self_contained(&embedded.html));
+}
+
+#[test]
+fn relative_imports_in_a_module_become_data_urls() {
+    let mut files = Files::new(&[
+        (
+            "main.js",
+            b"import { a } from './lib/a.js';\nimport './side.js';\nexport * from \"./lib/a.js\";\nconst b = await import('./side.js');\nimport x from 'bare';",
+        ),
+        ("lib/a.js", b"export const a = 1;"),
+        ("side.js", b"console.log(1);"),
+    ]);
+    let embedded = embed_resources(
+        &page(r#"<script type="module" src="main.js"></script>"#),
+        &mut files,
+    );
+    let module = decoded(
+        &embedded.html,
+        r#"src="data:application/javascript;base64,"#,
+    );
+    assert!(
+        !module.contains("./lib/a.js") && !module.contains("./side.js"),
+        "{module}"
+    );
+    assert!(module.contains("from 'bare'"), "{module}");
+    assert_eq!(
+        module
+            .matches("data:application/javascript;base64,")
+            .count(),
+        4,
+        "{module}"
+    );
+}

@@ -1,7 +1,7 @@
 use crate::{
     check::{Origin, Url},
     doc::Doc,
-    html::{AttrName, Element, Rel},
+    html::{AttrName, Element, Rel, Tag},
     site::reference_spans,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -64,7 +64,7 @@ pub struct Embedded {
 /// }
 ///
 /// let embedded = embed_resources("<script src=\"app.js\"></script>", &mut One);
-/// assert!(embedded.html.starts_with("<script src=\"data:application/javascript;base64,"));
+/// assert_eq!(embedded.html, "<script>let a = 1;</script>");
 /// assert_eq!(embedded.embedded, 1);
 /// ```
 pub fn embed_resources(src: &str, resources: &mut dyn Resources) -> Embedded {
@@ -80,22 +80,33 @@ pub fn embed_resources(src: &str, resources: &mut dyn Resources) -> Embedded {
     for tag in doc.tags().iter().filter(|tag| !tag.in_svg) {
         match tag.element {
             Element::Script => {
-                if let Some(uri) = tag
+                let inlinable = runs_in_place(tag);
+                if let Some(script) = tag
                     .attr(AttrName::Src)
-                    .and_then(|reference| state.uri(reference, "", 0))
+                    .and_then(|reference| state.script(reference, inlinable))
                 {
-                    let open = tag.open_tag(|name, value| {
-                        Some(if *name == AttrName::Src {
-                            uri.clone()
-                        } else {
-                            value.to_string()
-                        })
-                    });
-                    let rest = tag
-                        .body
-                        .as_ref()
-                        .map_or("", |body| &src[body.start..tag.span.end]);
-                    edits.push((tag.span.clone(), format!("{open}{rest}")));
+                    match script {
+                        Script::Inline(text) => {
+                            let open = tag.open_tag(|name, value| {
+                                (!is_loading_attribute(name)).then(|| value.to_string())
+                            });
+                            edits.push((tag.span.clone(), format!("{open}{text}</script>")));
+                        }
+                        Script::Uri(uri) => {
+                            let open = tag.open_tag(|name, value| {
+                                Some(if *name == AttrName::Src {
+                                    uri.clone()
+                                } else {
+                                    value.to_string()
+                                })
+                            });
+                            let rest = tag
+                                .body
+                                .as_ref()
+                                .map_or("", |body| &src[body.start..tag.span.end]);
+                            edits.push((tag.span.clone(), format!("{open}{rest}")));
+                        }
+                    }
                 }
             }
             Element::Img => {
@@ -176,7 +187,88 @@ struct State<'a> {
 }
 
 impl State<'_> {
+    fn fetch(&mut self, reference: &str, from: &str, depth: usize) -> Option<Loaded> {
+        let url = Url::parse(reference)?;
+        if url.origin() == Origin::Remote || depth > DEPTH_LIMIT {
+            return None;
+        }
+        let Some(loaded) = self.resources.load(reference, from) else {
+            self.missing.push(reference.to_string());
+            return None;
+        };
+        if !self.active.insert(loaded.id.clone()) {
+            return None;
+        }
+        self.resource_bytes += loaded.bytes.len() as u64;
+        Some(loaded)
+    }
+
     fn uri(&mut self, reference: &str, from: &str, depth: usize) -> Option<String> {
+        let reference = reference.trim();
+        let loaded = self.fetch(reference, from, depth)?;
+        Some(self.encode(reference, loaded, depth))
+    }
+
+    fn script(&mut self, reference: &str, inlinable: bool) -> Option<Script> {
+        let reference = reference.trim();
+        let loaded = self.fetch(reference, "", 0)?;
+        if inlinable
+            && let Ok(text) = std::str::from_utf8(&loaded.bytes)
+            && !text.to_ascii_lowercase().contains("</script")
+            && !text.contains("<!--")
+        {
+            let text = text.to_string();
+            self.active.remove(&loaded.id);
+            self.embedded += 1;
+            return Some(Script::Inline(text));
+        }
+        Some(Script::Uri(self.encode(reference, loaded, 0)))
+    }
+
+    fn encode(&mut self, reference: &str, loaded: Loaded, depth: usize) -> String {
+        let mime = mime_of(reference);
+        let bytes = if mime == "text/css" {
+            match String::from_utf8(loaded.bytes) {
+                Ok(text) => self
+                    .css(&text, &loaded.id, depth + 1)
+                    .unwrap_or(text)
+                    .into_bytes(),
+                Err(error) => error.into_bytes(),
+            }
+        } else if mime == "application/javascript" {
+            match String::from_utf8(loaded.bytes) {
+                Ok(text) => self
+                    .module_imports(&text, &loaded.id, depth + 1)
+                    .unwrap_or(text)
+                    .into_bytes(),
+                Err(error) => error.into_bytes(),
+            }
+        } else {
+            loaded.bytes
+        };
+        self.active.remove(&loaded.id);
+        self.embedded += 1;
+        format!("data:{mime};base64,{}", STANDARD.encode(bytes))
+    }
+
+    fn module_imports(&mut self, code: &str, from: &str, depth: usize) -> Option<String> {
+        let mut out = String::with_capacity(code.len());
+        let mut at = 0;
+        for span in import_specifiers(code) {
+            if let Some(uri) = self.uri(&code[span.clone()], from, depth) {
+                out.push_str(&code[at..span.start]);
+                out.push_str(&uri);
+                at = span.end;
+            }
+        }
+        if at == 0 {
+            return None;
+        }
+        out.push_str(&code[at..]);
+        Some(out)
+    }
+
+    fn flatten(&mut self, reference: &str, from: &str, depth: usize) -> Option<String> {
         let reference = reference.trim();
         let url = Url::parse(reference)?;
         if url.origin() == Origin::Remote || depth > DEPTH_LIMIT {
@@ -190,37 +282,50 @@ impl State<'_> {
             return None;
         }
         self.resource_bytes += loaded.bytes.len() as u64;
-        let mime = mime_of(reference);
-        let bytes = if mime == "text/css" {
-            match String::from_utf8(loaded.bytes) {
-                Ok(text) => self
-                    .css(&text, &loaded.id, depth + 1)
-                    .unwrap_or(text)
-                    .into_bytes(),
-                Err(error) => error.into_bytes(),
-            }
-        } else {
-            loaded.bytes
-        };
+        let text = String::from_utf8(loaded.bytes).ok();
+        let flat = text.map(|text| self.css(&text, &loaded.id, depth + 1).unwrap_or(text));
         self.active.remove(&loaded.id);
-        self.embedded += 1;
-        Some(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
+        if flat.is_some() {
+            self.embedded += 1;
+        }
+        flat
     }
 
     fn css(&mut self, css: &str, from: &str, depth: usize) -> Option<String> {
-        let mut out = String::with_capacity(css.len());
-        let mut at = 0;
-        let mut changed = false;
-        for span in reference_spans(css) {
-            if let Some(uri) = self.uri(&css[span.clone()], from, depth) {
-                out.push_str(&css[at..span.start]);
-                out.push_str(&uri);
-                at = span.end;
-                changed = true;
+        let imports = plain_imports(css);
+        let mut replacements: Vec<(Range<usize>, String)> = Vec::new();
+        for (statement, reference) in &imports {
+            if let Some(flat) = self.flatten(&css[reference.clone()], from, depth) {
+                replacements.push((statement.clone(), flat));
             }
         }
+        for span in reference_spans(css) {
+            let inside = imports
+                .iter()
+                .any(|(statement, _)| statement.start <= span.start && span.end <= statement.end);
+            if inside {
+                continue;
+            }
+            if let Some(uri) = self.uri(&css[span.clone()], from, depth) {
+                replacements.push((span, uri));
+            }
+        }
+        if replacements.is_empty() {
+            return None;
+        }
+        replacements.sort_by_key(|(range, _)| range.start);
+        let mut out = String::with_capacity(css.len());
+        let mut at = 0;
+        for (range, text) in replacements {
+            if range.start < at {
+                continue;
+            }
+            out.push_str(&css[at..range.start]);
+            out.push_str(&text);
+            at = range.end;
+        }
         out.push_str(&css[at..]);
-        changed.then_some(out)
+        Some(out)
     }
 }
 
@@ -247,4 +352,143 @@ fn mime_of(reference: &str) -> &'static str {
         "json" => "application/json",
         _ => "application/octet-stream",
     }
+}
+
+fn plain_imports(css: &str) -> Vec<(Range<usize>, Range<usize>)> {
+    let bytes = css.as_bytes();
+    let lower = css.to_ascii_lowercase();
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = lower[from..].find("@import") {
+        let statement = from + offset;
+        let mut at = statement + "@import".len();
+        from = at;
+        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        let reference = if lower[at..].starts_with("url(") {
+            let open = at + "url(".len();
+            let Some(close) = css[open..].find(')') else {
+                continue;
+            };
+            at = open + close + 1;
+            let inner = &css[open..open + close];
+            let trimmed = inner.trim();
+            let lead = inner.len() - inner.trim_start().len();
+            let quoted = trimmed.len() >= 2
+                && matches!(trimmed.as_bytes()[0], b'"' | b'\'')
+                && trimmed.as_bytes()[0] == trimmed.as_bytes()[trimmed.len() - 1];
+            let (skip, cut) = if quoted { (1, 1) } else { (0, 0) };
+            open + lead + skip..open + lead + trimmed.len() - cut
+        } else if matches!(bytes.get(at), Some(b'"' | b'\'')) {
+            let quote = bytes[at];
+            let open = at + 1;
+            let Some(close) = bytes[open..].iter().position(|byte| *byte == quote) else {
+                continue;
+            };
+            at = open + close + 1;
+            open..open + close
+        } else {
+            continue;
+        };
+        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        if bytes.get(at) == Some(&b';') {
+            found.push((statement..at + 1, reference));
+            from = at + 1;
+        }
+    }
+    found
+}
+
+enum Script {
+    Inline(String),
+    Uri(String),
+}
+
+fn is_loading_attribute(name: &AttrName) -> bool {
+    match name {
+        AttrName::Src => true,
+        AttrName::Other(written) => matches!(written.as_str(), "integrity" | "crossorigin"),
+        _ => false,
+    }
+}
+
+fn runs_in_place(tag: &Tag) -> bool {
+    let classic = tag.attr(AttrName::Type).is_none_or(|kind| {
+        let kind = kind.trim();
+        kind.is_empty()
+            || kind.eq_ignore_ascii_case("text/javascript")
+            || kind.eq_ignore_ascii_case("application/javascript")
+    });
+    classic
+        && !tag.attrs.iter().any(|attr| {
+            matches!(&attr.name, AttrName::Other(written) if matches!(written.as_str(), "defer" | "async" | "nomodule"))
+        })
+}
+
+fn import_specifiers(code: &str) -> Vec<Range<usize>> {
+    let bytes = code.as_bytes();
+    let is_word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'$';
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        let keyword = ["import", "export"].into_iter().find(|word| {
+            bytes[at..].starts_with(word.as_bytes())
+                && (at == 0 || !is_word(bytes[at - 1]))
+                && !bytes
+                    .get(at + word.len())
+                    .is_some_and(|byte| is_word(*byte))
+        });
+        let Some(keyword) = keyword else {
+            at += 1;
+            continue;
+        };
+        let mut cursor = at + keyword.len();
+        at = cursor;
+        let mut last_word = None;
+        let mut dynamic = false;
+        while let Some(&byte) = bytes.get(cursor) {
+            if byte == b'"' || byte == b'\'' {
+                let allowed = dynamic || last_word.is_none_or(|word| word == "from");
+                let open = cursor + 1;
+                let Some(length) = bytes[open..].iter().position(|next| *next == byte) else {
+                    break;
+                };
+                let specifier = &code[open..open + length];
+                if allowed
+                    && (specifier.starts_with("./")
+                        || specifier.starts_with("../")
+                        || specifier.starts_with('/'))
+                {
+                    found.push(open..open + length);
+                }
+                at = open + length;
+                break;
+            }
+            if byte == b'(' && keyword == "import" && cursor == at {
+                dynamic = true;
+                cursor += 1;
+                while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+                    cursor += 1;
+                }
+                continue;
+            }
+            if byte.is_ascii_whitespace() || matches!(byte, b',' | b'{' | b'}' | b'*') {
+                cursor += 1;
+                continue;
+            }
+            if is_word(byte) {
+                let start = cursor;
+                while bytes.get(cursor).is_some_and(|next| is_word(*next)) {
+                    cursor += 1;
+                }
+                last_word = Some(&code[start..cursor]);
+                continue;
+            }
+            break;
+        }
+    }
+    found
 }
