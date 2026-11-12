@@ -33,6 +33,7 @@ impl Resources for Files {
         self.0.get(id.as_str()).map(|bytes| Loaded {
             bytes: bytes.clone(),
             id,
+            content_type: None,
         })
     }
 }

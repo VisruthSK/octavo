@@ -173,3 +173,88 @@ fn resource_path_is_refused_for_a_directory() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("--resource-path"));
     let _ = fs::remove_dir_all(&root);
 }
+
+fn serve(files: &'static [(&'static str, &'static str, &'static [u8])]) -> u16 {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut buffer = [0u8; 4096];
+            let read = stream.read(&mut buffer).unwrap_or(0);
+            let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+            let path = request.split_whitespace().nth(1).unwrap_or("/").to_string();
+            let found = files.iter().find(|(name, _, _)| *name == path);
+            let (status, kind, body): (&str, &str, &[u8]) = match found {
+                Some((_, kind, body)) => ("200 OK", kind, body),
+                None => ("404 Not Found", "text/plain", b"missing"),
+            };
+            let head = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(body);
+        }
+    });
+    port
+}
+
+#[test]
+fn files_linked_from_the_web_are_downloaded_and_embedded() {
+    let port = serve(&[
+        (
+            "/fonts/s.css",
+            "text/css",
+            b".a { color: red; }\n@font-face { font-family: F; src: url(f.woff2); }\n",
+        ),
+        ("/fonts/f.woff2", "font/woff2", b"font bytes"),
+    ]);
+    let root = scratch();
+    write(
+        &root,
+        "page.html",
+        &page(&format!(
+            r#"<link rel="stylesheet" href="http://127.0.0.1:{port}/fonts/s.css">"#
+        )),
+    );
+    let page_path = root.join("page.html");
+    let out = root.join("out.html");
+    let output = octavo(&[
+        page_path.as_os_str(),
+        out.as_os_str(),
+        "--level".as_ref(),
+        "safe".as_ref(),
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    let html = fs::read_to_string(&out).unwrap();
+    assert!(!html.contains("127.0.0.1"), "{html}");
+    assert!(
+        html.contains("linked files embedded") || html.contains("data:text/css"),
+        "{html}"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn no_fetch_leaves_web_links_alone() {
+    let root = scratch();
+    write(
+        &root,
+        "page.html",
+        &page(r#"<link rel="stylesheet" href="http://127.0.0.1:9/s.css">"#),
+    );
+    let page_path = root.join("page.html");
+    let out = root.join("out.html");
+    let output = octavo(&[
+        page_path.as_os_str(),
+        out.as_os_str(),
+        "--no-fetch".as_ref(),
+        "--level".as_ref(),
+        "safe".as_ref(),
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(fs::read_to_string(&out).unwrap().contains("127.0.0.1:9"));
+    let _ = fs::remove_dir_all(&root);
+}

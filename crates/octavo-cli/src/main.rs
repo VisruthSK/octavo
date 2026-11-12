@@ -7,11 +7,11 @@ use clap::{
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{
     Compression, Error as OctavoError, ImageEncoding, ImageFormat, Loaded, Mode, Options, Quality,
-    Resources, SiteKind, Transform, Tuning, Warning, embed_resources, is_self_contained, optimize,
-    optimize_directory, simplify,
+    Resources, SiteKind, Transform, Tuning, Warning, embed_resources, optimize, optimize_directory,
+    simplify,
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fs,
     num::{NonZeroU32, NonZeroUsize},
     path::{Path, PathBuf},
@@ -181,6 +181,12 @@ struct Optimize {
     resource_path: Vec<PathBuf>,
     #[arg(
         long,
+        help_heading = "Resources",
+        help = "Do not download files that the page links from the web. Such a page keeps needing the network"
+    )]
+    no_fetch: bool,
+    #[arg(
+        long,
         help_heading = "Fonts",
         help = "Keep only the characters each text font needs. Often a large saving, but on Linux some hinted fonts draw with slightly different strokes"
     )]
@@ -324,6 +330,7 @@ fn main() -> ExitCode {
         image_memory,
         in_place,
         resource_path,
+        no_fetch,
         strip_licenses,
         cache_dir,
         no_cache,
@@ -383,10 +390,10 @@ fn main() -> ExitCode {
             run_site(&input, output, &options, in_place)
         }
     } else if audit_only {
-        audit(&input, level, &resource_path)
+        audit(&input, level, &resource_path, !no_fetch)
     } else {
         let output = output.unwrap_or_else(|| input.with_extension("min.html"));
-        run(&input, &output, level, options, &resource_path)
+        run(&input, &output, level, options, &resource_path, !no_fetch)
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -426,8 +433,8 @@ struct Savings {
     after: usize,
 }
 
-fn audit(input: &Path, level: Mode, resource_paths: &[PathBuf]) -> Result<(), String> {
-    let (src, _) = prepare(input, read(input)?, resource_paths);
+fn audit(input: &Path, level: Mode, resource_paths: &[PathBuf], fetch: bool) -> Result<(), String> {
+    let (src, _) = prepare(input, read(input)?, resource_paths, fetch);
     let out = optimize(&src, level).map_err(|error| failure(input, &error))?;
     let mut totals: BTreeMap<Transform, Savings> = BTreeMap::new();
     for step in &out.applied {
@@ -569,13 +576,14 @@ fn run(
     level: Mode,
     options: Options,
     resource_paths: &[PathBuf],
+    fetch: bool,
 ) -> Result<(), String> {
     let started = Instant::now();
     let original = read(input)?;
     let original_len = original.len();
     let progress = spinner();
     progress.set_message("reading the page");
-    let (src, linked) = prepare(input, original, resource_paths);
+    let (src, linked) = prepare(input, original, resource_paths, fetch);
     progress.set_message("optimizing");
     let simplified = simplify(&src, options).map_err(|error| failure(input, &error))?;
     progress.set_message(format!("packing ({level})"));
@@ -620,12 +628,17 @@ struct Linked {
     bytes: u64,
 }
 
-fn prepare(input: &Path, original: String, resource_paths: &[PathBuf]) -> (String, Option<Linked>) {
-    if is_self_contained(&original) {
+fn prepare(
+    input: &Path,
+    original: String,
+    resource_paths: &[PathBuf],
+    fetch: bool,
+) -> (String, Option<Linked>) {
+    let mut resources = FsResources::new(input, resource_paths, fetch);
+    let embedded = embed_resources(&original, &mut resources);
+    if embedded.embedded == 0 {
         return (original, None);
     }
-    let mut resources = FsResources::new(input, resource_paths);
-    let embedded = embed_resources(&original, &mut resources);
     let linked = Linked {
         files: embedded.embedded,
         bytes: embedded.resource_bytes,
@@ -644,21 +657,71 @@ fn failure(input: &Path, error: &OctavoError) -> String {
 
 const PARENTS_SEARCHED: usize = 9;
 
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 octavo";
+const DOWNLOAD_LIMIT: u64 = 64 * 1024 * 1024;
+
 struct FsResources {
     page_dir: PathBuf,
     extra: Vec<PathBuf>,
+    agent: Option<ureq::Agent>,
+    failed: HashSet<String>,
 }
 
 impl FsResources {
-    fn new(input: &Path, extra: &[PathBuf]) -> FsResources {
+    fn new(input: &Path, extra: &[PathBuf], fetch: bool) -> FsResources {
         let page_dir = fs::canonicalize(input)
             .ok()
             .and_then(|path| path.parent().map(Path::to_path_buf))
             .unwrap_or_else(|| PathBuf::from("."));
+        let agent = fetch.then(|| {
+            ureq::Agent::config_builder()
+                .timeout_global(Some(Duration::from_secs(30)))
+                .user_agent(USER_AGENT)
+                .build()
+                .into()
+        });
         FsResources {
             page_dir,
             extra: extra.to_vec(),
+            agent,
+            failed: HashSet::new(),
         }
+    }
+
+    fn download(&mut self, url: String) -> Option<Loaded> {
+        let agent = self.agent.as_ref()?;
+        if self.failed.contains(&url) {
+            return None;
+        }
+        let fetched = agent
+            .get(&url)
+            .call()
+            .map_err(|error| error.to_string())
+            .and_then(|mut response| {
+                let content_type = response
+                    .headers()
+                    .get("content-type")
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_string);
+                response
+                    .body_mut()
+                    .with_config()
+                    .limit(DOWNLOAD_LIMIT)
+                    .read_to_vec()
+                    .map(|bytes| Loaded {
+                        bytes,
+                        id: url.clone(),
+                        content_type,
+                    })
+                    .map_err(|error| error.to_string())
+            });
+        if let Err(error) = &fetched {
+            eprintln!("{WARN}warning{WARN:#}: could not download {url}: {error}");
+        }
+        if fetched.is_err() {
+            self.failed.insert(url);
+        }
+        fetched.ok()
     }
 
     fn candidates(&self, relative: &str, from: &str) -> Vec<PathBuf> {
@@ -698,6 +761,10 @@ impl FsResources {
 
 impl Resources for FsResources {
     fn load(&mut self, reference: &str, from: &str) -> Option<Loaded> {
+        let reference = reference.trim();
+        if let Some(url) = remote_url(reference, from) {
+            return self.download(url);
+        }
         let end = reference.find(['?', '#']).unwrap_or(reference.len());
         let decoded = percent_encoding::percent_decode_str(&reference[..end])
             .decode_utf8()
@@ -710,7 +777,55 @@ impl Resources for FsResources {
                 Some(Loaded {
                     bytes,
                     id: id.to_string_lossy().into_owned(),
+                    content_type: None,
                 })
             })
     }
+}
+
+fn is_web(reference: &str) -> bool {
+    reference.starts_with("http://") || reference.starts_with("https://")
+}
+
+fn remote_url(reference: &str, from: &str) -> Option<String> {
+    if is_web(reference) {
+        return Some(reference.to_string());
+    }
+    if let Some(rest) = reference.strip_prefix("//") {
+        let scheme = if from.starts_with("http://") {
+            "http"
+        } else {
+            "https"
+        };
+        return Some(format!("{scheme}://{rest}"));
+    }
+    is_web(from).then(|| join_url(from, reference))
+}
+
+fn join_url(base: &str, reference: &str) -> String {
+    let base = &base[..base.find(['?', '#']).unwrap_or(base.len())];
+    let scheme_end = base.find("://").map_or(0, |at| at + 3);
+    let path_start = base[scheme_end..]
+        .find('/')
+        .map_or(base.len(), |at| scheme_end + at);
+    let (origin, base_path) = base.split_at(path_start);
+    let end = reference.find(['?', '#']).unwrap_or(reference.len());
+    let (path, suffix) = reference.split_at(end);
+    let mut segments: Vec<&str> = if path.starts_with('/') {
+        Vec::new()
+    } else {
+        let mut directory: Vec<&str> = base_path.split('/').skip(1).collect();
+        directory.pop();
+        directory
+    };
+    for piece in path.split('/') {
+        match piece {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            other => segments.push(other),
+        }
+    }
+    format!("{origin}/{}{suffix}", segments.join("/"))
 }

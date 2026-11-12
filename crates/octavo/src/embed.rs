@@ -18,6 +18,9 @@ pub struct Loaded {
     /// path. Octavo passes it back as `from` when the file refers to other
     /// files, and uses it to stop a stylesheet that imports itself.
     pub id: String,
+    /// The media type a server sent with the file, such as `text/css`, or
+    /// `None` to use the one that the file's extension suggests.
+    pub content_type: Option<String>,
 }
 
 /// Finds the files that a page and its stylesheets link.
@@ -59,7 +62,7 @@ pub struct Embedded {
 /// struct One;
 /// impl Resources for One {
 ///     fn load(&mut self, reference: &str, _from: &str) -> Option<Loaded> {
-///         (reference == "app.js").then(|| Loaded { bytes: b"let a = 1;".to_vec(), id: "app.js".into() })
+///         (reference == "app.js").then(|| Loaded { bytes: b"let a = 1;".to_vec(), id: "app.js".into(), content_type: None })
 ///     }
 /// }
 ///
@@ -189,11 +192,13 @@ struct State<'a> {
 impl State<'_> {
     fn fetch(&mut self, reference: &str, from: &str, depth: usize) -> Option<Loaded> {
         let url = Url::parse(reference)?;
-        if url.origin() == Origin::Remote || depth > DEPTH_LIMIT {
+        if depth > DEPTH_LIMIT {
             return None;
         }
         let Some(loaded) = self.resources.load(reference, from) else {
-            self.missing.push(reference.to_string());
+            if url.origin() == Origin::Local {
+                self.missing.push(reference.to_string());
+            }
             return None;
         };
         if !self.active.insert(loaded.id.clone()) {
@@ -214,7 +219,7 @@ impl State<'_> {
         let loaded = self.fetch(reference, "", 0)?;
         if inlinable
             && let Ok(text) = std::str::from_utf8(&loaded.bytes)
-            && !text.to_ascii_lowercase().contains("</script")
+            && !closes_script(text)
             && !text.contains("<!--")
         {
             let text = text.to_string();
@@ -226,7 +231,7 @@ impl State<'_> {
     }
 
     fn encode(&mut self, reference: &str, loaded: Loaded, depth: usize) -> String {
-        let mime = mime_of(reference);
+        let mime = media_type(&loaded, reference);
         let bytes = if mime == "text/css" {
             match String::from_utf8(loaded.bytes) {
                 Ok(text) => self
@@ -235,7 +240,7 @@ impl State<'_> {
                     .into_bytes(),
                 Err(error) => error.into_bytes(),
             }
-        } else if mime == "application/javascript" {
+        } else if mime == "application/javascript" || mime == "text/javascript" {
             match String::from_utf8(loaded.bytes) {
                 Ok(text) => self
                     .module_imports(&text, &loaded.id, depth + 1)
@@ -329,6 +334,16 @@ impl State<'_> {
     }
 }
 
+fn media_type(loaded: &Loaded, reference: &str) -> String {
+    loaded
+        .content_type
+        .as_deref()
+        .and_then(|value| value.split(';').next())
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| value.contains('/') && value != "application/octet-stream")
+        .unwrap_or_else(|| mime_of(reference).to_string())
+}
+
 fn mime_of(reference: &str) -> &'static str {
     let end = reference.find(['?', '#']).unwrap_or(reference.len());
     let extension = reference[..end]
@@ -405,6 +420,12 @@ fn plain_imports(css: &str) -> Vec<(Range<usize>, Range<usize>)> {
 enum Script {
     Inline(String),
     Uri(String),
+}
+
+fn closes_script(text: &str) -> bool {
+    text.as_bytes()
+        .windows("</script".len())
+        .any(|window| window.eq_ignore_ascii_case(b"</script"))
 }
 
 fn is_loading_attribute(name: &AttrName) -> bool {
