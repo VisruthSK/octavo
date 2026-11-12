@@ -222,7 +222,11 @@ Octavo reads every page, builds one index of the words used by all pages and all
 
 Run it on a complete, fresh render of the site. Octavo removes every style rule that no page in the directory uses, so a partial or incremental build, or a page published later from another build, can lose styling. Write to a separate output, which is the default, and run it again when pages change. Rewriting a directory in place needs `--in-place`, because it cannot be undone.
 
+The output is written in full before any of it is published. Octavo builds the whole tree in a staging directory next to the output, checks that every file it planned is there with the planned size, and only then puts the tree in place. Putting it in place is a sequence of renames and not a single atomic operation: the old output is renamed aside, the staged tree is renamed into its place, and the old tree is deleted afterwards. A reader that opens the output between the two renames finds nothing there for a moment, but never a half-written tree. If the second rename fails, the old tree is put back and the run reports the error. If the run fails before the promotion, the staging directory is removed and the previous output stays exactly as it was, byte for byte. The tree is built from scratch every time, so a file left over from an earlier run that is no longer part of the site does not survive. Rewriting a directory in place uses the same steps, so the original directory is only removed once the new tree is in place.
+
 Pages and every other file are copied unchanged, and files keep their names, so the site works as before and browsers still cache each shared file once. Text fonts are never subsetted and images are never re-encoded lossily in this mode. A browser that has cached a file under its old content needs to revalidate it, so serve optimized files with a new URL or a short cache lifetime.
+
+Only regular files are read. A symbolic link that points at a regular file inside the site is copied as a regular file, and a symbolic link that points outside the site is an error that names the path. Any other kind of entry, such as a named pipe or a device, is an error too, so nothing is left out silently.
 
 A visitor's download, with each file Brotli-compressed as a static host sends it and shared files fetched once:
 
