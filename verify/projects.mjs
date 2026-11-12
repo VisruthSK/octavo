@@ -37,7 +37,9 @@ const octavo = (args) => spawnSync(binary, args, { encoding: "utf8", maxBuffer: 
 
 function searchQueries(site, expectSearch) {
   const index = join(site, "search.json");
-  if (!existsSync(index) || !readFileSync(join(site, "index.html"), "utf8").includes("quarto-search")) return null;
+  if (!existsSync(index)) return null;
+  const home = join(site, "index.html");
+  if (!existsSync(home) || !/id="quarto-search"[\s>]/.test(readFileSync(home, "utf8"))) return null;
   if (expectSearch) return [...expectSearch.found, ...expectSearch.absent];
   const counts = new Map();
   for (const record of JSON.parse(readFileSync(index, "utf8"))) {
@@ -90,11 +92,19 @@ async function behaviour(normal, site, expect) {
   const instance = await launch();
   const queries = searchQueries(normal, expect.search);
   if (queries) {
-    const { before, issues } = await compareSearch(instance, normal, site, queries);
-    problems.push(...issues);
-    for (const query of expect.search?.found ?? []) if (!(before[query]?.length > 0)) problems.push(`spec: "${query}" finds nothing in the normal site`);
-    for (const query of expect.search?.absent ?? []) if (before[query]?.length > 0) problems.push(`spec: "${query}" finds results in the normal site`);
-    if (!expect.search && !queries.slice(0, -1).some((query) => before[query]?.length > 0)) problems.push("none of the default search queries found anything in the normal site");
+    let before = null;
+    try {
+      const compared = await compareSearch(instance, normal, site, queries);
+      problems.push(...compared.issues);
+      before = compared.before;
+    } catch (error) {
+      problems.push(`search: ${String(error.message).split("\n")[0]}`);
+    }
+    if (before) {
+      for (const query of expect.search?.found ?? []) if (!(before[query]?.length > 0)) problems.push(`spec: "${query}" finds nothing in the normal site`);
+      for (const query of expect.search?.absent ?? []) if (before[query]?.length > 0) problems.push(`spec: "${query}" finds results in the normal site`);
+      if (!expect.search && !queries.slice(0, -1).some((query) => before[query]?.length > 0)) problems.push("none of the default search queries found anything in the normal site");
+    }
   } else if (expect.search) {
     problems.push("spec: the project has search expectations but the normal site has no search");
   }
@@ -163,7 +173,12 @@ for (const entry of entries) {
     mkdirSync(dirname(target), { recursive: true });
     const run = octavo([join(normal, page), target, "--level", "safe", "--no-fetch"]);
     if (run.status !== 0) row.problems.push(`standalone ${page}: ${run.stderr.trim().split("\n").at(0)?.slice(0, 200)}`);
-    else standalone.push(target);
+    else {
+      standalone.push(target);
+      const embedded = readFileSync(target, "utf8");
+      for (const text of expect.linked?.contains ?? []) if (!embedded.includes(text)) row.problems.push(`linked ${page}: does not contain ${text}`);
+      for (const text of expect.linked?.absent ?? []) if (embedded.includes(text)) row.problems.push(`linked ${page}: contains ${text}`);
+    }
   }
   const normalFiles = walk(normal);
   Object.assign(row, { pages: pages.length, normal: weigh(normalFiles), site: weigh(walk(site)), standalone: weigh(standalone) });

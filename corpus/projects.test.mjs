@@ -13,7 +13,7 @@ const strings = (value) => Array.isArray(value) && value.every((entry) => typeof
 
 test("every project fixture states what it expects", async () => {
   const fixtures = await loadFixtures();
-  assert.ok(fixtures.length >= 6, "at least six hand-written projects");
+  assert.ok(fixtures.length >= 8, "at least eight hand-written projects");
   assert.ok(fixtures.some((fixture) => fixture.tier === "smoke"));
   for (const { id, directory, expect, tier } of fixtures) {
     assert.match(id, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
@@ -24,6 +24,7 @@ test("every project fixture states what it expects", async () => {
     assert.ok(strings(expect.files ?? []), `${id}: files`);
     assert.ok(strings(expect.prune?.removed ?? []) && strings(expect.prune?.kept ?? []), `${id}: prune`);
     assert.ok(strings(expect.site?.present ?? []) && strings(expect.site?.absent ?? []), `${id}: site`);
+    assert.ok(strings(expect.linked?.contains ?? []) && strings(expect.linked?.absent ?? []), `${id}: linked`);
     if (expect.search) assert.ok(strings(expect.search.found) && strings(expect.search.absent), `${id}: search`);
     for (const interaction of expect.interactions ?? []) {
       assert.equal(typeof interaction.name, "string", `${id}: interaction name`);
@@ -54,11 +55,11 @@ test("the project fixtures need no engine, filter or extension", async () => {
 
 test("the hand-written projects cover the hard cases", async () => {
   const text = (await loadFixtures()).map(({ directory }) => readFileSync(join(directory, "_quarto.yml"), "utf8")).join("\n");
-  for (const feature of [/type:\s*book/, /type:\s*website/, /search:/, /sidebar:/, /navbar:/, /dark:/, /resources:/, /css:/]) {
+  for (const feature of [/type:\s*book/, /type:\s*website/, /search:/, /sidebar:/, /navbar:/, /dark:/, /resources:/, /css:/, /custom\.scss/]) {
     assert.match(text, feature);
   }
   const names = (await loadFixtures()).map((fixture) => fixture.id);
-  for (const name of ["site-full", "book-appendix", "site-custom-assets", "blog-categories", "site-deep-nesting", "listing-grid-images"]) {
+  for (const name of ["site-full", "book-appendix", "site-custom-assets", "blog-categories", "site-deep-nesting", "listing-grid-images", "site-root-relative", "site-resources"]) {
     assert.ok(names.includes(name), name);
   }
 });
