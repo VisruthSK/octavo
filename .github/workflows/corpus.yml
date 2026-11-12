@@ -163,7 +163,7 @@ jobs:
         if: always() && inputs.diagnose != ''
         run: |
           original="corpus/.cache/rendered/${{ inputs.diagnose }}.html"
-          [ -f "$original" ] || original="corpus/.cache/${{ inputs.diagnose }}.html"
+          [ -f "$original" ] || original="corpus/.cache/docs/${{ inputs.diagnose }}.html"
           optimized="out/corpus/${{ inputs.diagnose }}.${{ inputs.diagnose_level }}.html"
           if [ -f "$original" ] && [ -f "$optimized" ]; then
             node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" out/diagnose/subset
