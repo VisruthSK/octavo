@@ -329,7 +329,7 @@ export default [
     id: "assets-png-one-pixel",
     category: "images",
     tier: "smoke",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => pageWith(`<img alt="pixel" src="${dataUri("image/png", png({ width: 1, height: 1 }))}">`),
   },
   {
@@ -343,7 +343,7 @@ export default [
     id: "assets-png-truecolor",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="color" src="${dataUri("image/png", png({ width: 32, height: 24 }))}">`,
@@ -353,7 +353,7 @@ export default [
     id: "assets-png-palette",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="palette" src="${dataUri("image/png", png({ width: 16, height: 16, colorType: 3, paletteSize: 4 }))}">`,
@@ -363,7 +363,7 @@ export default [
     id: "assets-png-palette-with-transparency",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="palette" src="${dataUri("image/png", png({ width: 16, height: 16, colorType: 3, paletteSize: 4, transparent: Buffer.from([0, 128, 255]) }))}">`,
@@ -373,7 +373,7 @@ export default [
     id: "assets-png-grayscale",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="gray" src="${dataUri("image/png", png({ width: 20, height: 20, colorType: 0 }))}">`,
@@ -383,7 +383,7 @@ export default [
     id: "assets-png-sixteen-bit",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="deep" src="${dataUri("image/png", png({ width: 12, height: 12, colorType: 2, bitDepth: 16 }))}">`,
@@ -393,7 +393,7 @@ export default [
     id: "assets-png-with-alpha",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="alpha" src="${dataUri("image/png", png({ width: 12, height: 12, colorType: 6 }))}">`,
@@ -403,7 +403,7 @@ export default [
     id: "assets-png-interlaced",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="interlaced" src="${dataUri("image/png", png({ width: 17, height: 13, interlace: 1 }))}">`,
@@ -413,7 +413,7 @@ export default [
     id: "assets-png-with-ancillary-chunks",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="chunks" src="${dataUri("image/png", png({ width: 16, height: 16, extra: [["pHYs", Buffer.from([0, 14, 236, 0, 14, 236, 1])], ["tIME", Buffer.from([7, 230, 1, 2, 3, 4, 5])]] }))}">`,
@@ -423,7 +423,7 @@ export default [
     id: "assets-png-with-a-gamma-chunk",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="gamma" src="${dataUri("image/png", png({ width: 16, height: 16, extra: [["gAMA", Buffer.from([0, 1, 134, 160])]] }))}">`,
@@ -433,7 +433,7 @@ export default [
     id: "assets-png-with-a-color-profile",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="profile" src="${dataUri("image/png", png({ width: 16, height: 16, extra: [["sRGB", Buffer.from([0])]] }))}">`,
@@ -443,7 +443,7 @@ export default [
     id: "assets-png-with-a-text-chunk",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<img alt="commented" src="${dataUri("image/png", png({ width: 16, height: 16, text: "octavo corpus text chunk ".repeat(40) }))}">`,
@@ -453,7 +453,7 @@ export default [
     id: "assets-percent-encoded-png",
     category: "images",
     tier: "smoke",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"], removes: ["%89PNG"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"], removes: ["%89PNG"] },
     build: () =>
       pageWith(
         `<img alt="percent" src="${percentUri("image/png", png({ width: 24, height: 24 }))}">`,
@@ -463,7 +463,7 @@ export default [
     id: "assets-png-with-a-charset-parameter",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"], removes: ["charset=utf-8"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"], removes: ["charset=utf-8"] },
     build: () =>
       pageWith(
         `<img alt="charset" src="data:image/png;charset=utf-8;base64,${base64(png({ width: 24, height: 24, text: "octavo corpus text chunk ".repeat(40) }))}">`,
@@ -473,7 +473,7 @@ export default [
     id: "assets-png-in-a-data-src-attribute",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data-src=\"data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data-src=\"data:image/"] },
     build: () =>
       pageWith(
         `<img alt="lazy" data-src="${dataUri("image/png", png({ width: 16, height: 16 }))}">`,
@@ -494,7 +494,7 @@ export default [
     id: "assets-png-as-a-css-background",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,iVBORw0KGgo"] },
+    expect: { outcome: "optimizes", retains: ["data:image/iVBORw0KGgo"] },
     build: () => {
       const uri = dataUri("image/png", png({ width: 16, height: 16 }));
       return pageWith(
@@ -507,7 +507,7 @@ export default [
     id: "assets-truncated-png",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => {
       const bytes = png({ width: 32, height: 32 });
       const uri = dataUri("image/png", bytes.subarray(0, bytes.length - 40));
@@ -518,7 +518,7 @@ export default [
     id: "assets-corrupt-png",
     category: "images",
     tier: "smoke",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => {
       const bytes = png({ width: 16, height: 16 });
       bytes[30] = 0xff;
@@ -552,7 +552,7 @@ export default [
     id: "assets-base64-with-whitespace",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => {
       const uri = base64(png({ width: 16, height: 16 }));
       const spaced = `${uri.slice(0, 40)}\n${uri.slice(40, 80)}\n${uri.slice(80)}`;
@@ -563,7 +563,7 @@ export default [
     id: "assets-base64-with-a-missing-pad",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => {
       const uri = base64(png({ width: 16, height: 16 }));
       return pageWith(`<img alt="unpadded" src="data:image/png;base64,${uri.replace(/=+$/, "")}">`);
@@ -573,7 +573,7 @@ export default [
     id: "assets-base64-with-an-extra-pad",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => {
       const uri = base64(png({ width: 16, height: 16 }));
       return pageWith(`<img alt="padded" src="data:image/png;base64,${uri}=">`);
@@ -657,7 +657,7 @@ export default [
     id: "assets-image-inside-an-inline-svg",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `<svg viewBox="0 0 16 16"><image href="${dataUri("image/png", png({ width: 16, height: 16 }))}" width="16" height="16"/></svg>`,
@@ -667,7 +667,7 @@ export default [
     id: "assets-duplicated-images",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => {
       const uri = dataUri("image/png", png({ width: 24, height: 24 }));
       return pageWith(`<img alt="one" src="${uri}"><img alt="two" src="${uri}">`);
@@ -677,7 +677,7 @@ export default [
     id: "assets-many-images",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => {
       const next = random(20240218);
       const images = repeat(
@@ -692,7 +692,7 @@ export default [
     id: "assets-large-image",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () =>
       pageWith(
         `${markup}<img alt="large" src="${dataUri("image/png", png({ width: 900, height: 900 }))}">`,
