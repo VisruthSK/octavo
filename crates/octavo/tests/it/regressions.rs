@@ -575,3 +575,18 @@ fn custom_font_quality_has_its_own_cache_entry() {
         3
     );
 }
+
+#[test]
+fn a_class_name_longer_than_the_stored_word_length_keeps_its_rule() {
+    let long = "x".repeat(200);
+    let src = page(
+        &format!("<style>.{long}{{color:red}}.unused-thing{{color:blue}}</style>"),
+        &format!(
+            "<p class=\"{long}\">hello</p>{}",
+            "<p>padding</p>".repeat(400)
+        ),
+    );
+    let out = safe(&src);
+    assert!(out.contains(&format!(".{long}")));
+    assert!(!out.contains("unused-thing"));
+}
