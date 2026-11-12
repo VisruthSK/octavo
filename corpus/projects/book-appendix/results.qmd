@@ -1,0 +1,11 @@
+---
+title: Results
+---
+
+# Results {#sec-results}
+
+@tbl-counts lists counts. See @sec-methods and @sec-extra.
+
+::: {.callout-note}
+The results mention a heron.
+:::

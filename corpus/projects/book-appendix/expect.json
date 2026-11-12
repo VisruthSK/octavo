@@ -1,0 +1,73 @@
+{
+  "tier": "smoke",
+  "description": "Book with a preface, four chapters, an appendix, cross-references across chapters, a figure, a table, a callout and search",
+  "pages": 6,
+  "files": [
+    "search.json",
+    "book.css",
+    "img/dot.png"
+  ],
+  "search": {
+    "found": [
+      "manatee",
+      "heron",
+      "otter",
+      "lagoon"
+    ],
+    "absent": [
+      "zzzqx"
+    ]
+  },
+  "interactions": [
+    {
+      "name": "the sidebar lists every chapter",
+      "page": "intro.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "#quarto-sidebar .sidebar-item",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "name": "a cross-chapter reference links to the chapter",
+      "page": "methods.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "a.quarto-xref[href$='/intro.html']",
+          "exists": true,
+          "text": "Chapter"
+        },
+        {
+          "selector": "a.quarto-xref[href$='/intro.html#fig-dot']",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "the appendix reference resolves",
+      "page": "results.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "a.quarto-xref[href$='/appendix-a.html']",
+          "exists": true
+        }
+      ]
+    }
+  ],
+  "prune": {
+    "removed": [
+      ".never-used-in-book"
+    ],
+    "kept": []
+  },
+  "site": {
+    "present": [
+      "search.json"
+    ],
+    "absent": []
+  }
+}

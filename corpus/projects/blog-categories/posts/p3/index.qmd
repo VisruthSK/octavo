@@ -1,0 +1,8 @@
+---
+title: Post three
+date: 2024-01-03
+categories: [beta]
+image: thumb.png
+---
+
+Post three covers the capybara.

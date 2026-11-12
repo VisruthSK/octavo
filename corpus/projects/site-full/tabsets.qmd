@@ -1,0 +1,15 @@
+---
+title: Tabsets
+---
+
+::: {.panel-tabset}
+
+## Alpha
+
+The alphatab content.
+
+## Beta
+
+The betatab content.
+
+:::

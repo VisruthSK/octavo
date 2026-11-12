@@ -1,0 +1,8 @@
+---
+title: Post one
+date: 2024-01-01
+categories: [alpha]
+image: thumb.png
+---
+
+Post one covers the aardvark.

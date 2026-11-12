@@ -1,0 +1,5 @@
+@import "css/base.css";
+@font-face { font-family: "Local Fira"; src: url(fonts/fira.ttf) format("truetype"); }
+.fira { font-family: "Local Fira", serif; }
+.sprite { width: 24px; height: 24px; background: url(img/dot.png) no-repeat; }
+.unused-heavy-rule { text-shadow: 0 0 3px #123456; }

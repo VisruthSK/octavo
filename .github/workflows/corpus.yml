@@ -235,6 +235,60 @@ jobs:
           path: out/linked/report.md
           if-no-files-found: ignore
 
+  projects:
+    name: Projects (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
+    needs: [plan, build]
+    if: needs.plan.outputs.tier != 'select'
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 60 || 240 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    env:
+      TIER: ${{ needs.plan.outputs.tier }}
+      SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+      OCTAVO_PAGES: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        with:
+          name: octavo-binary
+          path: target/release
+      - run: chmod +x target/release/octavo
+      - run: npm ci
+        working-directory: verify
+      - run: |
+          for attempt in 1 2 3 4; do
+            npx playwright-core install --with-deps chromium && exit 0
+            sleep $((attempt * 20))
+          done
+          exit 1
+        working-directory: verify
+      - run: node --test corpus/projects.test.mjs
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.11.9
+      - uses: actions/cache@v6
+        with:
+          path: corpus/.cache
+          key: projects-${{ hashFiles('corpus/sources.json', 'corpus/projects.json', 'corpus/fonts.json') }}
+      - run: node corpus/fonts.mjs
+      - run: node verify/projects.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}"
+      - if: always()
+        run: '[ -f out/projects/report.md ] && cat out/projects/report.md >> "$GITHUB_STEP_SUMMARY" || true'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: projects-report-${{ matrix.shard }}
+          path: out/projects/report.md
+          if-no-files-found: ignore
+
   totals:
     name: Totals
     needs: [plan, corpus]

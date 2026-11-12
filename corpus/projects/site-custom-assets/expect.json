@@ -1,0 +1,114 @@
+{
+  "tier": "smoke",
+  "description": "Website with custom scss, a stylesheet that imports another that imports a third and uses url(), a local font, a classic script and a module that imports another module, at two directory depths",
+  "pages": 2,
+  "files": [
+    "styles.css",
+    "css/base.css",
+    "css/deeper.css",
+    "js/app.js",
+    "js/main.js",
+    "js/util.js",
+    "img/dot.png",
+    "fonts/fira.ttf"
+  ],
+  "interactions": [
+    {
+      "name": "the classic script and the module both ran",
+      "page": "index.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "html",
+          "attr": [
+            "data-app-loaded",
+            "yes"
+          ]
+        },
+        {
+          "selector": "html",
+          "attr": [
+            "data-module-loaded",
+            "yes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the scripts ran at depth",
+      "page": "docs/deep/page.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "html",
+          "attr": [
+            "data-app-loaded",
+            "yes"
+          ]
+        },
+        {
+          "selector": "html",
+          "attr": [
+            "data-module-loaded",
+            "yes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "imported and local styles apply",
+      "page": "index.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": ".base-used",
+          "computed": [
+            "color",
+            "rgb(18, 52, 86)"
+          ]
+        },
+        {
+          "selector": ".brand-card",
+          "computed": [
+            "borderTopColor",
+            "rgb(170, 51, 102)"
+          ]
+        },
+        {
+          "selector": ".fira",
+          "computed": [
+            "fontFamily",
+            "Local Fira"
+          ]
+        }
+      ]
+    }
+  ],
+  "prune": {
+    "removed": [
+      ".unused-heavy-rule",
+      ".base-unused",
+      ".deeper-unused",
+      ".never-used-scss"
+    ],
+    "kept": [
+      ".base-used",
+      ".deeper-used",
+      ".brand-card",
+      ".fira",
+      ".sprite"
+    ]
+  },
+  "site": {
+    "present": [
+      "js/app.js",
+      "js/main.js",
+      "js/util.js",
+      "img/dot.png",
+      "fonts/fira.woff2"
+    ],
+    "absent": [
+      "fonts/fira.ttf"
+    ]
+  }
+}

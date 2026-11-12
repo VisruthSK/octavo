@@ -1,0 +1,7 @@
+---
+title: Level d
+---
+
+![Image from level d](../../../../img/dot.png)
+
+Level d text about a kiwi. Back to [the top](../../../../index.qmd).

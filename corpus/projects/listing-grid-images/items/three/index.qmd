@@ -1,0 +1,7 @@
+---
+title: Item three
+description: The third item about a numbat.
+image: picture.png
+---
+
+Item three body.

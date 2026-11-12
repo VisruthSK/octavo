@@ -1,0 +1,10 @@
+---
+title: Home
+about:
+  template: trestles
+  links:
+    - text: Example
+      href: https://example.com/
+---
+
+The zebra crossing is [highlighted]{.kept-by-page} on the home page.

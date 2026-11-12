@@ -1,0 +1,18 @@
+project:
+  type: website
+  resources:
+    - data
+    - downloads
+website:
+  title: "Deep Nesting"
+  page-navigation: true
+  navbar:
+    left:
+      - index.qmd
+      - a/index.qmd
+      - a/b/index.qmd
+      - a/b/c/index.qmd
+      - a/b/c/d/page.qmd
+format:
+  html:
+    theme: lumen

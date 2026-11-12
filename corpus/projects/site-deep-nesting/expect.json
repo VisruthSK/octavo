@@ -1,0 +1,58 @@
+{
+  "tier": "full",
+  "description": "Website with pages five directories deep, the same image referenced at four depths, extra resources copied with resources:, and navigation across levels",
+  "pages": 5,
+  "files": [
+    "search.json",
+    "img/dot.png",
+    "data/notes.txt",
+    "downloads/table.csv"
+  ],
+  "search": {
+    "found": [
+      "platypus",
+      "kiwi",
+      "jackal"
+    ],
+    "absent": [
+      "zzzqx"
+    ]
+  },
+  "interactions": [
+    {
+      "name": "the deepest page shows its image",
+      "page": "a/b/c/d/page.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "img[alt='Image from level d']",
+          "exists": true,
+          "loaded": true
+        }
+      ]
+    },
+    {
+      "name": "every level links back to the top",
+      "page": "a/b/c/d/page.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "a[href='../../../../index.html']",
+          "exists": true
+        }
+      ]
+    }
+  ],
+  "prune": {
+    "removed": [],
+    "kept": []
+  },
+  "site": {
+    "present": [
+      "data/notes.txt",
+      "downloads/table.csv",
+      "img/dot.png"
+    ],
+    "absent": []
+  }
+}

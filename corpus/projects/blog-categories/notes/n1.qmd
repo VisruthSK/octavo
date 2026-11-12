@@ -1,0 +1,6 @@
+---
+title: Note one
+date: 2024-02-01
+---
+
+Note one mentions the echidna.

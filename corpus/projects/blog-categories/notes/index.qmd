@@ -1,0 +1,6 @@
+---
+title: Notes
+listing:
+  contents: "*.qmd"
+  type: table
+---

@@ -1,0 +1,10 @@
+---
+title: Custom assets
+---
+
+<script src="js/app.js"></script>
+<script type="module" src="js/main.js"></script>
+
+::: {.brand-card}
+A [card]{.fira} with the [sprite]{.sprite .base-used .deeper-used} class.
+:::

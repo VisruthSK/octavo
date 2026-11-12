@@ -1,0 +1,7 @@
+---
+title: Level a
+---
+
+![Image from level a](../img/dot.png)
+
+Level a text about a gecko.

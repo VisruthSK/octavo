@@ -68,6 +68,11 @@ function extract(source, archive) {
   return target;
 }
 
+export async function sourceDirectory(name) {
+  const source = readJson(sourcesPath).find((candidate) => candidate.name === name);
+  return extract(source, await download(source));
+}
+
 const walk = (directory, prefix = "") =>
   readdirSync(join(directory, prefix), { withFileTypes: true }).flatMap((entry) => {
     const path = prefix ? `${prefix}/${entry.name}` : entry.name;

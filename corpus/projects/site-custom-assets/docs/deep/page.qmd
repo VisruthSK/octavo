@@ -1,0 +1,8 @@
+---
+title: Deep page
+---
+
+<script src="../../js/app.js"></script>
+<script type="module" src="../../js/main.js"></script>
+
+A [deeper]{.fira} page using the [base]{.base-used} class.

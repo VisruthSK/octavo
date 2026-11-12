@@ -1,0 +1,70 @@
+{
+  "tier": "full",
+  "description": "Blog with a categorised default listing of four posts that each have a thumbnail in their own directory, a second listing as a table, and an about page",
+  "pages": 9,
+  "files": [
+    "search.json",
+    "posts/p1/thumb.png",
+    "posts/p4/thumb.png"
+  ],
+  "search": {
+    "found": [
+      "aardvark",
+      "dugong",
+      "echidna",
+      "wombat"
+    ],
+    "absent": [
+      "zzzqx"
+    ]
+  },
+  "interactions": [
+    {
+      "name": "the listing shows all four posts",
+      "page": "index.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": ".quarto-listing .quarto-post",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "name": "choosing a category filters the listing",
+      "page": "index.html",
+      "steps": [
+        {
+          "click": ".quarto-listing-category .category[data-category]:not([data-category=''])"
+        }
+      ],
+      "expect": [
+        {
+          "selector": ".quarto-listing .quarto-post:not([style*='display: none'])",
+          "countAtMost": 3
+        }
+      ]
+    },
+    {
+      "name": "the table listing has two rows",
+      "page": "notes/index.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": ".quarto-listing table tbody tr",
+          "count": 2
+        }
+      ]
+    }
+  ],
+  "prune": {
+    "removed": [],
+    "kept": []
+  },
+  "site": {
+    "present": [
+      "posts/p1/thumb.png"
+    ],
+    "absent": []
+  }
+}

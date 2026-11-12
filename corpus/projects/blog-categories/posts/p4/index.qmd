@@ -1,0 +1,8 @@
+---
+title: Post four
+date: 2024-01-04
+categories: [gamma]
+image: thumb.png
+---
+
+Post four covers the dugong.

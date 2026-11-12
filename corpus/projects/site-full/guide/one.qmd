@@ -1,0 +1,13 @@
+---
+title: Guide one
+---
+
+## Setup {#sec-setup}
+
+![A square](../img/dot.png){#fig-dot}
+
+See @fig-dot and @sec-more.
+
+| Item | Count |
+|------|-------|
+| One  | 1     |

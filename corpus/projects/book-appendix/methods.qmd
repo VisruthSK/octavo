@@ -1,0 +1,13 @@
+---
+title: Methods
+---
+
+# Methods {#sec-methods}
+
+Methods build on @sec-intro and show @fig-dot.
+
+| Site | Count |
+|------|-------|
+| North | 4 |
+
+: Counts per site {#tbl-counts}

@@ -1,0 +1,19 @@
+project:
+  type: book
+book:
+  title: "Book Appendix"
+  author: "A. Writer"
+  date: "2024-01-01"
+  search: true
+  chapters:
+    - index.qmd
+    - intro.qmd
+    - methods.qmd
+    - results.qmd
+    - summary.qmd
+  appendices:
+    - appendix-a.qmd
+format:
+  html:
+    theme: cosmo
+    css: book.css

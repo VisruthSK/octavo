@@ -270,6 +270,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
     javaScriptEnabled: scripted,
   });
   try {
+    if (process.env.OCTAVO_VERIFY_OFFLINE) await context.route(/^https?:\/\//, (route) => route.abort());
     await context.addInitScript(seedRandom);
     const page = await context.newPage();
     const errors = [];

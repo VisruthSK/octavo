@@ -1,0 +1,37 @@
+{
+  "tier": "full",
+  "description": "Grid listing whose cards use thumbnails from three different directories, the layout that makes Quarto glue a directory onto an embedded image",
+  "pages": 4,
+  "files": [
+    "search.json",
+    "items/one/picture.png",
+    "items/three/picture.png"
+  ],
+  "interactions": [
+    {
+      "name": "all three cards show an image",
+      "page": "index.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": ".quarto-grid-item img",
+          "count": 3
+        },
+        {
+          "selector": ".quarto-grid-item img",
+          "loaded": true
+        }
+      ]
+    }
+  ],
+  "prune": {
+    "removed": [],
+    "kept": []
+  },
+  "site": {
+    "present": [
+      "items/one/picture.png"
+    ],
+    "absent": []
+  }
+}

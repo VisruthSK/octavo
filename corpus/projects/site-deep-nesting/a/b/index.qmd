@@ -1,0 +1,7 @@
+---
+title: Level b
+---
+
+![Image from level b](../../img/dot.png)
+
+Level b text about an ibis.

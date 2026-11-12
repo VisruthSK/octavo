@@ -1,0 +1,13 @@
+---
+title: Callouts
+---
+
+::: {.callout-note}
+A plain quokka note.
+:::
+
+::: {.callout-tip collapse="true"}
+## Folded tip
+
+The foldedtip body.
+:::

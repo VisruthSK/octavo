@@ -1,0 +1,9 @@
+---
+title: Introduction
+---
+
+# Introduction {#sec-intro}
+
+The survey covered a lagoon.
+
+![A sample square](img/dot.png){#fig-dot}

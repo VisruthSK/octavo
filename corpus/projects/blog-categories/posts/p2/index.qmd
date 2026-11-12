@@ -1,0 +1,8 @@
+---
+title: Post two
+date: 2024-01-02
+categories: [alpha, beta]
+image: thumb.png
+---
+
+Post two covers the budgerigar.

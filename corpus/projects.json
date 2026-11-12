@@ -1,0 +1,844 @@
+[
+  {
+    "id": "quarto-cli-axe-scan-sites-findings",
+    "root": "axe-scan/sites/findings",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "darkToggle",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-axe-scan-sites-matrix",
+    "root": "axe-scan/sites/matrix",
+    "group": "website",
+    "pages": 3,
+    "sources": 4,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "darkToggle",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-blog",
+    "root": "blog",
+    "group": "website",
+    "pages": 4,
+    "sources": 4,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "sidebar",
+      "listing",
+      "search",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-blog-grid",
+    "root": "blog-grid",
+    "group": "website",
+    "pages": 6,
+    "sources": 6,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-inspect-project-basic",
+    "root": "inspect/project-basic",
+    "group": "default",
+    "pages": 2,
+    "sources": 4,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-listings-contents-file",
+    "root": "listings-contents-file",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-listings-feed-image",
+    "root": "listings-feed-image",
+    "group": "website",
+    "pages": 6,
+    "sources": 6,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-listings-metadata-link",
+    "root": "listings-metadata-link",
+    "group": "website",
+    "pages": 9,
+    "sources": 9,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-listings-thumbnail-link",
+    "root": "listings-thumbnail-link",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-manual-preview-book-llms-crossrefs-14975",
+    "root": "manual/preview/book-llms-crossrefs-14975",
+    "group": "book",
+    "pages": 3,
+    "sources": 3,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "math",
+      "sidebar",
+      "crossRefs",
+      "search",
+      "table",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-manual-preview-sass-cache-crash-14594",
+    "root": "manual/preview/sass-cache-crash-14594",
+    "group": "book",
+    "pages": 3,
+    "sources": 4,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "sidebar",
+      "search",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-blog-multi-listing-blog",
+    "root": "playwright/blog/multi-listing-blog",
+    "group": "website",
+    "pages": 7,
+    "sources": 7,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "listing",
+      "search",
+      "table"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-html-code-highlight",
+    "root": "playwright/html/code-highlight",
+    "group": "default",
+    "pages": 25,
+    "sources": 26,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "darkToggle",
+      "callout"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-listings-external-links",
+    "root": "playwright/listings/external-links",
+    "group": "website",
+    "pages": 9,
+    "sources": 9,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "listing",
+      "search",
+      "table"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-listings-interactions",
+    "root": "playwright/listings/interactions",
+    "group": "website",
+    "pages": 4,
+    "sources": 4,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-playwright-website-focus-indicator",
+    "root": "playwright/website/focus-indicator",
+    "group": "website",
+    "pages": 6,
+    "sources": 6,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "sidebar",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-project-ai-config-files",
+    "root": "project/ai-config-files",
+    "group": "website",
+    "pages": 1,
+    "sources": 3,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-project-book-llms-crossrefs",
+    "root": "project/book-llms-crossrefs",
+    "group": "book",
+    "pages": 3,
+    "sources": 3,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "math",
+      "sidebar",
+      "crossRefs",
+      "search",
+      "table",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-project-ignore-dirs",
+    "root": "project/ignore-dirs",
+    "group": "default",
+    "pages": 1,
+    "sources": 3,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [],
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-shortcodes",
+    "root": "shortcodes",
+    "group": "default",
+    "pages": 7,
+    "sources": 7,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "math",
+      "darkToggle"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-site-navigation",
+    "root": "site-navigation",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "sidebar",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2023-12-04-7784",
+    "root": "smoke-all/2023/12/04/7784",
+    "group": "website",
+    "pages": 3,
+    "sources": 3,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-02-01-issue-8514",
+    "root": "smoke-all/2024/02/01/issue-8514",
+    "group": "book",
+    "pages": 4,
+    "sources": 4,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "sidebar",
+      "crossRefs",
+      "search",
+      "citations",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-02-21-8779",
+    "root": "smoke-all/2024/02/21/8779",
+    "group": "website",
+    "pages": 3,
+    "sources": 4,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-02-22-8814",
+    "root": "smoke-all/2024/02/22/8814",
+    "group": "book",
+    "pages": 4,
+    "sources": 4,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "sidebar",
+      "search",
+      "citations",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-05-06-9524",
+    "root": "smoke-all/2024/05/06/9524",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-07-01-inspect-test",
+    "root": "smoke-all/2024/07/01/inspect-test",
+    "group": "website",
+    "pages": 3,
+    "sources": 6,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-10-23-issue-10829",
+    "root": "smoke-all/2024/10/23/issue-10829",
+    "group": "website",
+    "pages": 4,
+    "sources": 4,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-10-28-issue-10567",
+    "root": "smoke-all/2024/10/28/issue-10567",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "sidebar",
+      "search",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2024-12-03-issue-11580",
+    "root": "smoke-all/2024/12/03/issue-11580",
+    "group": "website",
+    "pages": 4,
+    "sources": 4,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2025-04-01-issue-8238",
+    "root": "smoke-all/2025/04/01/issue-8238",
+    "group": "website",
+    "pages": 4,
+    "sources": 4,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "listing",
+      "search",
+      "table",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-13-issue-12016",
+    "root": "smoke-all/2026/10/13/issue-12016",
+    "group": "website",
+    "pages": 6,
+    "sources": 6,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-13-issue-12016-no-site-url",
+    "root": "smoke-all/2026/10/13/issue-12016-no-site-url",
+    "group": "website",
+    "pages": 3,
+    "sources": 3,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-13-issue-12016-preview-image",
+    "root": "smoke-all/2026/10/13/issue-12016-preview-image",
+    "group": "website",
+    "pages": 3,
+    "sources": 3,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-16-page-social-metadata-false",
+    "root": "smoke-all/2026/10/16/page-social-metadata-false",
+    "group": "website",
+    "pages": 3,
+    "sources": 3,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-19-book-references-scholar",
+    "root": "smoke-all/2026/10/19/book-references-scholar",
+    "group": "book",
+    "pages": 3,
+    "sources": 3,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "sidebar",
+      "search",
+      "citations"
+    ],
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-smoke-all-2026-10-19-issue-14917",
+    "root": "smoke-all/2026/10/19/issue-14917",
+    "group": "website",
+    "pages": 4,
+    "sources": 4,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "search"
+    ],
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-smoke-all-book-page-footer",
+    "root": "smoke-all/book/page-footer",
+    "group": "book",
+    "pages": 5,
+    "sources": 5,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "sidebar",
+      "search",
+      "citations",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-book-simple",
+    "root": "smoke-all/book/simple",
+    "group": "book",
+    "pages": 4,
+    "sources": 4,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "sidebar",
+      "search",
+      "citations",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-brand-logo-brand-icon-small-favicon-book",
+    "root": "smoke-all/brand/logo/brand-icon-small-favicon-book",
+    "group": "book",
+    "pages": 4,
+    "sources": 4,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "sidebar",
+      "darkToggle",
+      "search",
+      "citations",
+      "toc"
+    ],
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-smoke-all-brand-logo-project-subdirs",
+    "root": "smoke-all/brand/logo/project-subdirs",
+    "group": "website",
+    "pages": 8,
+    "sources": 8,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "darkToggle",
+      "search"
+    ],
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-smoke-all-issues-7318-title-no-overwrite",
+    "root": "smoke-all/issues/7318-title-no-overwrite",
+    "group": "website",
+    "pages": 4,
+    "sources": 3,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-listings-image-lazy-loading",
+    "root": "smoke-all/listings/image-lazy-loading",
+    "group": "website",
+    "pages": 14,
+    "sources": 14,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "listing",
+      "search",
+      "table",
+      "toc"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-website-llms-txt-math",
+    "root": "smoke-all/website/llms-txt-math",
+    "group": "website",
+    "pages": 10,
+    "sources": 10,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "math",
+      "crossRefs",
+      "callout",
+      "search",
+      "table"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-website-nav-landmark-labels",
+    "root": "smoke-all/website/nav-landmark-labels",
+    "group": "website",
+    "pages": 6,
+    "sources": 6,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "sidebar",
+      "search",
+      "toc"
+    ],
+    "tier": "smoke"
+  },
+  {
+    "id": "quarto-cli-smoke-all-website-sidebar-disclosure",
+    "root": "smoke-all/website/sidebar-disclosure",
+    "group": "website",
+    "pages": 6,
+    "sources": 6,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "sidebar",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-smoke-all-website-sidebar-issue-14353-multi-sidebar-logo",
+    "root": "smoke-all/website-sidebar/issue-14353-multi-sidebar-logo",
+    "group": "website",
+    "pages": 3,
+    "sources": 3,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "sidebar",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-website-image-base",
+    "root": "website-image-base",
+    "group": "website",
+    "pages": 8,
+    "sources": 8,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-website-image-data-uri",
+    "root": "website-image-data-uri",
+    "group": "website",
+    "pages": 7,
+    "sources": 7,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-websites-drafts-drafts-default",
+    "root": "websites/drafts/drafts-default",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "sidebar",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-websites-drafts-drafts-env",
+    "root": "websites/drafts/drafts-env",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "sidebar",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-websites-drafts-drafts-gone",
+    "root": "websites/drafts/drafts-gone",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "sidebar",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-websites-drafts-drafts-visible",
+    "root": "websites/drafts/drafts-visible",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "sidebar",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-websites-drafts-no-drafts",
+    "root": "websites/drafts/no-drafts",
+    "group": "website",
+    "pages": 5,
+    "sources": 5,
+    "remote": true,
+    "quarto": "1.11.9",
+    "markers": [
+      "mathjax",
+      "navbar",
+      "sidebar",
+      "listing",
+      "search"
+    ],
+    "tier": "full"
+  },
+  {
+    "id": "quarto-cli-websites-website-ignore-dirs",
+    "root": "websites/website-ignore-dirs",
+    "group": "website",
+    "pages": 1,
+    "sources": 3,
+    "remote": false,
+    "quarto": "1.11.9",
+    "markers": [
+      "navbar",
+      "search"
+    ],
+    "tier": "full"
+  }
+]

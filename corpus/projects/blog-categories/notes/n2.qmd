@@ -1,0 +1,6 @@
+---
+title: Note two
+date: 2024-02-02
+---
+
+Note two mentions the fossa.

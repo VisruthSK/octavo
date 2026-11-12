@@ -1,0 +1,7 @@
+---
+title: Summary
+---
+
+# Summary {#sec-summary}
+
+The summary refers back to @sec-results.

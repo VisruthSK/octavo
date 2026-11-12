@@ -1,0 +1,8 @@
+---
+title: Gallery
+listing:
+  contents: items
+  type: grid
+  image-height: 120px
+  fields: [image, title, description]
+---

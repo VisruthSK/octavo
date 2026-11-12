@@ -1,0 +1,136 @@
+{
+  "tier": "smoke",
+  "description": "Website with navbar, sidebar, search, light and dark themes, an about page, tabsets, collapsible callouts, cross-references, a figure and a listing",
+  "pages": 8,
+  "files": [
+    "search.json",
+    "styles.css",
+    "img/dot.png"
+  ],
+  "search": {
+    "found": [
+      "zebra",
+      "narwhal",
+      "pelican",
+      "quokka"
+    ],
+    "absent": [
+      "zzzqx"
+    ]
+  },
+  "interactions": [
+    {
+      "name": "dark mode toggle switches the page to the dark theme",
+      "page": "index.html",
+      "steps": [
+        {
+          "click": ".quarto-color-scheme-toggle"
+        }
+      ],
+      "expect": [
+        {
+          "selector": "body",
+          "class": "quarto-dark"
+        }
+      ]
+    },
+    {
+      "name": "the collapsed navbar opens on a narrow screen",
+      "page": "index.html",
+      "viewport": {
+        "width": 480,
+        "height": 800
+      },
+      "steps": [
+        {
+          "click": ".navbar-toggler"
+        }
+      ],
+      "expect": [
+        {
+          "selector": ".navbar-collapse",
+          "class": "show"
+        }
+      ]
+    },
+    {
+      "name": "the second tab shows its pane",
+      "page": "tabsets.html",
+      "steps": [
+        {
+          "click": ".panel-tabset .nav-item:nth-child(2) .nav-link"
+        }
+      ],
+      "expect": [
+        {
+          "selector": ".panel-tabset .tab-pane:nth-child(2)",
+          "class": "active"
+        },
+        {
+          "selector": ".panel-tabset .tab-pane:nth-child(1)",
+          "notClass": "active"
+        }
+      ]
+    },
+    {
+      "name": "the folded callout opens",
+      "page": "callouts.html",
+      "steps": [
+        {
+          "click": ".callout-tip .callout-header"
+        }
+      ],
+      "expect": [
+        {
+          "selector": ".callout-tip .callout-collapse",
+          "class": "show"
+        }
+      ]
+    },
+    {
+      "name": "the kept class still styles its element",
+      "page": "index.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": ".kept-by-page",
+          "computed": [
+            "backgroundColor",
+            "rgb(255, 251, 230)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the cross-reference points at the figure",
+      "page": "guide/one.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "a.quarto-xref[href$='#fig-dot']",
+          "exists": true
+        },
+        {
+          "selector": "#fig-dot img",
+          "exists": true
+        }
+      ]
+    }
+  ],
+  "prune": {
+    "removed": [
+      ".never-used-class",
+      ".also-never-used"
+    ],
+    "kept": [
+      ".kept-by-page"
+    ]
+  },
+  "site": {
+    "present": [
+      "search.json",
+      "img/dot.png"
+    ],
+    "absent": []
+  }
+}
