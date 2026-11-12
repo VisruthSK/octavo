@@ -207,11 +207,11 @@ const lines = [
   "",
   `Tier ${tier}, ${rows.length} projects, browser ${browser ? "on" : "off"}. Sizes are the whole output directory, raw and Brotli quality 5. Standalone is the sum of every page optimized on its own from the normal render.`,
   "",
-  "| Project | Pages | Normal MiB | Site mode MiB | Site mode Brotli / normal | Standalone MiB | Problems |",
-  "|---|---|---|---|---|---|---|",
+  "| Project | Pages | Normal MiB | Normal Brotli MiB | Site mode MiB | Site mode Brotli MiB | Standalone MiB | Standalone Brotli MiB | Site mode Brotli / normal | Problems |",
+  "|---|---|---|---|---|---|---|---|---|---|",
   ...measured.map(
     (row) =>
-      `| ${row.id} | ${row.pages} | ${mib(row.normal.raw)} | ${mib(row.site.raw)} | ${(row.site.wire / row.normal.wire).toFixed(2)} | ${mib(row.standalone.raw)} | ${row.problems.length} |`,
+      `| ${row.id} | ${row.pages} | ${mib(row.normal.raw)} | ${mib(row.normal.wire)} | ${mib(row.site.raw)} | ${mib(row.site.wire)} | ${mib(row.standalone.raw)} | ${mib(row.standalone.wire)} | ${(row.site.wire / row.normal.wire).toFixed(2)} | ${row.problems.length} |`,
   ),
   "",
 ];
