@@ -2,6 +2,7 @@ project:
   type: website
   resources:
     - data
+    - img
 website:
   title: "Root Relative"
   search: false

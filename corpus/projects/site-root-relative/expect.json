@@ -1,6 +1,6 @@
 {
   "tier": "full",
-  "description": "Website with pages three directories deep whose theme stylesheet references a root-relative url() that only resolves against the site root, navigation across levels, an extra resource and no search UI",
+  "description": "Website with pages three directories deep whose theme stylesheet references a root-relative url() resolved against the site root at deploy time, navigation across levels, extra resources and no search UI",
   "pages": 4,
   "files": [
     "search.json",
