@@ -28,6 +28,8 @@ const MAX_LOSSY_PIXELS: u64 = 200_000_000;
 const PRESET_NANOSECONDS_PER_PIXEL: [u64; 5] = [50, 101, 215, 335, 540];
 // At 500 ms per image the output is 0.8 percent smaller but the run takes 30 percent longer.
 const PRESET_TIME_BUDGET_NANOSECONDS: u64 = 75_000_000;
+// AVIF speed 10 encodes about 65 percent faster than speed 8, but made three of five
+// sample images 44 to 62 percent larger, so it is kept for the largest images only.
 const LARGE_IMAGE_PIXELS: u64 = 8_000_000;
 
 struct Decoded {
