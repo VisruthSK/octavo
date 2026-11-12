@@ -81,3 +81,18 @@ fn audit_and_lossy_images_are_refused_for_a_directory() {
     }
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn rewriting_a_directory_in_place_needs_the_flag() {
+    let root = scratch();
+    site(&root);
+    let before = fs::read_to_string(root.join("style.css")).unwrap();
+    let refused = octavo(&[root.as_os_str(), root.as_os_str()]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--in-place"));
+    assert_eq!(fs::read_to_string(root.join("style.css")).unwrap(), before);
+    let allowed = octavo(&[root.as_os_str(), root.as_os_str(), "--in-place".as_ref()]);
+    assert!(allowed.status.success(), "{allowed:?}");
+    assert!(fs::read_to_string(root.join("style.css")).unwrap().len() < before.len());
+    let _ = fs::remove_dir_all(&root);
+}
