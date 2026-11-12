@@ -1,7 +1,5 @@
-mod common;
-
+use crate::common::{optimized, simplified};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use common::{optimized, simplified};
 use flate2::{Compression, Crc, write::ZlibEncoder};
 use image::ImageEncoder;
 use octavo::{ImageEncoding, ImageFormat, Mode, Options};
@@ -77,11 +75,11 @@ fn embedded_pngs_are_recompressed_in_src_and_data_src() {
 fn already_minimal_pngs_and_other_formats_are_untouched() {
     let minimal = optimized(&page("src", &png_with_comment("")), Mode::Safe).html;
     assert_eq!(optimized(&minimal, Mode::Safe).html, minimal);
-    let gif = common::page(
+    let gif = crate::common::page(
         "",
         &format!(
             "<img src=\"{}\">",
-            common::data_uri("image/gif", b"GIF89a0000")
+            crate::common::data_uri("image/gif", b"GIF89a0000")
         ),
     );
     assert_eq!(optimized(&gif, Mode::Safe).html, gif);

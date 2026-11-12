@@ -1,6 +1,4 @@
-mod common;
-
-use common::{optimized, page};
+use crate::common::{optimized, page};
 use octavo::{Error, Mode, Options, Url, Warning, optimize, simplify};
 
 #[test]

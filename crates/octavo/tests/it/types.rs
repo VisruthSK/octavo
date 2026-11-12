@@ -1,6 +1,4 @@
-mod common;
-
-use common::page;
+use crate::common::page;
 use octavo::{
     ImageEncoding, ImageFormat, Library, Mode, Options, Quality, Target, Transform, Warning,
 };

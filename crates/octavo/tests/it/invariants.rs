@@ -1,6 +1,4 @@
-mod common;
-
-use common::page;
+use crate::common::page;
 use octavo::{Mode, optimize};
 use proptest::{prelude::*, test_runner::FileFailurePersistence};
 use regex::Regex;

@@ -1,6 +1,4 @@
-mod common;
-
-use common::{busy_script, data_uri, packed, page, safe, simplified};
+use crate::common::{busy_script, data_uri, packed, page, safe, simplified};
 use octavo::{Compression, Mode, Options, Tuning, optimize, simplify};
 
 #[test]
@@ -270,7 +268,7 @@ fn only_textual_data_counts_as_words_the_page_can_use() {
 
 #[test]
 fn a_font_face_with_legacy_sources_keeps_one_woff2_copy_from_the_last_src() {
-    let font = include_bytes!("data/octavo-test.ttf");
+    let font = include_bytes!("../data/octavo-test.ttf");
     let css = format!(
         "@font-face{{font-family:Octavo Test;src:url({eot});src:url({eot}) format(\"embedded-opentype\"),url({ttf}) format(\"truetype\")}}body{{font-family:Octavo Test}}",
         eot = data_uri("application/vnd.ms-fontobject", b"not a usable font"),
@@ -436,7 +434,7 @@ fn many_adjacent_rules_that_are_set_aside_all_come_back_in_order() {
 }
 
 fn font_page(text: &str) -> String {
-    let font = include_bytes!("data/octavo-test.ttf");
+    let font = include_bytes!("../data/octavo-test.ttf");
     let css = format!(
         "@font-face{{font-family:Octavo Test;src:url({})}}body{{font-family:Octavo Test}}",
         data_uri("font/ttf", font)

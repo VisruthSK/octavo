@@ -1,6 +1,4 @@
-mod common;
-
-use common::{busy_script, optimized, page, safe, simplified};
+use crate::common::{busy_script, optimized, page, safe, simplified};
 use octavo::{Mode, Options, Target, Transform};
 use std::num::NonZeroUsize;
 
