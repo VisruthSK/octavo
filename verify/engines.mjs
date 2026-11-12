@@ -7,6 +7,7 @@ const table = {
     focusVisible: true,
     subtle: true,
     pixel: { channel: 1, faint: 8, budget: 12 },
+    noise: { pixels: 275589552, differing: 0, max: 0 },
   },
   firefox: {
     label: "Firefox",
@@ -14,6 +15,7 @@ const table = {
     focusVisible: true,
     subtle: true,
     pixel: { channel: 1, faint: 8, budget: 12 },
+    noise: { pixels: 10383312, differing: 0, max: 0 },
   },
   webkit: {
     label: "WebKit",
@@ -21,6 +23,7 @@ const table = {
     focusVisible: true,
     subtle: true,
     pixel: { channel: 1, faint: 8, budget: 12 },
+    noise: { pixels: 10383312, differing: 0, max: 0 },
   },
 };
 
@@ -42,6 +45,8 @@ export const focusVisible = (name = engineName()) => capabilities(name).focusVis
 
 export const subtleCrypto = (name = engineName()) => capabilities(name).subtle;
 
+export const measuredNoise = (name = engineName()) => capabilities(name).noise;
+
 export const checksOf = (checks) => {
   if (!checks) return [];
   const missing = [];
@@ -49,5 +54,7 @@ export const checksOf = (checks) => {
     const applied = checks[state] ?? 0;
     if (applied < checks.elements) missing.push(`${state} on ${checks.elements - applied} of ${checks.elements} elements`);
   }
+  const shots = checks.screenshots;
+  if (shots && shots.taken < shots.total) missing.push(`screenshot on ${shots.total - shots.taken} of ${shots.total} states`);
   return missing;
 };

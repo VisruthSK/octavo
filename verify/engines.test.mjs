@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { capabilities, checksOf, engineName, engineNotice, engineNames, focusVisible, pixelTolerance, subtleCrypto } from "./engines.mjs";
+import { capabilities, checksOf, engineName, engineNotice, engineNames, focusVisible, measuredNoise, pixelTolerance, subtleCrypto } from "./engines.mjs";
 import { launchOptions } from "./browser.mjs";
 
 test("chromium is the default engine", () => {
@@ -30,12 +30,16 @@ test("every engine applies the forced states with real pointer and keyboard even
   for (const name of engineNames) assert.equal(capabilities(name).forcedStates, "pointer", name);
 });
 
-test("every engine has a pixel tolerance", () => {
+test("every engine has a pixel tolerance above its measured noise", () => {
   for (const name of engineNames) {
     const tolerance = pixelTolerance(name);
+    const noise = measuredNoise(name);
     assert.ok(tolerance.channel >= 1, name);
+    assert.ok(tolerance.channel > noise.max, name);
     assert.ok(tolerance.faint >= tolerance.channel, name);
     assert.ok(tolerance.budget >= 0, name);
+    assert.ok(noise.pixels > 0, name);
+    assert.equal(noise.differing, 0, name);
   }
 });
 
@@ -49,6 +53,7 @@ test("every engine applies focus visible and has a subtle digest", () => {
 test("a check that could not be applied is reported", () => {
   assert.deepEqual(checksOf({ elements: 4, hover: 4, focus: 4, focusVisible: 4, active: 4 }), []);
   assert.deepEqual(checksOf({ elements: 4, hover: 3, focus: 4, focusVisible: 4, active: 4 }), ["hover on 1 of 4 elements"]);
+  assert.deepEqual(checksOf({ elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0, screenshots: { taken: 3, total: 4 } }), ["screenshot on 1 of 4 states"]);
   assert.deepEqual(checksOf(null), []);
 });
 

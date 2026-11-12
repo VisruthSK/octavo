@@ -537,7 +537,13 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
         await record(`interaction ${index}`, { digest });
       }
     }
-    return { states, errors, requests, base, checks: forced.checks };
+    return {
+      states,
+      errors,
+      requests,
+      base,
+      checks: { ...forced.checks, screenshots: { taken: states.filter((state) => state.screenshot).length, total: states.length } },
+    };
   } finally {
     await context.close();
   }
