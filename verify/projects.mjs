@@ -23,7 +23,6 @@ const shard = count ? { index: position - 1, count } : undefined;
 const binary = resolve(flag("binary", join(root, "target", "release", process.platform === "win32" ? "octavo.exe" : "octavo")));
 const outDirectory = resolve(flag("out", join(root, "out", "projects")));
 const QUERIES_PER_PROJECT = 4;
-const MIN_WORD = 5;
 
 const walk = (directory) =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
