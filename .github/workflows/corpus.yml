@@ -161,9 +161,21 @@ jobs:
         with:
           path: corpus/.cache
           key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
+      - uses: actions/cache/restore@v6
+        with:
+          path: corpus/.cache/verdicts
+          key: verdicts-${{ hashFiles('verify/*.mjs', 'verify/package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            verdicts-${{ hashFiles('verify/*.mjs', 'verify/package-lock.json') }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}"
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 25 || 100 }}
+      - uses: actions/cache/save@v6
+        if: always()
+        continue-on-error: true
+        with:
+          path: corpus/.cache/verdicts
+          key: verdicts-${{ hashFiles('verify/*.mjs', 'verify/package-lock.json') }}-${{ github.sha }}
       - name: Diagnose one document
         if: always() && inputs.diagnose != ''
         run: |
