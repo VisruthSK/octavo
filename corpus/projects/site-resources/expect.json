@@ -1,0 +1,57 @@
+{
+  "tier": "full",
+  "description": "Website whose resources: copies an extra downloads directory verbatim, including a file that no page links, beside files that are linked from two depths",
+  "pages": 3,
+  "files": [
+    "search.json",
+    "downloads/notes.txt",
+    "downloads/catalog.csv",
+    "downloads/raw-data.csv"
+  ],
+  "interactions": [
+    {
+      "name": "the index links the notes download",
+      "page": "index.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "a[href='downloads/notes.txt']",
+          "exists": true
+        },
+        {
+          "selector": "a[href='downloads/catalog.csv']",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "name": "the details page links the chart data",
+      "page": "guide/details.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "a[href='../downloads/catalog.csv']",
+          "exists": true
+        }
+      ]
+    }
+  ],
+  "prune": {
+    "removed": [],
+    "kept": []
+  },
+  "site": {
+    "present": [
+      "downloads/notes.txt",
+      "downloads/catalog.csv",
+      "downloads/raw-data.csv"
+    ],
+    "absent": []
+  },
+  "linked": {
+    "contains": [],
+    "absent": [
+      "raw-data.csv"
+    ]
+  }
+}

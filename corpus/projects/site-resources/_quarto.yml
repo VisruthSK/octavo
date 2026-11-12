@@ -1,0 +1,14 @@
+project:
+  type: website
+  resources:
+    - downloads
+website:
+  title: "Extra Resources"
+  navbar:
+    left:
+      - index.qmd
+      - guide/index.qmd
+      - guide/details.qmd
+format:
+  html:
+    theme: cosmo

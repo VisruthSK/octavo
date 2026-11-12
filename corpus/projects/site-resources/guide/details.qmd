@@ -1,0 +1,5 @@
+---
+title: Details
+---
+
+The [chart data](../downloads/catalog.csv) describes every booth. The raw export is distributed with the site but never linked from a page.

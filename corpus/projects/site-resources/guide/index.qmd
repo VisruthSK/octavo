@@ -1,0 +1,5 @@
+---
+title: Guide
+---
+
+The downloads ship with the site. Notes on the [field notes](../downloads/notes.txt) live in the [details page](details.qmd).
