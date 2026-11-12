@@ -264,7 +264,7 @@ let out = simplify(&html, options)?.pack(Mode::Packed);
 
 ## Verification
 
-`verify/` opens the original and the optimized file in Chromium and compares them. A browser is found automatically (Chrome, Chromium or Edge, or Playwright's own build). Set `CHROME_PATH` to choose one. It compares:
+`verify/` opens the original and the optimized file in Chromium and compares them. A browser is found automatically (Chrome, Chromium or Edge, or Playwright's own build). Set `CHROME_PATH` to choose one. Set `OCTAVO_BROWSER=firefox` or `OCTAVO_BROWSER=webkit` to run the same comparison in Playwright's Firefox or WebKit build (`npx playwright-core install firefox webkit`). The original and the optimized page always run in the same engine. Firefox and WebKit skip the forced hover, focus and active states, which need Chromium's DevTools protocol, and the report says so. It compares:
 
 - console errors and network requests
 - the serialized DOM and the accessibility tree

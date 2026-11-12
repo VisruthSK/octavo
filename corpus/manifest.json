@@ -313,6 +313,23 @@
     "sha256": "f559bd6e83355ee5955c1c94e011571213825572f9a47f0a4f82869280a0ebac"
   },
   {
+    "id": "assets-opaque-png-becomes-lossless-webp",
+    "category": "images",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/webp;base64,"
+      ],
+      "removes": [
+        "data:image/png;base64,"
+      ]
+    },
+    "bytes": 3698,
+    "sha256": "743a47e9a6a94bc3ee9f20d4e97ac163c8a412a715a5bca5ebc29203d5fb89f0"
+  },
+  {
     "id": "assets-otf-with-corrupt-data",
     "category": "fonts",
     "tier": "full",
@@ -1186,6 +1203,26 @@
     },
     "bytes": 207,
     "sha256": "abd482a74e91ad786b7ec268fd6e60f280e01bdaf345530bb390d6794fce903c"
+  },
+  {
+    "id": "css-modern-selectors-and-at-rules-survive",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".card:has(",
+        "@layer base",
+        "@container",
+        ":is(.a,.b)"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 489,
+    "sha256": "bcbd8debc28a81cadb9cd2391e96cb704e943140c9c1ae649b4ed4dcf6585485"
   },
   {
     "id": "css-nested-rules-are-kept",

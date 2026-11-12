@@ -20,6 +20,8 @@ Every document belongs to a tier. `smoke` is a small sample that covers every ca
 | `smoke` | 59 | 12 | On every push and pull request |
 | `full` | 259 | 453 | Before every release tag, split across 24 shards in CI |
 
+The `engines` job repeats the browser comparison in Firefox and WebKit for the documents where engines can differ: images (lossless WebP), fonts, CSS with modern selectors and at-rules, scripts and the packed level's decompression loader, libraries, and the Quarto documents. It runs the same tier and shards as the Chromium job, with `OCTAVO_BROWSER` set to the engine, and failures are prefixed with the engine name.
+
 ## Hand-written fixtures
 
 ```

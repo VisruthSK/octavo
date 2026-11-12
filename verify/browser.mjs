@@ -1,4 +1,4 @@
-import { chromium } from "playwright-core";
+import { chromium, firefox, webkit } from "playwright-core";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { basename, delimiter, dirname, join } from "node:path";
@@ -84,4 +84,26 @@ export const browserStamp = () => {
   }
 };
 
-export const launch = (options = {}) => chromium.launch({ executablePath: browserTarget(), ...options });
+const engines = { chromium, firefox, webkit };
+
+export const engineName = (env = process.env) => {
+  const name = env.OCTAVO_BROWSER || "chromium";
+  if (!Object.hasOwn(engines, name)) throw new Error(`OCTAVO_BROWSER must be chromium, firefox or webkit, not ${name}`);
+  return name;
+};
+
+export const capabilities = (name = engineName()) => ({ forcedStates: name === "chromium" });
+
+export const engineNotice = (name = engineName()) =>
+  capabilities(name).forcedStates ? name : `${name} (forced hover, focus and active states are not checked)`;
+
+export const launchOptions = (name, options, executablePath) => {
+  if (name === "chromium") return { executablePath, ...options };
+  const { args, ...rest } = options;
+  return rest;
+};
+
+export const launch = (options = {}) => {
+  const name = engineName();
+  return engines[name].launch(launchOptions(name, options, name === "chromium" ? browserTarget() : undefined));
+};

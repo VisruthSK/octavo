@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { capabilities } from "./browser.mjs";
 
 export const SCENARIOS = {
   "desktop-light": { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light", pixels: true },
@@ -181,6 +182,7 @@ async function observe({ lossy, probe, motion, pixels }) {
 }
 
 async function forcedStates(page) {
+  if (!capabilities().forcedStates) return [];
   const session = await page.context().newCDPSession(page);
   await session.send("DOM.enable");
   await session.send("CSS.enable");

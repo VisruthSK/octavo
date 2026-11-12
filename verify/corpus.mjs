@@ -8,6 +8,7 @@ import { documentPath, materialize } from "../corpus/build.mjs";
 import { readRendered, renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
 import { scenariosFor } from "./capture.mjs";
+import { engineName, engineNotice } from "./browser.mjs";
 
 const SLOWDOWN_LIMIT = 100;
 const RATE_FLOOR_BYTES = 256 * 1024;
@@ -138,12 +139,14 @@ const results = await pool(work, jobs, async ({ row, level }) => {
 const timing = { original: 0, optimized: 0, compare: 0, cached: 0 };
 const browserCache = { hits: 0, misses: 0 };
 let browserName = "";
+const engineTag = engineName() === "chromium" ? "" : `[${engineName()}] `;
 if (browser) {
   const { closeBrowser, pages, verifyLevels } = await import("./verify.mjs");
   const { browserIdentity } = await import("./browser.mjs");
   const { readVerdict, revalidateVerdict, shouldRevalidate, verdictKey, verifierHash, writeVerdict } = await import("./verdicts.mjs");
   const verifier = verifierHash();
-  const identity = await browserIdentity();
+  console.log(`browser: ${engineNotice()}`);
+  const identity = `${engineName()} ${await browserIdentity()}`;
   const documents = [...Map.groupBy(results.filter((entry) => entry.browser), (entry) => entry.input).values()];
   const cache = { hits: 0, misses: 0 };
   await pool(documents, pages, async (entries) => {
@@ -186,7 +189,7 @@ if (browser) {
       const issues = [];
       for (const { scenario, issues: found } of report) {
         if (entry.level === "packed" && scenario === "no-js") continue;
-        for (const issue of found) issues.push(`${scenario}: ${issue}`);
+        for (const issue of found) issues.push(`${engineTag}${scenario}: ${issue}`);
       }
       entry.problems.push(...issues);
       if (!issues.length && verdictCache) {
@@ -232,7 +235,7 @@ const overall = [...Map.groupBy(
 
 const categories = Map.groupBy(measured, (entry) => `${entry.category} / ${entry.level}`);
 const kib = (bytes) => (bytes / 1024).toFixed(1);
-const lines = [`# Corpus report`, ``, `Tier ${tier}, ${selected.length} documents, levels ${levels.join(", ")}, browser ${browser ? "on" : "off"}. ${jobs} documents at a time, ${threads} threads each.`, ``];
+const lines = [`# Corpus report`, ``, `Tier ${tier}, ${selected.length} documents, levels ${levels.join(", ")}, browser ${browser ? engineNotice() : "off"}. ${jobs} documents at a time, ${threads} threads each.`, ``];
 lines.push(`## Overall by level`, ``, `| Level | Docs | Input MiB | Output MiB | Output as % of input | Octavo seconds | MiB/s |`, `|---|---|---|---|---|---|---|`, ...overall, ``);
 if (browser) {
   lines.push(
