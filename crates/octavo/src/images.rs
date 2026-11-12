@@ -22,8 +22,9 @@ const RENDERING_CHUNKS: [[u8; 4]; 10] = [
 
 const MAX_LOSSLESS_PIXELS: u64 = 40_000_000;
 const MAX_LOSSY_PIXELS: u64 = 200_000_000;
-const THOROUGH_PIXELS: u64 = 400_000;
-const HEAVY_PIXELS: u64 = 8_000_000;
+const PRESET_NANOSECONDS_PER_PIXEL: [u64; 5] = [300, 800, 1_250, 2_200, 3_400];
+const PRESET_TIME_BUDGET_NANOSECONDS: u64 = 500_000_000;
+const LARGE_IMAGE_PIXELS: u64 = 8_000_000;
 
 struct Decoded {
     image: data::DataUri,
@@ -41,20 +42,13 @@ struct Candidate<'a> {
     uris: Vec<EncodedUri<'a>>,
 }
 
-enum Effort {
-    Light,
-    Standard,
-    Thorough,
-}
-
-impl Effort {
-    fn preset(self) -> u8 {
-        match self {
-            Effort::Light => 1,
-            Effort::Standard => 2,
-            Effort::Thorough => 4,
-        }
-    }
+fn preset_for(pixels: u64) -> u8 {
+    (0..PRESET_NANOSECONDS_PER_PIXEL.len())
+        .rev()
+        .find(|&preset| {
+            pixels * PRESET_NANOSECONDS_PER_PIXEL[preset] <= PRESET_TIME_BUDGET_NANOSECONDS
+        })
+        .unwrap_or(0) as u8
 }
 
 fn jobs_mut<'i, 'a>(images: &'i mut [Candidate<'a>]) -> Vec<&'i mut EncodedUri<'a>> {
@@ -165,19 +159,12 @@ fn recompress(decoded: &Decoded, tuning: Tuning) -> Option<String> {
     if decoded.image.mime != Mime::ImagePng || decoded.pixels > MAX_LOSSLESS_PIXELS {
         return None;
     }
-    let effort = if decoded.pixels <= THOROUGH_PIXELS {
-        Effort::Thorough
-    } else if decoded.pixels <= HEAVY_PIXELS {
-        Effort::Standard
-    } else {
-        Effort::Light
-    };
     let options = PngOptions {
         strip: StripChunks::Keep(RENDERING_CHUNKS.into_iter().collect()),
         ..PngOptions::from_preset(
             tuning
                 .png_preset
-                .map_or(effort.preset(), |preset| preset.min(6)),
+                .map_or(preset_for(decoded.pixels), |preset| preset.min(6)),
         )
     };
     let smaller = oxipng::optimize_from_memory(&decoded.image.bytes, &options)
@@ -232,7 +219,7 @@ fn shrink(image: RgbaImage, side: NonZeroU32) -> Option<RgbaImage> {
 }
 
 fn avif(image: &RgbaImage, quality: u8, pixels: u64) -> Option<Vec<u8>> {
-    let speed = if pixels > HEAVY_PIXELS { 10 } else { 8 };
+    let speed = if pixels > LARGE_IMAGE_PIXELS { 10 } else { 8 };
     let pixels = Img::new(
         image.as_raw().as_rgba(),
         image.width() as usize,

@@ -99,6 +99,15 @@
     return out;
   }
 
+  function chunks(texts, lengths) {
+    var out = new Uint8Array(lengths.reduce(function (a, b) { return a + b; }, 0)), at = 0, k;
+    for (k = 0; k < texts.length; k++) {
+      out.set(inflate(bytes(texts[k]), lengths[k]), at);
+      at += lengths[k];
+    }
+    return out;
+  }
+
   var sizes = SIZES, parts = [], at = 0, tags = ["script", "style"];
   var text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(UNPACK);
   for (i = 0; i < sizes.length; i++) { parts.push(text.substr(at, sizes[i])); at += sizes[i]; }
