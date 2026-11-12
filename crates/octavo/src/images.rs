@@ -20,10 +20,14 @@ const RENDERING_CHUNKS: [[u8; 4]; 10] = [
     *b"fdAT",
 ];
 
+// Preset 0 costs about 40 ns per pixel, so this keeps one image under about 1.6 s.
 const MAX_LOSSLESS_PIXELS: u64 = 40_000_000;
 const MAX_LOSSY_PIXELS: u64 = 200_000_000;
-const PRESET_NANOSECONDS_PER_PIXEL: [u64; 5] = [300, 800, 1_250, 2_200, 3_400];
-const PRESET_TIME_BUDGET_NANOSECONDS: u64 = 500_000_000;
+// The slowest measured cost of oxipng 10 presets 0 to 4 on 14 PNGs from real decks
+// of 0.2 to 8 million pixels, single-threaded. Content moves the cost by about 2x.
+const PRESET_NANOSECONDS_PER_PIXEL: [u64; 5] = [50, 101, 215, 335, 540];
+// At 500 ms per image the output is 0.8 percent smaller but the run takes 30 percent longer.
+const PRESET_TIME_BUDGET_NANOSECONDS: u64 = 75_000_000;
 const LARGE_IMAGE_PIXELS: u64 = 8_000_000;
 
 struct Decoded {
