@@ -278,6 +278,19 @@ fn png_converts_exactly(png: &[u8]) -> bool {
     seen_header
 }
 
+fn has_partial_alpha(image: &image::DynamicImage) -> bool {
+    let partial = |alpha: &u8| *alpha != 0 && *alpha != 255;
+    match image {
+        image::DynamicImage::ImageRgba8(rgba) => {
+            rgba.as_raw().iter().skip(3).step_by(4).any(partial)
+        }
+        image::DynamicImage::ImageLumaA8(luma) => {
+            luma.as_raw().iter().skip(1).step_by(2).any(partial)
+        }
+        _ => false,
+    }
+}
+
 fn lossless_webp(decoded: &Decoded, budget: &MemoryBudget) -> Option<Vec<u8>> {
     if !png_converts_exactly(&decoded.image.bytes) {
         return None;
@@ -285,6 +298,9 @@ fn lossless_webp(decoded: &Decoded, budget: &MemoryBudget) -> Option<Vec<u8>> {
     let _held = budget.take(decoded.pixels.checked_mul(WEBP_BYTES_PER_PIXEL)?)?;
     let image =
         image::load_from_memory_with_format(&decoded.image.bytes, image::ImageFormat::Png).ok()?;
+    if has_partial_alpha(&image) {
+        return None;
+    }
     let mut config = webp::WebPConfig::new().ok()?;
     let thorough = decoded.pixels <= WEBP_THOROUGH_PIXELS;
     config.lossless = 1;

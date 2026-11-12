@@ -302,6 +302,15 @@ fn a_png_with_a_gamma_chunk_stays_a_png() {
 }
 
 #[test]
+fn a_png_with_partly_transparent_pixels_stays_a_png() {
+    let mut pixels = flat_rgba(96, 96, false);
+    pixels[3] = 16;
+    let png = encode_png(&pixels, 96, 96, image::ColorType::Rgba8);
+    let html = optimized(&page("src", &png), Mode::Safe).html;
+    assert!(embedded_webp(&html).is_none());
+}
+
+#[test]
 fn a_sixteen_bit_png_stays_a_png() {
     let pixels: Vec<u8> = (0..96 * 96)
         .flat_map(|_| [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xff, 0xff])
