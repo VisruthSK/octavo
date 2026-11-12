@@ -195,24 +195,18 @@ impl<'a> Blobs<'a> {
             .brotli_quality
             .map_or(Tuning::DEFAULT_BROTLI_QUALITY, |quality| quality.min(11));
         let (deflated, brotlied) = rayon::join(|| deflate_chunks(bytes), || brotli(bytes, quality));
-        let literals: Vec<String> = deflated.par_iter().map(|chunk| literal(chunk)).collect();
-        let lengths: Vec<String> = bytes
-            .chunks(DEFLATE_CHUNK)
-            .map(|chunk| chunk.len().to_string())
-            .collect();
-        let plain = assemble(
-            &format!("chunks([{}],[{}])", literals.join(","), lengths.join(",")),
-            &sizes,
-        );
-        let compact = assemble(
-            &format!("{}(bytes({}))", brotli_decoder(), literal(&brotlied)),
-            &sizes,
-        );
-        if compact.len() < plain.len() {
-            compact
+        let deflated_size: usize = deflated.iter().map(Vec::len).sum();
+        let unpack = if brotlied.len() + brotli_decoder_deflated().len() < deflated_size {
+            format!("{}(bytes({}))", brotli_decoder(), literal(&brotlied))
         } else {
-            plain
-        }
+            let literals: Vec<String> = deflated.par_iter().map(|chunk| literal(chunk)).collect();
+            let lengths: Vec<String> = bytes
+                .chunks(DEFLATE_CHUNK)
+                .map(|chunk| chunk.len().to_string())
+                .collect();
+            format!("chunks([{}],[{}])", literals.join(","), lengths.join(","))
+        };
+        assemble(&unpack, &sizes)
     }
 }
 
