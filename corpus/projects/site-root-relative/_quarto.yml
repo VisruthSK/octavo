@@ -1,0 +1,18 @@
+project:
+  type: website
+  resources:
+    - data
+website:
+  title: "Root Relative"
+  search: false
+  navbar:
+    left:
+      - index.qmd
+      - a/index.qmd
+      - a/b/index.qmd
+      - a/b/c/page.qmd
+format:
+  html:
+    theme:
+      - lumen
+      - custom.scss

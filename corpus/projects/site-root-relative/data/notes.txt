@@ -1,0 +1,1 @@
+Root-relative notes, shipped as an extra resource at the site root.

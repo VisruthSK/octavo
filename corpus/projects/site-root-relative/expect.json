@@ -1,0 +1,82 @@
+{
+  "tier": "full",
+  "description": "Website with pages three directories deep whose theme stylesheet references a root-relative url() that only resolves against the site root, navigation across levels, an extra resource and no search UI",
+  "pages": 4,
+  "files": [
+    "search.json",
+    "img/spacer.png",
+    "img/dot.png",
+    "data/notes.txt"
+  ],
+  "interactions": [
+    {
+      "name": "the deepest page renders the theme card",
+      "page": "a/b/c/page.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": ".rooted",
+          "exists": true
+        },
+        {
+          "selector": ".rooted",
+          "computed": [
+            "borderTopColor",
+            "rgb(23, 78, 99)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the top page loads its image",
+      "page": "index.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "img[alt='Top dot']",
+          "exists": true,
+          "loaded": true
+        }
+      ]
+    },
+    {
+      "name": "the deepest page links up the tree",
+      "page": "a/b/c/page.html",
+      "steps": [],
+      "expect": [
+        {
+          "selector": "a[href='../../../index.html']",
+          "exists": true
+        },
+        {
+          "selector": "a[href='../../../data/notes.txt']",
+          "exists": true
+        }
+      ]
+    }
+  ],
+  "prune": {
+    "removed": [
+      ".never-used-rooted-rule"
+    ],
+    "kept": [
+      ".rooted"
+    ]
+  },
+  "site": {
+    "present": [
+      "img/spacer.png",
+      "img/dot.png",
+      "data/notes.txt"
+    ],
+    "absent": []
+  },
+  "linked": {
+    "contains": [
+      "data:image/png"
+    ],
+    "absent": [
+      "url(/img/spacer.png)"
+    ]
+  }
+}

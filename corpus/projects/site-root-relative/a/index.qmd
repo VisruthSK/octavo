@@ -1,0 +1,9 @@
+---
+title: Level a
+---
+
+![Dot from level a](../img/dot.png)
+
+[Top](../index.html), [level b](b/index.html) and [the deep page](b/c/page.html).
+
+<div class="rooted">A root-relative card at level a.</div>

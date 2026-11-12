@@ -1,0 +1,9 @@
+---
+title: Deep page
+---
+
+![Dot from level c](../../../img/dot.png)
+
+[Top](../../../index.html), [level a](../../index.html) and [level b](../index.html). Download the [notes](../../../data/notes.txt).
+
+<div class="rooted">A root-relative card at level c, painted with a url the stylesheet writes from the site root.</div>

@@ -1,0 +1,9 @@
+---
+title: Top
+---
+
+![Top dot](img/dot.png)
+
+A [deep page](a/b/c/page.html) three directories down.
+
+<div class="rooted">A root-relative card at the top of the tree.</div>
