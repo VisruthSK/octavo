@@ -78,6 +78,7 @@ pub(crate) struct Settings<'a> {
     pub(crate) src: &'a str,
     pub(crate) words: &'a Words,
     pub(crate) subset_text_fonts: bool,
+    pub(crate) font_experiment: Option<&'a str>,
     pub(crate) notices: Licenses,
     pub(crate) cache: Option<&'a Path>,
     pub(crate) tuning: Tuning,
@@ -198,6 +199,7 @@ fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Dec
     match transcode(
         &font.bytes,
         subset,
+        settings.font_experiment,
         settings.notices,
         settings.cache,
         settings.tuning,
@@ -446,13 +448,14 @@ struct Transcoded {
 fn transcode(
     bytes: &[u8],
     chars: Option<&HashSet<char>>,
+    experiment: Option<&str>,
     notices: Licenses,
     cache: Option<&Path>,
     tuning: Tuning,
 ) -> Option<Transcoded> {
     let quality = tuning.woff2_quality.min(11);
     let (Some(root), None) = (cache, chars) else {
-        return convert(bytes, chars, notices, quality);
+        return convert(bytes, chars, experiment, notices, quality);
     };
     let directory = root.join(cache::FONTS);
     let key = cache::key(&[bytes, &[quality]]);
@@ -460,7 +463,7 @@ fn transcode(
     {
         return Some(entry);
     }
-    let converted = convert(bytes, chars, notices, quality)?;
+    let converted = convert(bytes, chars, experiment, notices, quality)?;
     cache::store(&directory, &key, &converted.encode());
     Some(converted)
 }
@@ -501,6 +504,7 @@ fn transform_glyf_loca(sfnt: &[u8]) -> bool {
 fn convert(
     bytes: &[u8],
     chars: Option<&HashSet<char>>,
+    experiment: Option<&str>,
     notices: Licenses,
     quality: u8,
 ) -> Option<Transcoded> {
@@ -509,7 +513,7 @@ fn convert(
         b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
         _ => Cow::Borrowed(bytes),
     };
-    let subset = chars.and_then(|chars| subsetted(&sfnt, chars));
+    let subset = chars.and_then(|chars| subsetted(&sfnt, chars, experiment));
     let notice = subset.as_ref().and_then(|_| {
         if notices == Licenses::Keep {
             notice(&sfnt)
@@ -532,7 +536,7 @@ fn convert(
     })
 }
 
-fn subsetted(sfnt: &[u8], chars: &HashSet<char>) -> Option<Vec<u8>> {
+fn subsetted(sfnt: &[u8], chars: &HashSet<char>, experiment: Option<&str>) -> Option<Vec<u8>> {
     let font = Sfnt::new(sfnt).ok()?;
     if font.maxp().is_err() {
         return None;
@@ -551,17 +555,41 @@ fn subsetted(sfnt: &[u8], chars: &HashSet<char>) -> Option<Vec<u8>> {
     name_ids.insert(NameId::from(14));
     let mut name_languages = IntSet::empty();
     name_languages.insert(0x0409);
-    let plan = skera::Plan::new(
+    let mut flags = skera::SubsetFlags::SUBSET_FLAGS_DEFAULT;
+    if matches!(experiment, Some("os2" | "all")) {
+        flags |= skera::SubsetFlags::SUBSET_FLAGS_NO_PRUNE_UNICODE_RANGES;
+    }
+    if matches!(experiment, Some("gids" | "all")) {
+        flags |= skera::SubsetFlags::SUBSET_FLAGS_RETAIN_GIDS;
+    }
+    if matches!(experiment, Some("loca" | "all")) {
+        flags |= skera::SubsetFlags::SUBSET_FLAGS_IFTB_REQUIREMENTS;
+    }
+    if matches!(experiment, Some("post" | "all")) {
+        flags |= skera::SubsetFlags::SUBSET_FLAGS_GLYPH_NAMES;
+    }
+    if matches!(experiment, Some("names" | "all")) {
+        name_ids = IntSet::all();
+        name_languages = IntSet::all();
+    }
+    let mut plan = skera::Plan::new(
         &IntSet::<GlyphId>::empty(),
         &unicodes,
         &font,
-        skera::SubsetFlags::SUBSET_FLAGS_DEFAULT,
+        flags,
         &skera::DEFAULT_DROP_TABLES.iter().copied().collect(),
         &IntSet::<SfntTag>::all(),
         &features,
         &name_ids,
         &name_languages,
     );
+    if matches!(experiment, Some("cmap" | "all")) {
+        let copied = [b"gasp", b"fpgm", b"prep", b"VDMX", b"DSIG", b"cmap"]
+            .map(SfntTag::new)
+            .into_iter()
+            .collect();
+        plan.set_no_subset_tables(&copied);
+    }
     let subset = skera::subset_font(&font, &plan).ok()?;
     (!has_positioning(sfnt) || has_positioning(&subset)).then_some(subset)
 }

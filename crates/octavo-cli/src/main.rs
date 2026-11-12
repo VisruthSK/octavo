@@ -185,6 +185,13 @@ struct Optimize {
     subset_fonts: bool,
     #[arg(
         long,
+        hide = true,
+        value_name = "NAME",
+        help_heading = "Fonts"
+    )]
+    font_experiment: Option<String>,
+    #[arg(
+        long,
         value_name = "DIRECTORY",
         help_heading = "Fonts",
         help = "Where converted fonts are remembered, so later runs skip the slowest step [default: the octavo folder in your user cache directory]"
@@ -317,6 +324,7 @@ fn main() -> ExitCode {
         lossy_images,
         image_quality,
         subset_fonts,
+        font_experiment,
         max_image_side,
         keep_png,
         image_memory,
@@ -347,6 +355,7 @@ fn main() -> ExitCode {
     let options = Options {
         images,
         subset_text_fonts: subset_fonts,
+        font_experiment,
         strip_licenses,
         keep_png,
         image_memory: image_memory.map(|mib| mib.saturating_mul(1_048_576)),

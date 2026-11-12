@@ -125,6 +125,7 @@ pub struct Options {
     /// system font. Icon fonts are always subsetted to the glyphs the CSS can
     /// reach.
     pub subset_text_fonts: bool,
+    pub font_experiment: Option<String>,
     /// Drop the license and copyright notices of bundled libraries and
     /// fonts. Most open-source licenses require them to stay with copies,
     /// so only set this if the notices are shipped some other way. By
@@ -693,6 +694,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
                         &doc,
                         &words,
                         options.subset_text_fonts,
+                        options.font_experiment.as_deref(),
                         licenses,
                         options.cache_directory.as_deref(),
                         options.compression.tuning(),
