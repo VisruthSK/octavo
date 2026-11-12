@@ -12,6 +12,10 @@ on:
       - "LICENSE-*"
   workflow_dispatch:
   workflow_call:
+    inputs:
+      plan:
+        type: string
+        required: false
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -93,6 +97,20 @@ jobs:
         working-directory: verify
       - run: node --test
         working-directory: verify
+
+  release-config:
+    name: Release workflow matches dist
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: release.yml is exactly what dist generates
+        run: |
+          version="$(sed -n 's/^cargo-dist-version = "\(.*\)"/\1/p' dist-workspace.toml)"
+          curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/download/v$version/cargo-dist-installer.sh" | sh
+          dist generate --mode ci --check
 
   release-readiness:
     name: Release readiness
