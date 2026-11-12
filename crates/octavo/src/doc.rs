@@ -3,6 +3,7 @@ use crate::{
     html::{self, AttrName, Element, Tag},
     words::Words,
 };
+use rayon::prelude::*;
 use std::{borrow::Cow, ops::Range};
 
 pub(crate) struct Edit {
@@ -51,6 +52,11 @@ impl Edits {
     }
 }
 
+pub(crate) struct WordParts {
+    scripts: Vec<(Range<usize>, Words)>,
+    sources: Vec<(Range<usize>, Words)>,
+}
+
 pub(crate) struct Doc<'a> {
     src: &'a str,
     tags: Vec<Tag>,
@@ -79,20 +85,46 @@ impl<'a> Doc<'a> {
         self.found_html
     }
 
-    pub(crate) fn words(&self, removed: &[Range<usize>]) -> Words {
-        let gone = |tag: &Tag| removed.contains(&tag.span);
-        let mut words =
-            self.collect(|t| matches!(t.element, Element::Style | Element::Link) || gone(t));
-        for text in self
-            .tags
-            .iter()
-            .filter(|t| !gone(t))
-            .filter_map(|t| t.attr(AttrName::Src))
-            .filter_map(data::decode_text)
-        {
-            words.add_text(&text);
+    pub(crate) fn word_parts(&self) -> WordParts {
+        let (scripts, sources) = rayon::join(
+            || {
+                self.tags
+                    .par_iter()
+                    .filter(|t| t.element == Element::Script)
+                    .map(|t| {
+                        let mut words = Words::default();
+                        words.add_text(&self.src[t.span.clone()]);
+                        (t.span.clone(), words)
+                    })
+                    .collect()
+            },
+            || {
+                self.tags
+                    .par_iter()
+                    .filter_map(|t| {
+                        let text = data::decode_text(t.attr(AttrName::Src)?)?;
+                        let mut words = Words::default();
+                        words.add_text(&text);
+                        Some((t.span.clone(), words))
+                    })
+                    .collect()
+            },
+        );
+        WordParts { scripts, sources }
+    }
+
+    pub(crate) fn words(
+        &self,
+        mut markup: Words,
+        parts: WordParts,
+        removed: &[Range<usize>],
+    ) -> Words {
+        for (span, words) in parts.scripts.into_iter().chain(parts.sources) {
+            if !removed.contains(&span) {
+                markup.absorb(words);
+            }
         }
-        words
+        markup
     }
 
     pub(crate) fn markup(&self) -> Words {

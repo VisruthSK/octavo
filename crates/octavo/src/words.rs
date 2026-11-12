@@ -6,6 +6,33 @@ use std::{
 
 const MAX_STORED_WORD: usize = 128;
 
+fn is_separator(c: char) -> bool {
+    match c {
+        '\t'..='\r'
+        | ' '
+        | '"'
+        | '\''
+        | '`'
+        | '<'
+        | '>'
+        | '='
+        | '('
+        | ')'
+        | '{'
+        | '}'
+        | '['
+        | ']'
+        | ','
+        | ';' => true,
+        _ if c.is_ascii() => false,
+        _ => c.is_whitespace(),
+    }
+}
+
+fn is_not_word(c: char) -> bool {
+    !(c.is_alphanumeric() || matches!(c, '_' | '-'))
+}
+
 fn fingerprint(word: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     word.hash(&mut hasher);
@@ -21,14 +48,12 @@ pub(crate) struct Words {
 
 impl Words {
     pub(crate) fn add_text(&mut self, text: &str) {
-        let separators = |c: char| c.is_whitespace() || "\"'`<>=(){}[],;".contains(c);
-        let not_word = |c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-'));
-        for token in text.split(separators) {
+        for token in text.split(is_separator) {
             if data::is_data_url(token) {
                 continue;
             }
             self.insert(token);
-            for word in token.split(not_word) {
+            for word in token.split(is_not_word) {
                 if word.len() >= 3 && word.ends_with(['-', '_']) && !self.prefixes.contains(word) {
                     self.prefixes.insert(word.to_string());
                 }
@@ -59,6 +84,12 @@ impl Words {
         }
     }
 
+    pub(crate) fn absorb(&mut self, other: Words) {
+        self.set.extend(other.set);
+        self.long.extend(other.long);
+        self.prefixes.extend(other.prefixes);
+    }
+
     pub(crate) fn has(&self, word: &str) -> bool {
         if word.len() > MAX_STORED_WORD && self.long.contains(&fingerprint(word)) {
             return true;
@@ -83,5 +114,35 @@ impl Words {
 
     pub(crate) fn any_starting_with(&self, prefix: &str) -> bool {
         self.set.iter().any(|w| w.starts_with(prefix))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_separator_match_agrees_with_the_string_search_for_every_char() {
+        let listed = "\"'`<>=(){}[],;";
+        for c in (0..=char::MAX as u32).filter_map(char::from_u32) {
+            assert_eq!(
+                is_separator(c),
+                c.is_whitespace() || listed.contains(c),
+                "disagree on U+{:04X}",
+                c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn absorbing_words_keeps_every_kind_of_entry() {
+        let mut left = Words::default();
+        left.add_text("alpha beta-");
+        let mut right = Words::default();
+        right.add_text(&format!("gamma {} Delta", "x".repeat(200)));
+        left.absorb(right);
+        assert!(left.has("alpha") && left.has("gamma") && left.has("delta"));
+        assert!(left.has(&"x".repeat(200)));
+        assert!(left.has("beta-suffix"));
     }
 }

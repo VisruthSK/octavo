@@ -2,6 +2,7 @@ use crate::{
     Library, Target, Transform,
     doc::{Doc, Edit},
     html::{AttrName, Element, Tag},
+    words::Words,
 };
 use std::borrow::Cow;
 
@@ -65,14 +66,13 @@ const NULL_OBJECT: &str = "let n=new Proxy(function(){},{get:(_,k)=>k==Symbol.to
 const BANNER_BYTES: usize = 300;
 const MIN_LIBRARY_BYTES: usize = 2000;
 
-pub(crate) fn stage(doc: &Doc) -> Vec<Edit> {
+pub(crate) fn stage(doc: &Doc, markup: &Words) -> Vec<Edit> {
     let scripts: Vec<(&Tag, Cow<str>)> = doc
         .tags()
         .iter()
         .filter(|t| t.element == Element::Script)
         .filter_map(|t| doc.script_text(t).map(|text| (t, text)))
         .collect();
-    let markup = doc.markup();
     let mut dead: Vec<(&Bundled, &Tag)> = Vec::new();
     for lib in &LIBRARIES {
         let alive =

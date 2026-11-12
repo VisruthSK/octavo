@@ -197,10 +197,11 @@ pub struct Tuning {
 
 impl Tuning {
     /// The Brotli quality used when [`Tuning::brotli_quality`] is `None`.
-    /// On a 14 MB deck of repeated images, qualities 0 to 3 and 5 miss the
-    /// repeats and match DEFLATE, 4 finds them, and from 6 up each step is
-    /// smaller: 6 is within 2 percent of 7 in about half a second less. Quality
-    /// is not monotonic below 6, so 6 is the lowest that can be relied on.
+    /// The reference encoder uses its large-input hasher at quality 4 only for
+    /// inputs over 1 MB and the H5 and H6 hashers from 5 to 9. On an 11 MB
+    /// payload quality 5 did not beat DEFLATE where 4 and 6 to 9 beat it by 15
+    /// to 18 percent, so 6 is the lowest quality above that gap. It is within 2
+    /// percent of 7 in about half a second less.
     pub const DEFAULT_BROTLI_QUALITY: u8 = 6;
 
     /// What [`Compression::Balanced`] uses.
@@ -628,14 +629,17 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     } else {
         Licenses::Keep
     };
-    let removals = quarto::stage(&doc);
-    let removed: Vec<Range<usize>> = removals.iter().map(|edit| edit.span.clone()).collect();
-    let words = doc.words(&removed);
-    let (scripts, (styles, images)) = rayon::join(
-        || js::stage(&doc, &removed, licenses),
+    let (images, (removals, scripts, styles)) = rayon::join(
+        || images::stage(&doc, options.images, options.compression.tuning()),
         || {
-            rayon::join(
+            let (markup, parts) = rayon::join(|| doc.markup(), || doc.word_parts());
+            let removals = quarto::stage(&doc, &markup);
+            let removed: Vec<Range<usize>> =
+                removals.iter().map(|edit| edit.span.clone()).collect();
+            let (scripts, styles) = rayon::join(
+                || js::stage(&doc, &removed, licenses),
                 || {
+                    let words = doc.words(markup, parts, &removed);
                     css::stage(
                         &doc,
                         &words,
@@ -645,8 +649,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
                         options.compression.tuning(),
                     )
                 },
-                || images::stage(&doc, options.images, options.compression.tuning()),
-            )
+            );
+            (removals, scripts, styles)
         },
     );
     let edits: Vec<Edit> = removals
