@@ -6,7 +6,11 @@ All notable changes to this project are documented in this file. The format is b
 
 ### Added
 
-- Site mode: `octavo <directory>` optimizes the stylesheets, scripts, fonts and PNG images that a rendered site's pages share, once for the whole site and under the same file names. The library function is `optimize_directory`. `verify/site.mjs` compares every page of the original and the optimized site in Chromium.
+- Embedding: `octavo page.html` embeds the files a page links before optimizing it, so `embed-resources: true` is no longer required and the output is always one self-contained file. Octavo looks next to the page, in each `--resource-path <DIR>`, in parent directories (which finds `/site_libs/...`), and in `site_libs` or `<name>_files` directories beside the page or a parent. Files linked from the web are downloaded unless `--no-fetch` is given. Plain scripts are inlined, `@import` is flattened into the stylesheet and relative imports in module scripts become data URLs. The library has `embed_resources`, the `Resources` trait, `Loaded`, `Embedded` and `is_self_contained`. `verify/linked.mjs` and a job in the corpus workflow compare Octavo on linked renders with embedded renders of the same Quarto documents.
+- Lossless WebP: an 8-bit PNG without a colour profile, gamma, chromaticity, cICP, EXIF or animation chunk becomes lossless WebP when that is smaller than the best PNG, with identical pixels. `--keep-png` (`Options::keep_png`) turns it off. `--image-memory <MIB>` (`Options::image_memory`, default `Options::DEFAULT_IMAGE_MEMORY`, 2560 MiB) caps the memory the encoder uses at once, at about 20 bytes per pixel. libwebp is added under the BSD-3-Clause license, and `ureq` with the CDLA-Permissive-2.0 root certificate data is added for downloads.
+- `verify/search.mjs` compares the Quarto search results of an original and an optimized site over HTTP.
+- Site mode safeguards: `--in-place` is required to rewrite a site directory where it is, the output defaults to `<directory>.min`, and the help text and documentation say that site mode must run on a complete, fresh render because it removes every style rule no page uses.
+- Site mode:  `octavo <directory>` optimizes the stylesheets, scripts, fonts and PNG images that a rendered site's pages share, once for the whole site and under the same file names. The library function is `optimize_directory`. `verify/site.mjs` compares every page of the original and the optimized site in Chromium.
 
 ## [0.1.0-alpha.1]
 
