@@ -6,6 +6,7 @@ const table = {
     forcedStates: "pointer",
     focusVisible: true,
     subtle: true,
+    isolated: false,
     pixel: { channel: 1, faint: 8, budget: 12 },
     noise: { pixels: 275589552, differing: 0, max: 0 },
   },
@@ -14,6 +15,7 @@ const table = {
     forcedStates: "pointer",
     focusVisible: true,
     subtle: true,
+    isolated: true,
     pixel: { channel: 1, faint: 8, budget: 12 },
     noise: { pixels: 10383312, differing: 0, max: 0 },
   },
@@ -22,6 +24,7 @@ const table = {
     forcedStates: "pointer",
     focusVisible: true,
     subtle: true,
+    isolated: false,
     pixel: { channel: 1, faint: 8, budget: 12 },
     noise: { pixels: 10383312, differing: 0, max: 0 },
   },
@@ -44,6 +47,8 @@ export const forcedStates = (name = engineName()) => capabilities(name).forcedSt
 export const focusVisible = (name = engineName()) => capabilities(name).focusVisible;
 
 export const subtleCrypto = (name = engineName()) => capabilities(name).subtle;
+
+export const isolatedBrowser = (name = engineName()) => capabilities(name).isolated;
 
 export const measuredNoise = (name = engineName()) => capabilities(name).noise;
 

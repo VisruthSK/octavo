@@ -2,9 +2,11 @@ import { cpus } from "node:os";
 import { launch } from "./browser.mjs";
 import { capture, hasInteractions, scenariosFor } from "./capture.mjs";
 import { compare, signature } from "./compare.mjs";
-import { checksOf, engineNotice } from "./engines.mjs";
+import { checksOf, engineNotice, isolatedBrowser } from "./engines.mjs";
 
-export const pages = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
+const wanted = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
+const isolated = isolatedBrowser();
+export const pages = isolated ? Math.min(wanted, 4) : wanted;
 
 class Slots {
   free = pages;
@@ -50,21 +52,28 @@ const browser = () => {
   return shared;
 };
 
-const lost = (error) => /closed|disconnected|crashed/i.test(error.message);
+const pool = [];
 
-async function resilient(work) {
-  try {
-    return await work(await browser());
-  } catch (error) {
-    if (!lost(error)) throw error;
-    return work(await browser());
+async function acquire() {
+  if (!isolated) return { open: await browser(), release: async () => {} };
+  const idle = pool.find((entry) => !entry.busy && entry.open.isConnected());
+  if (idle) {
+    idle.busy = true;
+    return { open: idle.open, release: async () => { idle.busy = false; } };
   }
+  const open = await launch();
+  const entry = { open, busy: true };
+  pool.push(entry);
+  return { open, release: async () => { entry.busy = false; } };
 }
+
+const lost = (error) => /closed|disconnected|crashed/i.test(error.message);
 
 export async function closeBrowser() {
   const open = shared;
   shared = undefined;
   if (open) await (await open).close().catch(() => {});
+  for (const entry of pool.splice(0)) await entry.open.close().catch(() => {});
 }
 
 const crashed = (error) => ({ crashed: error.message.slice(0, 200), states: [] });
@@ -98,6 +107,19 @@ const withoutSweep = (result) => ({
 
 const view = (result, sweep) => (sweep ? result : withoutSweep(result));
 
+async function take(file, scenario, lossy, options) {
+  for (let attempt = 0; ; attempt++) {
+    const held = await acquire();
+    try {
+      return await capture(held.open, file, scenario, lossy, options);
+    } catch (error) {
+      if (!lost(error) || attempt > 0) throw error;
+    } finally {
+      await held.release();
+    }
+  }
+}
+
 async function confirmed(original, file, scenario, before, after, lossy, interact, sweep) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
@@ -107,8 +129,8 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
     for (let round = 0; round < RECAPTURES; round++) {
       const patient = round > 0;
       const [again, optimizedAgain] = await Promise.all([
-        resilient((open) => capture(open, original, scenario, lossy, { interact, patient })).catch(crashed),
-        resilient((open) => capture(open, file, scenario, lossy, { interact, patient })).catch(crashed),
+        take(original, scenario, lossy, { interact, patient }).catch(crashed),
+        take(file, scenario, lossy, { interact, patient }).catch(crashed),
       ]);
       pairs.push({ before: view(again, sweep), after: view(optimizedAgain, sweep) });
       if (!compare(view(again, sweep), view(optimizedAgain, sweep), lossy).length) break;
@@ -149,12 +171,19 @@ export async function verifyLevels(original, entries, { lossy = false } = {}) {
   const groups = [...Map.groupBy(plans, (plan) => plan.key ?? plan.path).values()];
   const reports = plans.map(() => []);
   const timing = { original: 0, optimized: 0, compare: 0 };
-  const interact = await slots.using(() => resilient((open) => hasInteractions(open, original)).catch(() => true));
+  const interact = await slots.using(async () => {
+    const held = await acquire();
+    try {
+      return await hasInteractions(held.open, original);
+    } finally {
+      await held.release();
+    }
+  }).catch(() => true);
   const run = (file, scenario) =>
     slots.using(async () => {
       try {
         return await withTimeout(
-          () => resilient((open) => capture(open, file, scenario, lossy, { interact })),
+          () => take(file, scenario, lossy, { interact }),
           COMPARISON_TIMEOUT_MS,
           closeBrowser,
         );

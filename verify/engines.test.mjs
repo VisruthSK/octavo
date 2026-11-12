@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { capabilities, checksOf, engineName, engineNotice, engineNames, focusVisible, measuredNoise, pixelTolerance, subtleCrypto } from "./engines.mjs";
+import { capabilities, checksOf, engineName, engineNotice, engineNames, focusVisible, isolatedBrowser, measuredNoise, pixelTolerance, subtleCrypto } from "./engines.mjs";
 import { launchOptions } from "./browser.mjs";
 
 test("chromium is the default engine", () => {
@@ -48,6 +48,12 @@ test("every engine applies focus visible and has a subtle digest", () => {
     assert.equal(typeof focusVisible(name), "boolean", name);
     assert.equal(typeof subtleCrypto(name), "boolean", name);
   }
+});
+
+test("firefox gives every capture a browser of its own", () => {
+  assert.equal(isolatedBrowser("firefox"), true);
+  assert.equal(isolatedBrowser("chromium"), false);
+  assert.equal(isolatedBrowser("webkit"), false);
 });
 
 test("a check that could not be applied is reported", () => {

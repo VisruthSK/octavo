@@ -267,7 +267,8 @@ async function pointerStates(page) {
       checks.elements += 1;
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       let seen = await probe(index);
-      if (!seen.states.hover) {
+      for (let attempt = 0; attempt < 3 && !seen.states.hover; attempt++) {
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.waitForTimeout(50);
         seen = await probe(index);
       }
@@ -281,6 +282,11 @@ async function pointerStates(page) {
         await focusWithTab(page, index);
       }
       seen = await probe(index);
+      for (let attempt = 0; attempt < 3 && !seen.states.focus; attempt++) {
+        await element.focus({ timeout: 1000 }).catch(() => {});
+        await page.waitForTimeout(50);
+        seen = await probe(index);
+      }
       states.push([`:focus on interactive #${index}`, seen.style]);
       if (seen.states.focus) checks.focus += 1;
       if (seen.states.focusVisible) checks.focusVisible += 1;
