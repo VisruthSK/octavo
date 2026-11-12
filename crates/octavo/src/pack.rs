@@ -1,12 +1,12 @@
 use crate::{
+    Licenses, Mode, Tuning,
     ascii::contains_ignore_case,
     data::{self, Mime},
     html::{AttrName, Attribute, Element, Rel, Scanned, Tag},
     js::{self, ScriptKind},
-    Licenses, Mode, Tuning,
 };
 use base91::{
-    codemap::{xml_friendly::ENCODE_MAP, XmlFriendly},
+    codemap::{XmlFriendly, xml_friendly::ENCODE_MAP},
     iter::EncodeGenericIterator,
 };
 use brotli::enc::BrotliEncoderParams;
@@ -104,7 +104,7 @@ fn candidate<'a>(src: &'a str, tag: &Tag, mode: Mode) -> Option<Candidate<'a>> {
             Cow::Owned(String::from_utf8(data::decode(tag.attr(AttrName::Href)?)?.bytes).ok()?),
         ),
         Element::Script | Element::Style | Element::Link | Element::Svg | Element::Img => {
-            return None
+            return None;
         }
     };
     let minimum = if matches!(kind, Kind::Fragment) {

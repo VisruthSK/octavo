@@ -56,7 +56,7 @@ flowchart TD
 | `quarto` | Removes Bootstrap JavaScript, Popper, Tippy, Clipboard.js and Anchor.js when the markup never uses them, and stubs the globals Quarto's own runtime calls regardless | The markup uses the library, or another script mentions it |
 | `js` | Minifies scripts, and turns data-URI module scripts into inline modules | The script does not parse, or is already minified |
 | `css` | Deletes rules that need a class, id or tag found nowhere in the markup or any script, then minifies. Custom property values are kept verbatim | A rule the parser rejects, and rules whose `calc()` arithmetic would lose precision, are kept exactly as written and the rest of the sheet is still optimized |
-| `fonts` | Keeps the one source browsers use (the last `src`, preferring WOFF2, then WOFF, then TrueType and OpenType, and dropping legacy EOT and SVG copies), converts it to WOFF2, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. With `--subset-text-fonts`, text fonts are also subsetted to the characters the document uses (see below) | The family name is written with escapes |
+| `fonts` | Keeps the one source browsers use (the last `src`, preferring WOFF2, then WOFF, then TrueType and OpenType, and dropping legacy EOT and SVG copies), converts it to WOFF2, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. Text fonts are also subsetted to the characters the document uses (see below) | The family name is written with escapes |
 | `images` | Recompresses embedded PNGs losslessly. With `--lossy-images`, re-encodes PNG and JPEG as AVIF (or WebP), shrinking anything wider than 3840 px | Lossless skips images over 40 megapixels |
 | `pack` | Gathers scripts, styles, stylesheet links, inline SVG, images and data blocks into one compressed blob, restored in place by a synchronous loader | A Content-Security-Policy meta tag; modules and import maps are never packed |
 
@@ -105,7 +105,7 @@ Resources loaded from the network (a CDN script, a web font) do not stop the run
 
 ### Subsetting text fonts
 
-`--subset-text-fonts` cuts themed documents by 30 to 56 percent, because Quarto themes embed whole fonts such as Source Sans. It is off by default because it is not exact. Some pairs ("To", "Ta" and "AV") come out about a pixel wider, so text can shift slightly and the exact checker flags it. The cause is not yet known ([issue 8](https://github.com/VisruthSK/octavo/issues/8)). Text that JavaScript adds later in a script the document does not use also falls back to a system font. Icon fonts are always subsetted, and that is exact.
+Text fonts are subsetted to the characters the document uses, plus the Latin letters, digits and punctuation. That cuts themed documents by 30 to 56 percent, because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [HarfBuzz](https://harfbuzz.github.io/)'s subsetter and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive, and the checker finds no difference on fonts such as Fira Sans, Inter and Source Sans. Text that JavaScript adds later with characters outside that set falls back to a system font, so pass `--no-subset-fonts` for pages that do that. Icon fonts are always subsetted to the glyphs the CSS can reach.
 
 ### Licenses
 
@@ -117,7 +117,7 @@ Bundled libraries carry license banners, and MIT, BSD and Apache require them to
 |---|---|
 | Parse, prune and minify CSS | [`lightningcss`](https://crates.io/crates/lightningcss) |
 | Parse, mangle and minify JavaScript | [`oxc`](https://crates.io/crates/oxc) |
-| Subset fonts | [`fontcull`](https://crates.io/crates/fontcull) |
+| Subset fonts | [HarfBuzz](https://harfbuzz.github.io/), through [`mkwebfont_hb-subset`](https://crates.io/crates/mkwebfont_hb-subset) |
 | Write WOFF2 | [`woofwoof`](https://crates.io/crates/woofwoof), which wraps Google's WOFF2 encoder |
 | Decode WOFF and WOFF2 input | [`wuff`](https://crates.io/crates/wuff) |
 | Recompress PNG losslessly | [`oxipng`](https://crates.io/crates/oxipng) |

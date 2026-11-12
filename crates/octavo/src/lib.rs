@@ -98,25 +98,27 @@ impl FromStr for Mode {
 
 /// Settings for [`simplify`].
 ///
-/// The default is lossless and keeps license notices.
+/// The default keeps images lossless, subsets text fonts and keeps license
+/// notices.
 ///
 /// ```
 /// use octavo::{simplify, Options};
 ///
 /// let options = Options::default();
-/// assert!(options.images.is_none() && !options.subset_text_fonts && !options.strip_licenses);
+/// assert!(options.images.is_none() && options.subset_text_fonts && !options.strip_licenses);
 /// ```
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Options {
     /// Re-encode embedded PNG and JPEG images when that makes them smaller.
     /// `None` keeps them as they are, recompressed losslessly.
     pub images: Option<ImageEncoding>,
     /// Subset embedded text fonts to the characters in the document plus
-    /// the Latin letters, digits and punctuation. This is often the largest
-    /// saving in a themed document, but it is not exact: the subsetter drops
-    /// some kerning pairs, so text can move by a pixel or two, and text that
-    /// JavaScript adds later in another script falls back to a system font.
-    /// Icon fonts are always subsetted to the glyphs the CSS can reach.
+    /// the Latin letters, digits and punctuation, keeping every layout
+    /// feature and all kerning. This is often the largest saving in a themed
+    /// document, and it is on by default. Text that JavaScript adds later
+    /// with characters outside that set falls back to a system font, so turn
+    /// it off for pages that do that. Icon fonts are always subsetted to the
+    /// glyphs the CSS can reach.
     pub subset_text_fonts: bool,
     /// Drop the license and copyright notices of bundled libraries and
     /// fonts. Most open-source licenses require them to stay with copies,
@@ -136,6 +138,18 @@ pub struct Options {
     /// How hard the compressors for fonts, PNG images and the packed blob
     /// work. It is independent of the [`Mode`].
     pub compression: Compression,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            images: None,
+            subset_text_fonts: true,
+            strip_licenses: false,
+            cache_directory: None,
+            compression: Compression::default(),
+        }
+    }
 }
 
 /// How much time to spend compressing.

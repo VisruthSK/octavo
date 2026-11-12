@@ -1,7 +1,7 @@
 mod common;
 
 use common::page;
-use octavo::{optimize, Mode};
+use octavo::{Mode, optimize};
 use proptest::{prelude::*, test_runner::FileFailurePersistence};
 use regex::Regex;
 use std::sync::LazyLock;

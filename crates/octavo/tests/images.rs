@@ -1,8 +1,8 @@
 mod common;
 
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use common::{optimized, simplified};
-use flate2::{write::ZlibEncoder, Compression, Crc};
+use flate2::{Compression, Crc, write::ZlibEncoder};
 use image::ImageEncoder;
 use octavo::{ImageEncoding, ImageFormat, Mode, Options};
 use std::io::Write;
@@ -45,7 +45,9 @@ fn png_with_comment(comment: &str) -> Vec<u8> {
 
 fn page(attr: &str, png: &[u8]) -> String {
     let uri = format!("data:image/png;base64,{}", STANDARD.encode(png));
-    format!("<!DOCTYPE html><html><body><img class=\"figure\" {attr}=\"{uri}\" alt=\"a\"></body></html>")
+    format!(
+        "<!DOCTYPE html><html><body><img class=\"figure\" {attr}=\"{uri}\" alt=\"a\"></body></html>"
+    )
 }
 
 fn embedded_png(html: &str) -> Vec<u8> {

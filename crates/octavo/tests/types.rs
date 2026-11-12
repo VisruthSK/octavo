@@ -103,15 +103,17 @@ fn a_remote_resource_warning_carries_the_url() {
         panic!("expected a remote resource warning");
     };
     assert_eq!(url.as_str(), "https://cdn.example.com/lib.js");
-    assert!(warning
-        .to_string()
-        .contains("https://cdn.example.com/lib.js"));
+    assert!(
+        warning
+            .to_string()
+            .contains("https://cdn.example.com/lib.js")
+    );
 }
 
 #[test]
-fn defaults_are_lossless() {
+fn defaults_are_lossless_and_subset_text_fonts() {
     let options = Options::default();
     assert!(options.images.is_none());
-    assert!(!options.subset_text_fonts);
+    assert!(options.subset_text_fonts);
     assert!(!options.strip_licenses);
 }

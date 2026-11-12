@@ -1,11 +1,11 @@
 use anstream::{eprintln, println};
 use anstyle::{AnsiColor, Style};
 use bytesize::ByteSize;
-use clap::{builder::Styles, value_parser, Args, Parser};
+use clap::{Args, Parser, builder::Styles, value_parser};
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{
-    optimize, simplify, Compression, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform,
-    Tuning, Warning,
+    Compression, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform, Tuning, Warning,
+    optimize, simplify,
 };
 use std::{
     collections::BTreeMap,
@@ -113,9 +113,9 @@ struct Optimize {
     #[arg(
         long,
         help_heading = "Fonts",
-        help = "Keep only the characters each text font needs. Often a large saving, but some letter pairs come out about a pixel wider"
+        help = "Keep text fonts whole instead of only the characters the document uses. Larger, but safe for pages whose scripts add text later"
     )]
-    subset_text_fonts: bool,
+    no_subset_fonts: bool,
     #[arg(
         long,
         value_name = "DIRECTORY",
@@ -201,7 +201,7 @@ fn main() -> ExitCode {
             audit: _,
             lossy_images,
             image_quality,
-            subset_text_fonts,
+            no_subset_fonts,
             max_image_side,
             strip_licenses,
             cache_dir,
@@ -224,7 +224,7 @@ fn main() -> ExitCode {
         });
         let options = Options {
             images,
-            subset_text_fonts,
+            subset_text_fonts: !no_subset_fonts,
             strip_licenses,
             cache_directory: if no_cache {
                 None

@@ -1,0 +1,2 @@
+[env]
+CXXFLAGS_x86_64_pc_windows_msvc = "/bigobj"

@@ -37,12 +37,34 @@ class Slots {
 
 const slots = new Slots();
 let shared;
-const browser = () => (shared ??= launch({ args: ["--allow-file-access-from-files"] }));
+const browser = () => {
+  if (!shared) {
+    const launching = launch({ args: ["--allow-file-access-from-files", "--disable-dev-shm-usage"] }).then((open) => {
+      open.on("disconnected", () => {
+        if (shared === launching) shared = undefined;
+      });
+      return open;
+    });
+    shared = launching;
+  }
+  return shared;
+};
+
+const lost = (error) => /closed|disconnected|crashed/i.test(error.message);
+
+async function resilient(work) {
+  try {
+    return await work(await browser());
+  } catch (error) {
+    if (!lost(error)) throw error;
+    return work(await browser());
+  }
+}
 
 export async function closeBrowser() {
   const open = shared;
   shared = undefined;
-  if (open) await (await open).close();
+  if (open) await (await open).close().catch(() => {});
 }
 
 const crashed = (error) => ({ crashed: error.message.slice(0, 200), states: [] });
@@ -61,10 +83,9 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
   const issues = compare(before, after, lossy, stats);
   if (!issues.length) return { issues, rounded: stats.roundedPixels };
   const kept = await slots.using(async () => {
-    const open = await browser();
     const [before2, after2] = await Promise.all([
-      capture(open, original, scenario, lossy, { interact }).catch(crashed),
-      capture(open, file, scenario, lossy, { interact }).catch(crashed),
+      resilient((open) => capture(open, original, scenario, lossy, { interact })).catch(crashed),
+      resilient((open) => capture(open, file, scenario, lossy, { interact })).catch(crashed),
     ]);
     const noise = new Set([...compare(before, before2, lossy), ...compare(after, after2, lossy)].map(signature));
     const reproduced = new Set(compare(before2, after2, lossy).map(signature));
@@ -76,11 +97,9 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
 export async function verify(original, optimized, { lossy = false } = {}) {
   const files = [optimized].flat();
   const reports = files.map(() => []);
-  const interact = await slots.using(async () => hasInteractions(await browser(), original));
-  const run = async (file, scenario) => {
-    const open = await browser();
-    return slots.using(() => capture(open, file, scenario, lossy, { interact }).catch(crashed));
-  };
+  const interact = await slots.using(() => resilient((open) => hasInteractions(open, original)).catch(() => true));
+  const run = (file, scenario) =>
+    slots.using(() => resilient((open) => capture(open, file, scenario, lossy, { interact })).catch(crashed));
   await eachLimited(scenarios, SCENARIOS_AT_ONCE, async (scenario) => {
     const [before, ...afters] = await Promise.all([original, ...files].map((file) => run(file, scenario)));
     await Promise.all(

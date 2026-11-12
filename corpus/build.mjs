@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { ensureFonts } from "./fonts.mjs";
 import { digest, render } from "./spec.mjs";
 import { loadSpecs } from "./specs.mjs";
 
@@ -8,6 +9,7 @@ export const manifestPath = join(import.meta.dirname, "manifest.json");
 export const documentPath = (id) => join(cacheDirectory, "docs", `${id}.html`);
 
 export async function materialize() {
+  await ensureFonts();
   mkdirSync(join(cacheDirectory, "docs"), { recursive: true });
   const rows = [];
   for (const spec of await loadSpecs()) {

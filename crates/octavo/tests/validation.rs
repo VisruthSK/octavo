@@ -1,7 +1,7 @@
 mod common;
 
 use common::{optimized, page};
-use octavo::{optimize, simplify, Error, Mode, Options, Url, Warning};
+use octavo::{Error, Mode, Options, Url, Warning, optimize, simplify};
 
 #[test]
 fn text_that_is_not_html_is_rejected() {
@@ -65,9 +65,11 @@ fn remote_resources_only_warn() {
             "//fonts.example.com/a.css"
         ]
     );
-    assert!(out.warnings.iter().any(|warning| warning
-        .to_string()
-        .contains("https://cdn.example.com/lib.js")));
+    assert!(out.warnings.iter().any(|warning| {
+        warning
+            .to_string()
+            .contains("https://cdn.example.com/lib.js")
+    }));
 }
 
 #[test]

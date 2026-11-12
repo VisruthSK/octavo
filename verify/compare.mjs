@@ -41,6 +41,7 @@ export function differences(left, right) {
 }
 
 function compareScreenshots(a, b, lossy, stats) {
+  if (a.equals(b)) return [];
   const left = PNG.sync.read(a);
   const right = PNG.sync.read(b);
   if (left.width !== right.width || left.height !== right.height) {
@@ -57,6 +58,10 @@ function compareScreenshots(a, b, lossy, stats) {
 
 function compareState(a, b, lossy, stats) {
   const issues = [];
+  if (a.unchanged || b.unchanged) {
+    if (a.digest !== b.digest) issues.push("the page changed differently after this interaction");
+    return issues;
+  }
   if (a.title !== b.title) issues.push(`title [${a.title}] vs [${b.title}]`);
   if (a.accessibility !== b.accessibility) issues.push("accessibility tree differs");
   for (const [i, [name, expected]] of (a.forced ?? []).entries()) {

@@ -158,7 +158,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: corpus/.cache
-          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json') }}
+          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}"
       - name: Diagnose one document

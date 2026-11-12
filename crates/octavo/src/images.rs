@@ -1,10 +1,10 @@
 use crate::{
+    ImageEncoding, ImageFormat, Target, Transform, Tuning,
     data::{self, Mime},
     doc::{Doc, Edit},
     html::{AttrName, Element, Tag},
-    ImageEncoding, ImageFormat, Target, Transform, Tuning,
 };
-use fast_image_resize::{images::Image, FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
+use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer, images::Image};
 use gamut_core::{Dimensions, EncodeImage, ImageRef, Rgb8, Rgba8};
 use gamut_webp::WebpEncoder;
 use image::RgbaImage;

@@ -1,16 +1,16 @@
 use crate::{
-    cache,
+    Licenses, Tuning, cache,
     data::{self, Mime},
     words::Words,
-    Licenses, Tuning,
 };
 use cssparser::{ParseError, Parser, ParserInput, Token};
+use hb_subset::{Blob, FontFace, SubsetInput, Tag};
 use lightningcss::{
-    properties::{font::FontFamily, Property},
+    properties::{Property, font::FontFamily},
     rules::{
+        CssRule,
         font_face::{FontFaceProperty, FontFaceRule, FontFormat, Source},
         style::StyleRule,
-        CssRule,
     },
     selector::PseudoElement,
     stylesheet::{PrinterOptions, StyleSheet},
@@ -19,7 +19,7 @@ use lightningcss::{
     visitor::{Visit, VisitTypes, Visitor},
 };
 use rayon::prelude::*;
-use skrifa::{raw::TableProvider, string::StringId, FontRef, MetadataProvider};
+use skrifa::{FontRef, MetadataProvider, raw::TableProvider, string::StringId};
 use std::{borrow::Cow, collections::HashSet, convert::Infallible, ops::Range, path::Path};
 
 const WESTERN_TEXT: [Range<u32>; 3] = [0x20..0x250, 0x2000..0x2070, 0x20A0..0x20D0];
@@ -509,7 +509,17 @@ fn convert(
 }
 
 fn subsetted(sfnt: &[u8], chars: &HashSet<char>) -> Option<Vec<u8>> {
-    let subset = fontcull::subset_font_data(sfnt, chars, &layout_features(sfnt)).ok()?;
+    let font = FontFace::new(Blob::from_bytes(sfnt).ok()?).ok()?;
+    let mut input = SubsetInput::new().ok()?;
+    let mut unicodes = input.unicode_set();
+    for &c in chars {
+        unicodes.insert(c);
+    }
+    let mut features = input.layout_feature_tag_set();
+    for tag in layout_features(sfnt) {
+        features.insert(Tag::new(tag));
+    }
+    let subset = input.subset_font(&font).ok()?.underlying_blob().to_vec();
     (!has_positioning(sfnt) || has_positioning(&subset)).then_some(subset)
 }
 

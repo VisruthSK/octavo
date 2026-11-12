@@ -195,6 +195,23 @@ async function settledAccessibilityTree(page) {
 const INTERACTIVE_CONTENT =
   "script, details, summary, button, input, select, textarea, dialog, [role=tab], [tabindex], [contenteditable]";
 
+const HOVER = 3;
+const ALWAYS_OBSERVED = new Set([HOVER]);
+
+async function digestOf(page) {
+  return page.evaluate(async () => {
+    const clone = document.documentElement.cloneNode(true);
+    clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
+    for (const node of clone.querySelectorAll('[src^="data:"], [data-src^="data:"]')) {
+      node.removeAttribute("src");
+      node.removeAttribute("data-src");
+    }
+    const text = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
+    const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  });
+}
+
 export async function hasInteractions(browser, file) {
   const context = await browser.newContext();
   try {
@@ -235,16 +252,23 @@ export async function capture(browser, file, scenario, lossy, { interact = true 
       const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" }).catch(() => null);
       states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, pixels: scenario.pixels })), screenshot, ...extra });
     };
-    await record("load", {
-      forced: scripted && !scenario.motion ? await forcedStates(page) : [],
-      accessibility: await settledAccessibilityTree(page),
-    });
+    const forced = scripted && !scenario.motion ? await forcedStates(page) : [];
+    const accessibility = await settledAccessibilityTree(page);
+    await record("load", { forced, accessibility });
     if (interact && scripted && !scenario.media && !scenario.motion) {
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
+      let previous = await digestOf(page);
+      states[0].digest = previous;
       for (const [index, interact] of interactions.entries()) {
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
         await settle(page, { quiet: slideDeck ? 400 : 150 });
-        await record(`interaction ${index}`);
+        const digest = await digestOf(page);
+        if (digest === previous && !ALWAYS_OBSERVED.has(index)) {
+          states.push({ label: `interaction ${index}`, digest, unchanged: true });
+          continue;
+        }
+        previous = digest;
+        await record(`interaction ${index}`, { digest });
       }
     }
     return { states, errors, requests };

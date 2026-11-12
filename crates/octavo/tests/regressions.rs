@@ -1,7 +1,7 @@
 mod common;
 
 use common::{busy_script, data_uri, packed, page, safe, simplified};
-use octavo::{optimize, simplify, Compression, Mode, Options, Tuning};
+use octavo::{Compression, Mode, Options, Tuning, optimize, simplify};
 
 #[test]
 fn css_comments_mentioning_custom_properties_do_not_swallow_rules() {
@@ -230,7 +230,12 @@ fn scanner_survives_stray_angle_brackets_and_unterminated_constructs() {
 fn every_truncation_of_a_realistic_document_is_handled_without_panicking() {
     let css = ".a{color:red;--x:1}@media print{.b{top:0}}";
     let script = "window.addEventListener('x',function(){el.classList.add('a')});";
-    let whole = page(&format!("<style>{css}</style><script>{script}</script><link rel=stylesheet href=\"data:text/css,.a%7Bcolor:red%7D\">"), "<p class=\"a\">héllo ✓</p><svg><circle r=\"1\"/></svg>");
+    let whole = page(
+        &format!(
+            "<style>{css}</style><script>{script}</script><link rel=stylesheet href=\"data:text/css,.a%7Bcolor:red%7D\">"
+        ),
+        "<p class=\"a\">héllo ✓</p><svg><circle r=\"1\"/></svg>",
+    );
     for end in (0..whole.len()).filter(|i| whole.is_char_boundary(*i)) {
         let _ = optimize(&whole[..end], Mode::Packed);
     }
@@ -365,7 +370,9 @@ fn an_html_word_inside_a_script_is_not_a_document() {
 fn a_css_banner_is_printed_exactly_once_unless_licenses_are_stripped() {
     let dead: String = (0..80).map(|i| format!(".dead-{i}{{color:red}}")).collect();
     let src = page(
-        &format!("<style>/*! Bootstrap v5.3.3 | Licensed under MIT */\n.keep{{display:block}}\n{dead}</style>"),
+        &format!(
+            "<style>/*! Bootstrap v5.3.3 | Licensed under MIT */\n.keep{{display:block}}\n{dead}</style>"
+        ),
         "<p class=\"keep\">",
     );
     let kept = safe(&src);
@@ -439,6 +446,7 @@ fn font_page(text: &str) -> String {
 
 fn cache_options(directory: &std::path::Path) -> Options {
     Options {
+        subset_text_fonts: false,
         cache_directory: Some(directory.to_path_buf()),
         ..Options::default()
     }
@@ -454,7 +462,14 @@ fn scratch(name: &str) -> std::path::PathBuf {
 fn a_cached_font_gives_exactly_the_same_output_as_a_converted_one() {
     let directory = scratch("font-cache-same");
     let html = font_page("A");
-    let uncached = optimize(&html, Mode::Safe).expect("supported").html;
+    let whole = Options {
+        subset_text_fonts: false,
+        ..Options::default()
+    };
+    let uncached = simplify(&html, whole)
+        .expect("supported")
+        .pack(Mode::Safe)
+        .html;
     let first = simplify(&html, cache_options(&directory)).expect("supported");
     let first = first.pack(Mode::Safe).html;
     assert_eq!(

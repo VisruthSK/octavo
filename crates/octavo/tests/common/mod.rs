@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use octavo::{optimize, simplify, Mode, Options, Output, Simplified};
+use octavo::{Mode, Options, Output, Simplified, optimize, simplify};
 
 pub fn page(head: &str, body: &str) -> String {
     format!("<!DOCTYPE html><html><head>{head}</head><body>{body}</body></html>")
@@ -29,6 +29,6 @@ pub fn busy_script(prefix: &str) -> String {
 }
 
 pub fn data_uri(mime: &str, bytes: &[u8]) -> String {
-    use base64::{engine::general_purpose::STANDARD, Engine};
+    use base64::{Engine, engine::general_purpose::STANDARD};
     format!("data:{mime};base64,{}", STANDARD.encode(bytes))
 }

@@ -33,6 +33,10 @@ About 300 hand-written documents that exercise Octavo on realistic output, on sc
 
 When the runner disagrees with an expectation, decide which side is wrong. If Octavo has a bug, leave the expectation as it is and report the bug; never edit an expectation to match a bug.
 
+## Fonts with real features
+
+`fonts.json` pins two popular open fonts from Google Fonts by URL and SHA-256: Fira Sans (static) and Inter (variable). `node corpus/build.mjs` downloads them into `.cache/fonts/` and verifies the hash, and the fixtures in `docs/features.mjs` embed them to use tabular and old-style numbers, stylistic sets, small caps, fractions, superscripts and kerning. The fonts are licensed under the SIL Open Font License, used only as test input and never committed.
+
 ## Real documents from upstream
 
 `sources.json` pins upstream repositories by URL and SHA-256. Octavo uses every document in them that renders to self-contained HTML, not a sample.

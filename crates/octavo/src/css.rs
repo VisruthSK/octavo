@@ -1,10 +1,10 @@
 use crate::{
+    Licenses, Target, Transform, Tuning,
     data::{self, Mime},
     doc::{Doc, Edit},
     fonts,
     html::{AttrName, Element, Rel, Tag},
     words::Words,
-    Licenses, Target, Transform, Tuning,
 };
 use indexmap::IndexSet;
 use lightningcss::{

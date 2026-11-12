@@ -790,15 +790,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0440157235aa4badd45ea073af8de2ba44ffead74bf8a7833b215533c36f08e"
 
 [[package]]
-name = "euclid"
-version = "0.22.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1a05365e3b1c6d1650318537c7460c6923f1abdd272ad6842baa2b509957a06"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "exr"
 version = "1.74.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -868,46 +859,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
-name = "foldhash"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
-
-[[package]]
-name = "fontcull"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a45c509e7858288938a51b22fa51c9f812144d53cd4adb9ff1a3f419052948e"
-dependencies = [
- "fontcull-klippa",
- "fontcull-read-fonts",
- "fontcull-skrifa",
- "fontcull-write-fonts",
- "woofwoof",
-]
-
-[[package]]
 name = "fontcull-font-types"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7187211f698d3144c4278d99cede5f6d67814cd676bbf1d2b8607049b3d76b2"
 dependencies = [
  "bytemuck",
-]
-
-[[package]]
-name = "fontcull-klippa"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ceb68d1b34e3c675e78f1cabbc49e19c5962d6c6173b7c77d77392431b99840"
-dependencies = [
- "clap",
- "fnv",
- "fontcull-skrifa",
- "fontcull-write-fonts",
- "hashbrown 0.15.5",
- "regex",
- "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -928,19 +885,6 @@ checksum = "3c39120d1806ed11baf0559537bd601c6c60d7bf84ddcc385adea8fb8ff62d35"
 dependencies = [
  "bytemuck",
  "fontcull-read-fonts",
-]
-
-[[package]]
-name = "fontcull-write-fonts"
-version = "0.44.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47b506b0883cf5f8998391cbffa92024143cedcbd0f344fc3f1507dec12956cf"
-dependencies = [
- "fontcull-font-types",
- "fontcull-read-fonts",
- "indexmap",
- "kurbo",
- "log",
 ]
 
 [[package]]
@@ -1071,17 +1015,6 @@ dependencies = [
  "cfg-if",
  "crunchy",
  "zerocopy",
-]
-
-[[package]]
-name = "hashbrown"
-version = "0.15.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
-dependencies = [
- "allocator-api2",
- "equivalent",
- "foldhash",
 ]
 
 [[package]]
@@ -1224,7 +1157,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
- "hashbrown 0.17.1",
+ "hashbrown",
  "rayon",
  "serde",
  "serde_core",
@@ -1319,17 +1252,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d302fe9761f19c4123edfe82b66be55a08e54012403cd7e27f8a176538737954"
 dependencies = [
  "escape-simd",
-]
-
-[[package]]
-name = "kurbo"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce9729cc38c18d86123ab736fd2e7151763ba226ac2490ec092d1dd148825e32"
-dependencies = [
- "arrayvec",
- "euclid",
- "smallvec",
 ]
 
 [[package]]
@@ -1515,6 +1437,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mkwebfont_hb-subset"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "272d805af0dd58afb9a7160e8e5012e625098c8e2171fbd63b351b64d55a73c6"
+dependencies = [
+ "cc",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "moxcms"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1654,7 +1586,6 @@ dependencies = [
  "data-url",
  "fast_image_resize",
  "flate2",
- "fontcull",
  "fontcull-skrifa",
  "gamut-core 2.0.1",
  "gamut-webp",
@@ -1664,6 +1595,7 @@ dependencies = [
  "indexmap",
  "libdeflater",
  "lightningcss",
+ "mkwebfont_hb-subset",
  "oxc",
  "oxipng",
  "percent-encoding",
@@ -1756,7 +1688,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f65d07f047239a6535aee5f9eb5f741ce9d7a19c13d3f5d68a507878368f847"
 dependencies = [
  "allocator-api2",
- "hashbrown 0.17.1",
+ "hashbrown",
  "oxc_data_structures",
  "rustc-hash",
 ]
@@ -2043,7 +1975,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "828e3decc148b651b8be6c8b94569536789069477d7ffbecc4661226bd39dcc7"
 dependencies = [
  "compact_str",
- "hashbrown 0.17.1",
+ "hashbrown",
  "memchr",
  "oxc_allocator",
  "oxc_estree",

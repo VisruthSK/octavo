@@ -1,8 +1,7 @@
 use crate::{
-    data,
+    Licenses, Target, Transform, data,
     doc::{Doc, Edit},
     html::{AttrName, Element, Tag},
-    Licenses, Target, Transform,
 };
 use oxc::{
     allocator::Allocator,

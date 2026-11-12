@@ -98,7 +98,12 @@ fn identical_resources_share_one_blob() {
 #[test]
 fn content_security_policy_disables_packing() {
     let big = "var a=1;".repeat(300);
-    let src = page(&format!("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'\"><script>{big}</script>"), "<p>");
+    let src = page(
+        &format!(
+            "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'\"><script>{big}</script>"
+        ),
+        "<p>",
+    );
     assert!(!optimized(&src, Mode::Packed).html.contains("$o("));
 }
 

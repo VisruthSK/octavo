@@ -1494,6 +1494,90 @@
     "sha256": "51186525bab96db6d12808e9f130a6d7a7174ce8577d176d6eaf99dd57564e65"
   },
   {
+    "id": "fonts-fira-sans-feature-settings",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Stylistic alternates"
+      ]
+    },
+    "bytes": 610031,
+    "sha256": "3530ee15177f14f9607295853354205416a3784b51430c2f3b819572f7181981"
+  },
+  {
+    "id": "fonts-fira-sans-small-caps-and-variants",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Small caps and variants"
+      ]
+    },
+    "bytes": 610182,
+    "sha256": "f6c99e2f5e0d1f02764b524fd3d4c31a95988c348193a57c9526bc51dd7ca562"
+  },
+  {
+    "id": "fonts-fira-sans-tabular-numbers",
+    "category": "fonts",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Ledger of numbers"
+      ]
+    },
+    "bytes": 610632,
+    "sha256": "7e135e873d0540d3a8383dd55aac5412ec5c2897a2b96cc80d9fbeceb84e1811"
+  },
+  {
+    "id": "fonts-inter-feature-settings",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Stylistic alternates"
+      ]
+    },
+    "bytes": 1169463,
+    "sha256": "c8f26d09d0fd6f0752bbddb1f5ccb564ed85da865d0cf9689f4eaba1bb5bb032"
+  },
+  {
+    "id": "fonts-inter-small-caps-and-variants",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Small caps and variants"
+      ]
+    },
+    "bytes": 1169614,
+    "sha256": "3e9028da41a5dda0f48a9ee1252edc28f84dae28fbe1ccc2670a162bfe9a1201"
+  },
+  {
+    "id": "fonts-inter-tabular-numbers",
+    "category": "fonts",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "Ledger of numbers"
+      ]
+    },
+    "bytes": 1170064,
+    "sha256": "b5a5be1aef960d300abb91ce04f9f5d72135820bfb5d8dbb85e3f3d6f49e622e"
+  },
+  {
     "id": "libs-big-framework-5000-rules",
     "category": "libraries",
     "tier": "full",

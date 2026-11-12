@@ -1,8 +1,7 @@
 use crate::{
-    data,
+    Target, Transform, data,
     html::{self, AttrName, Element, Tag},
     words::Words,
-    Target, Transform,
 };
 use std::{borrow::Cow, ops::Range};
 
