@@ -4,7 +4,6 @@ use crate::{
     words::Words,
 };
 use cssparser::{ParseError, Parser, ParserInput, Token};
-use hb_subset::{Blob, FontFace, SubsetInput, Tag};
 use lightningcss::{
     properties::{Property, font::FontFamily},
     rules::{
@@ -19,6 +18,11 @@ use lightningcss::{
     visitor::{Visit, VisitTypes, Visitor},
 };
 use rayon::prelude::*;
+use read_fonts::{
+    FontRef as Sfnt, TableProvider as SfntProvider,
+    collections::IntSet,
+    types::{GlyphId, NameId, Tag as SfntTag},
+};
 use skrifa::{FontRef, MetadataProvider, raw::TableProvider, string::StringId};
 use std::{borrow::Cow, collections::HashSet, convert::Infallible, ops::Range, path::Path};
 
@@ -509,17 +513,36 @@ fn convert(
 }
 
 fn subsetted(sfnt: &[u8], chars: &HashSet<char>) -> Option<Vec<u8>> {
-    let font = FontFace::new(Blob::from_bytes(sfnt).ok()?).ok()?;
-    let mut input = SubsetInput::new().ok()?;
-    let mut unicodes = input.unicode_set();
-    for &c in chars {
-        unicodes.insert(c);
+    let font = Sfnt::new(sfnt).ok()?;
+    if font.maxp().is_err() {
+        return None;
     }
-    let mut features = input.layout_feature_tag_set();
-    for tag in layout_features(sfnt) {
-        features.insert(Tag::new(tag));
-    }
-    let subset = input.subset_font(&font).ok()?.underlying_blob().to_vec();
+    let mut unicodes = IntSet::empty();
+    unicodes.extend_unsorted(chars.iter().map(|c| u32::from(*c)));
+    let mut features: IntSet<SfntTag> = skera::DEFAULT_LAYOUT_FEATURES.iter().copied().collect();
+    features.extend_unsorted(
+        layout_features(sfnt)
+            .into_iter()
+            .map(|tag| SfntTag::new(&tag)),
+    );
+    let mut name_ids = IntSet::empty();
+    name_ids.insert_range(NameId::from(0)..=NameId::from(6));
+    name_ids.insert(NameId::from(13));
+    name_ids.insert(NameId::from(14));
+    let mut name_languages = IntSet::empty();
+    name_languages.insert(0x0409);
+    let plan = skera::Plan::new(
+        &IntSet::<GlyphId>::empty(),
+        &unicodes,
+        &font,
+        skera::SubsetFlags::SUBSET_FLAGS_DEFAULT,
+        &skera::DEFAULT_DROP_TABLES.iter().copied().collect(),
+        &IntSet::<SfntTag>::all(),
+        &features,
+        &name_ids,
+        &name_languages,
+    );
+    let subset = skera::subset_font(&font, &plan).ok()?;
     (!has_positioning(sfnt) || has_positioning(&subset)).then_some(subset)
 }
 

@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Fonts: `--subset-fonts` cuts text fonts with [skera](https://crates.io/crates/skera) instead of HarfBuzz, so the build no longer compiles C++ for font subsetting. The same characters are kept, every layout feature survives, and the axes of a variable font are unchanged.
+
 ## [0.1.0-alpha.1]
 
 First pre-release. The command line and the library API can still change. On Quarto's own 465 test documents the median page shrinks 12.8 times at the `packed` level.

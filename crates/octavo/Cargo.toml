@@ -45,7 +45,8 @@ fast_image_resize = { version = "6.1.0", features = ["rayon"] }
 indexmap = "2.14.2"
 html-escape = "0.3.1"
 skrifa = { package = "fontcull-skrifa", version = "0.39.2" }
-hb-subset = { package = "mkwebfont_hb-subset", version = "0.5.0" }
+skera = "0.10.0"
+read-fonts = { version = "0.47.0", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 flate2 = "1"

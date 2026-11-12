@@ -9,7 +9,7 @@ octavo report.html --maximum                # slowest, smallest output. Not recc
 octavo --audit report.html                  # what each step would save
 ```
 
-Octavo reads the document, works out what the page can reach, and hands each format to a library built for it: lightningcss for CSS, oxc for JavaScript, oxipng for PNG, HarfBuzz for fonts. The libraries are listed [below](#the-libraries-doing-the-real-work).
+Octavo reads the document, works out what the page can reach, and hands each format to a library built for it: lightningcss for CSS, oxc for JavaScript, oxipng for PNG, skera for fonts. The libraries are listed [below](#the-libraries-doing-the-real-work).
 
 ## Install
 
@@ -23,10 +23,9 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/VisruthSK/octavo/r
 
 ### Build
 
-To build from source, run `cargo install octavo-cli`. The font subsetter is HarfBuzz, compiled from C++, so you need a C++ compiler. On Windows with MSVC, set `CXXFLAGS` to `/bigobj` first, because the compiler stops with `C1128: number of sections exceeded object file format limit` without it. Builds inside this repository set it for you.
+To build from source, run `cargo install octavo-cli`. The WOFF2 encoder is C++, so you need a C++ compiler. Font subsetting is pure Rust and needs nothing else.
 
 ```powershell
-$env:CXXFLAGS = "/bigobj"
 cargo install octavo-cli
 ```
 
@@ -186,7 +185,7 @@ On a 288 KB font, WOFF2 quality 9 takes 26 ms and quality 11 takes 293 ms for 9 
 
 Fonts converted whole are remembered in your user cache directory (`~/.cache/octavo` on Linux, `~/Library/Caches/octavo` on macOS, `%LOCALAPPDATA%\octavo` on Windows), in a `fonts` subfolder with one file per distinct font, named by a hash of its bytes and quality. Documents from the same theme embed the same fonts, so later runs skip the slowest step. Subsetted fonts are never stored. `--cache-dir <directory>` chooses another place and `--no-cache` turns the cache off.
 
-Text fonts stay whole by default. `--subset-fonts` cuts them to the characters the document uses plus the Latin letters, digits and punctuation, which is often the largest saving in a themed document, because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [HarfBuzz](https://harfbuzz.github.io/) and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive and layout is identical. Chromium on Linux draws some hinted static fonts, Fira Sans among them, with slightly different stroke shading after subsetting, and the checker reports that as pixel differences. Text that JavaScript adds later with characters outside the kept set falls back to a system font. Icon fonts are always subsetted to the glyphs the CSS can reach.
+Text fonts stay whole by default. `--subset-fonts` cuts them to the characters the document uses plus the Latin letters, digits and punctuation, which is often the largest saving in a themed document, because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [skera](https://crates.io/crates/skera) and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive and layout is identical. Chromium on Linux draws some hinted static fonts, Fira Sans among them, with slightly different stroke shading after subsetting, and the checker reports that as pixel differences. Text that JavaScript adds later with characters outside the kept set falls back to a system font. Icon fonts are always subsetted to the glyphs the CSS can reach.
 
 ### Licenses
 
@@ -214,7 +213,7 @@ Resources loaded from the network (a CDN script, a web font) do not stop the run
 |---|---|
 | Parse, prune and minify CSS | [`lightningcss`](https://crates.io/crates/lightningcss) |
 | Parse, mangle and minify JavaScript | [`oxc`](https://crates.io/crates/oxc) |
-| Subset fonts | [HarfBuzz](https://harfbuzz.github.io/), through [`mkwebfont_hb-subset`](https://crates.io/crates/mkwebfont_hb-subset) |
+| Subset fonts | [`skera`](https://crates.io/crates/skera) |
 | Write WOFF2 | [`woofwoof`](https://crates.io/crates/woofwoof), which wraps Google's WOFF2 encoder |
 | Decode WOFF and WOFF2 input | [`wuff`](https://crates.io/crates/wuff) |
 | Recompress PNG losslessly | [`oxipng`](https://crates.io/crates/oxipng) |
@@ -227,7 +226,7 @@ Resources loaded from the network (a CDN script, a web font) do not stop the run
 | Text-safe encoding of the blob | [`base91`](https://crates.io/crates/base91) |
 | Name cached fonts | [`blake3`](https://crates.io/crates/blake3) |
 
-Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The non-Rust code in the build is HarfBuzz, the WOFF2 encoder behind `woofwoof`, and libdeflate behind `oxipng` and `libdeflater`.
+Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The non-Rust code in the build is the WOFF2 encoder behind `woofwoof` and libdeflate behind `oxipng` and `libdeflater`.
 
 ## As a library
 
