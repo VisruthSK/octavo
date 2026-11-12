@@ -33,6 +33,7 @@ const threads = Math.max(1, Math.floor(cores / jobs));
 const browser = process.argv.includes("--browser");
 const verdictCache = !process.argv.includes("--no-verdict-cache");
 const upstream = !process.argv.includes("--no-upstream");
+const octavoArgs = flag("octavo-args", "").split(/\s+/).filter(Boolean);
 const outDirectory = resolve(flag("out", join(root, "out", "corpus")));
 
 const built = resolve(flag("binary", join(root, "target", "release", process.platform === "win32" ? "octavo.exe" : "octavo")));
@@ -95,7 +96,7 @@ const check = (row, expect, result, output, input) => {
   return problems;
 };
 
-const binaryVersion = (await run(["--version"])).stdout.trim();
+const binaryVersion = (await run(["--version", ...octavoArgs])).stdout.trim();
 const upstreamRows = upstream
   ? readRendered().map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }))
   : [];
@@ -133,7 +134,7 @@ const deadlineFailure = ({ row, level }) => {
 const results = await pool(work, jobs, async ({ row, level }) => {
   const input = row.path;
   const output = join(outDirectory, `${row.id}.${level}.html`);
-  const result = await run([input, output, "--level", level, "--jobs", String(threads)]);
+  const result = await run([input, output, "--level", level, "--jobs", String(threads), ...octavoArgs]);
   const source = readFileSync(input, "utf8");
   const produced = result.code === 0 ? readFileSync(output, "utf8") : "";
   const excluded = Boolean(row.source) && result.stderr.includes(rejections["not-self-contained"]);
@@ -286,7 +287,7 @@ const medianRate = Math.max(median(large.map((entry) => entry.ms / entry.inBytes
 for (const entry of timed) {
   const allowed = STARTUP_ALLOWANCE_MS + SLOWDOWN_LIMIT * medianRate * entry.inBytes;
   if (entry.ms > allowed && !deadlineReached()) {
-    const retry = await run([entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores)]);
+    const retry = await run([entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores), ...octavoArgs]);
     entry.ms = Math.min(entry.ms, retry.ms);
   }
   if (entry.ms > allowed) {
