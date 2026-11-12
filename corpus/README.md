@@ -15,12 +15,12 @@ Nothing large is committed. Fixtures are small modules that build their text det
 
 ## Tiers
 
-Every document belongs to a tier. `smoke` is a small sample that covers every category and format. `full` is the rest.
+Every document and every project belongs to a tier. `smoke` is a small sample that covers every category, format and project kind. `full` is the rest.
 
-| Tier | Hand-written | Quarto | Runs |
-|---|---|---|---|
-| `smoke` | 67 | 12 | On every push and pull request |
-| `full` | 267 | 453 | Before every release tag, split across 24 shards in CI |
+| Tier | Hand-written | Quarto | Projects | Runs |
+|---|---|---|---|---|
+| `smoke` | 67 | 12 | 8 | On every push and pull request |
+| `full` | 267 | 453 | 54 | Before every release tag, split across 24 shards in CI |
 
 ## Hand-written fixtures
 
