@@ -11,8 +11,6 @@ on:
       - ".github/workflows/corpus.yml"
   pull_request:
     paths: *paths
-  schedule:
-    - cron: "0 6 * * 1"
   workflow_call:
   workflow_dispatch:
     inputs:
@@ -67,7 +65,7 @@ jobs:
           else
             tier=full
           fi
-          if [ "$tier" = full ]; then shards='[1,2,3,4,5,6,7,8,9,10,11,12]'; else shards='[1,2]'; fi
+          if [ "$tier" = full ]; then shards="$(node -e 'console.log(JSON.stringify(Array.from({length: 24}, (_, i) => i + 1)))')"; else shards='[1,2,3,4]'; fi
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "shards=$shards" >> "$GITHUB_OUTPUT"
 

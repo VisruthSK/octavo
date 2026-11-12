@@ -16,7 +16,7 @@ First pre-release. The command line and the library API can still change.
 - Lossless PNG recompression that keeps the chunks that change colour rendering, identical images processed once, and optional lossy AVIF or WebP re-encoding with a size cap.
 - Packing of scripts, styles, SVG, images and data blocks into one compressed blob restored by a small loader.
 - A browser verifier that compares the original and the optimized page in seven scenarios, pixel for pixel, including running animations, and a self-test that proves it catches a dozen known breakages.
-- A test corpus of about 300 hand-written documents and every Quarto test document that renders to self-contained HTML. CI runs a smoke tier on pull requests and the full tier, split across six shards, weekly and before every release.
+- A test corpus of about 300 hand-written documents and every Quarto test document that renders to self-contained HTML. CI runs a quick sample on every push and pull request, and the full tier, split across 24 shards, before every release.
 - A release workflow that builds and publishes only after the CI suite and the full corpus pass.
 - Third-party license notices in the release archives, and preservation of license comments in the optimized output.
 
