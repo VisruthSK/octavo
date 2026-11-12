@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { differences, missingFrom } from "./compare.mjs";
+import { compare, differences, missingFrom } from "./compare.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -74,4 +74,38 @@ test("a mirrored gradient makes two style strings the same, an extra declaration
   const { sameStyle } = await import("./compare.mjs");
   assert.equal(sameStyle(`color:red;${up}`, `${down};color:red`), true);
   assert.equal(sameStyle(`color:red;${up}`, `${down};color:red;width:1px`), false);
+});
+
+const state = () => ({ title: "t", accessibility: "a", dom: "d", fonts: [], animations: [], sheets: 1, scroll: [0, 0], labels: [], rects: [], styles: [] });
+const captureOf = (requests, errors = []) => ({ states: [state()], errors, requests });
+const requestsIssue = (issues) => issues.find((issue) => issue.startsWith("requests:"));
+
+test("requests in a different order do not fail", () => {
+  const before = captureOf(["https://a.test/font.woff2", "https://a.test/site.css"]);
+  const after = captureOf(["https://a.test/site.css", "https://a.test/font.woff2"]);
+  assert.deepEqual(compare(before, after, false), []);
+});
+
+test("duplicate requests in a different order do not fail", () => {
+  const before = captureOf(["https://a.test/lib.js", "https://a.test/style.css", "https://a.test/lib.js"]);
+  const after = captureOf(["https://a.test/lib.js", "https://a.test/lib.js", "https://a.test/style.css"]);
+  assert.deepEqual(compare(before, after, false), []);
+});
+
+test("a missing request fails even when the order would sort the same", () => {
+  const before = captureOf(["https://a.test/a.png", "https://a.test/b.png"]);
+  const after = captureOf(["https://a.test/b.png"]);
+  assert.ok(requestsIssue(compare(before, after, false)));
+});
+
+test("a swapped count of duplicate requests fails", () => {
+  const before = captureOf(["https://a.test/lib.js", "https://a.test/lib.js", "https://a.test/style.css"]);
+  const after = captureOf(["https://a.test/lib.js", "https://a.test/style.css", "https://a.test/style.css"]);
+  assert.ok(requestsIssue(compare(before, after, false)));
+});
+
+test("URLs containing commas are compared as whole strings", () => {
+  const before = captureOf(["https://a.test/x,y", "https://a.test/z"]);
+  const after = captureOf(["https://a.test/x", "https://a.test/y,z"]);
+  assert.ok(requestsIssue(compare(before, after, false)));
 });

@@ -164,6 +164,13 @@ function compareState(a, b, lossy, stats) {
   return issues;
 }
 
+const sameMultiset = (left, right) => {
+  if (left.length !== right.length) return false;
+  const a = [...left].sort();
+  const b = [...right].sort();
+  return a.every((entry, at) => entry === b[at]);
+};
+
 export function compare(before, after, lossy, stats) {
   if (before.crashed || after.crashed) return [`crashed: original=${before.crashed ?? "no"} optimized=${after.crashed ?? "no"}`];
   const issues = [];
@@ -171,7 +178,7 @@ export function compare(before, after, lossy, stats) {
   if (JSON.stringify([...before.errors].sort()) !== JSON.stringify([...after.errors].sort())) {
     issues.push(`console errors: ${JSON.stringify(before.errors)} vs ${JSON.stringify(after.errors)}`);
   }
-  if ([...before.requests].sort().join() !== [...after.requests].sort().join()) issues.push(`requests: ${before.requests} vs ${after.requests}`);
+  if (!sameMultiset(before.requests, after.requests)) issues.push(`requests: ${before.requests} vs ${after.requests}`);
   if (before.states.length !== after.states.length) issues.push(`state count ${before.states.length} vs ${after.states.length}`);
   for (const [i, state] of before.states.entries()) {
     if (after.states[i]) issues.push(...compareState(state, after.states[i], lossy, stats).map((issue) => `${state.label}: ${issue}`));
