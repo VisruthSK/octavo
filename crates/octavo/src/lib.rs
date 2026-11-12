@@ -107,7 +107,7 @@ impl FromStr for Mode {
 /// let options = Options::default();
 /// assert!(options.images.is_none() && !options.subset_text_fonts && !options.strip_licenses);
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Options {
     /// Re-encode embedded PNG and JPEG images when that makes them smaller.
     /// `None` keeps them as they are, recompressed losslessly.
@@ -140,18 +140,6 @@ pub struct Options {
     /// How hard the compressors for fonts, PNG images and the packed blob
     /// work. It is independent of the [`Mode`].
     pub compression: Compression,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            images: None,
-            subset_text_fonts: false,
-            strip_licenses: false,
-            cache_directory: None,
-            compression: Compression::default(),
-        }
-    }
 }
 
 /// How much time to spend compressing.
