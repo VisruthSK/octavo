@@ -1,0 +1,17 @@
+---
+title: Code
+---
+
+Some narrative text mentioning octane.
+
+<details>
+<summary>Code: the greeting helper</summary>
+
+```python
+def greet(name):
+    return "hello " + name
+```
+
+</details>
+
+Trailing text after the folded block.

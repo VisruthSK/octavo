@@ -1,7 +1,7 @@
 {
   "tier": "smoke",
-  "description": "Website with navbar, sidebar, search, light and dark themes, an about page, tabsets, collapsible callouts, cross-references, a figure and a listing",
-  "pages": 8,
+  "description": "Website with navbar, sidebar, search, light and dark themes, an about page, tabsets, collapsible callouts, a folded code block, cross-references, a figure and a listing",
+  "pages": 9,
   "files": [
     "search.json",
     "styles.css",
@@ -12,7 +12,8 @@
       "zebra",
       "narwhal",
       "pelican",
-      "quokka"
+      "quokka",
+      "octane"
     ],
     "absent": [
       "zzzqx"
@@ -84,6 +85,28 @@
         {
           "selector": ".callout-tip .callout-collapse",
           "class": "show"
+        }
+      ]
+    },
+    {
+      "name": "the folded code block opens",
+      "page": "code.html",
+      "steps": [
+        {
+          "click": "details > summary"
+        }
+      ],
+      "expect": [
+        {
+          "selector": "details",
+          "attr": [
+            "open",
+            ""
+          ]
+        },
+        {
+          "selector": "details pre code",
+          "text": "greet"
         }
       ]
     },

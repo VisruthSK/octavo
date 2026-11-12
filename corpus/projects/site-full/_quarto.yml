@@ -10,6 +10,7 @@ website:
         text: Home
       - tabsets.qmd
       - callouts.qmd
+      - code.qmd
       - posts/index.qmd
   sidebar:
     - title: Guide
