@@ -19,8 +19,7 @@ This scopes the engine refactor brief against the code on the top of the pull re
 2. **No `analyze`, `plan`, `apply` pipeline for a single document.** The in-memory call already exists (`optimize`, `simplify`). A plan/apply split is justified for site mode, where nothing may be written until the whole tree is valid. Elsewhere it adds types without removing a defect.
 3. **Remote files.** The brief makes remote fetching opt-in and asks for an SSRF policy. Octavo's output files are always offline, so the CLI fetches stylesheets, fonts and images by default, with a size and time limit and `--no-fetch`. A private-network block was tried and dropped: Octavo is a local tool run by an author on their own documents, and the policy cost hundreds of lines and a flag for a threat that does not apply. It would be worth revisiting only if Octavo is ever run on documents from people other than the user.
 4. **Skera.** The brief says to treat the Skera replacement as given. It is still an evaluation (#18). The font coverage work depends on the outcome and is sequenced after it.
-5. **Quarto 2.** Nothing here targets it. The only portability rule kept is the cheap one: transformations take bytes and policy, and the host owns files, network, cache and threads.
-6. **Evidence taxonomy.** Kept, but as a field on each audit record, not as a type hierarchy. The audit has to say which rule fired and whether it was a heuristic. A full proof-obligation framework would be unused by every current transform.
+5. **Evidence taxonomy.** Kept, but as a field on each audit record, not as a type hierarchy. The audit has to say which rule fired and whether it was a heuristic. A full proof-obligation framework would be unused by every current transform.
 
 ## Plan
 
