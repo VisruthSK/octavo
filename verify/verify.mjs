@@ -80,7 +80,7 @@ const eachLimited = async (items, limit, work) => {
 
 const RECAPTURES = 3;
 
-async function confirmed(original, file, scenario, before, after, lossy, interact) {
+async function confirmed(original, file, scenario, before, after, lossy, interact, rootFor) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
   if (!issues.length) return { issues, rounded: stats.roundedPixels };
@@ -89,8 +89,8 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
     for (let round = 0; round < RECAPTURES; round++) {
       const patient = round > 0;
       const [again, optimizedAgain] = await Promise.all([
-        resilient((open) => capture(open, original, scenario, lossy, { interact, patient })).catch(crashed),
-        resilient((open) => capture(open, file, scenario, lossy, { interact, patient })).catch(crashed),
+        resilient((open) => capture(open, original, scenario, lossy, { interact, patient, root: rootFor(original) })).catch(crashed),
+        resilient((open) => capture(open, file, scenario, lossy, { interact, patient, root: rootFor(file) })).catch(crashed),
       ]);
       pairs.push({ before: again, after: optimizedAgain });
       if (!compare(again, optimizedAgain, lossy).length) break;
@@ -111,17 +111,18 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
   return { issues: kept, rounded: stats.roundedPixels };
 }
 
-export async function verify(original, optimized, { lossy = false } = {}) {
+export async function verify(original, optimized, { lossy = false, roots } = {}) {
+  const rootFor = (file) => (roots ? (file === original ? roots.original : roots.optimized) : undefined);
   const files = [optimized].flat();
   const reports = files.map(() => []);
   const interact = await slots.using(() => resilient((open) => hasInteractions(open, original)).catch(() => true));
   const run = (file, scenario) =>
-    slots.using(() => resilient((open) => capture(open, file, scenario, lossy, { interact })).catch(crashed));
+    slots.using(() => resilient((open) => capture(open, file, scenario, lossy, { interact, root: rootFor(file) })).catch(crashed));
   await eachLimited(scenarios, SCENARIOS_AT_ONCE, async (scenario) => {
     const [before, ...afters] = await Promise.all([original, ...files].map((file) => run(file, scenario)));
     await Promise.all(
       files.map(async (file, at) => {
-        const { issues, rounded } = await confirmed(original, file, scenario, before, afters[at], lossy, interact);
+        const { issues, rounded } = await confirmed(original, file, scenario, before, afters[at], lossy, interact, rootFor);
         reports[at].push({ scenario: scenario.name, issues, rounded });
       }),
     );

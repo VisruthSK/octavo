@@ -89,6 +89,18 @@ pub(crate) fn minify(code: &str, kind: ScriptKind, licenses: Licenses) -> Option
     )
 }
 
+pub(crate) fn minify_file(code: &str, module: bool, licenses: Licenses) -> Option<String> {
+    if looks_minified(code) {
+        return None;
+    }
+    let kind = if module {
+        ScriptKind::Module
+    } else {
+        ScriptKind::Classic
+    };
+    minify(code, kind, licenses).filter(|text| text.len() < code.len())
+}
+
 fn rewrite(doc: &Doc, tag: &Tag, licenses: Licenses) -> Option<Edit> {
     let (kind, label) = match ScriptKind::of(tag) {
         ScriptKind::Classic => (ScriptKind::Classic, "script"),

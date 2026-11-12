@@ -162,7 +162,15 @@ fn reencode(decoded: &Decoded, lossy: Option<ImageEncoding>, tuning: Tuning) -> 
 }
 
 fn recompress(decoded: &Decoded, tuning: Tuning) -> Option<String> {
-    if decoded.image.mime != Mime::ImagePng || decoded.pixels > MAX_LOSSLESS_PIXELS {
+    if decoded.image.mime != Mime::ImagePng {
+        return None;
+    }
+    let smaller = recompress_png(&decoded.image.bytes, decoded.pixels, tuning)?;
+    Some(data::encode_base64(Mime::ImagePng, &smaller))
+}
+
+fn recompress_png(bytes: &[u8], pixels: u64, tuning: Tuning) -> Option<Vec<u8>> {
+    if pixels > MAX_LOSSLESS_PIXELS {
         return None;
     }
     let options = PngOptions {
@@ -170,13 +178,21 @@ fn recompress(decoded: &Decoded, tuning: Tuning) -> Option<String> {
         ..PngOptions::from_preset(
             tuning
                 .png_preset
-                .map_or(preset_for(decoded.pixels), |preset| preset.min(6)),
+                .map_or(preset_for(pixels), |preset| preset.min(6)),
         )
     };
-    let smaller = oxipng::optimize_from_memory(&decoded.image.bytes, &options)
+    oxipng::optimize_from_memory(bytes, &options)
         .ok()
-        .filter(|better| better.len() < decoded.image.bytes.len())?;
-    Some(data::encode_base64(Mime::ImagePng, &smaller))
+        .filter(|better| better.len() < bytes.len())
+}
+
+pub(crate) fn recompress_png_file(bytes: &[u8], tuning: Tuning) -> Option<Vec<u8>> {
+    let (width, height) = image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?
+        .into_dimensions()
+        .ok()?;
+    recompress_png(bytes, u64::from(width) * u64::from(height), tuning)
 }
 
 fn encode(decoded: &Decoded, lossy: ImageEncoding) -> Option<String> {

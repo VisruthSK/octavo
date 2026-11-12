@@ -486,6 +486,10 @@ impl Transcoded {
     }
 }
 
+pub(crate) fn woff2_file(bytes: &[u8], cache: Option<&Path>, tuning: Tuning) -> Option<Vec<u8>> {
+    transcode(bytes, None, Licenses::Keep, cache, tuning).map(|converted| converted.woff2)
+}
+
 fn convert(
     bytes: &[u8],
     chars: Option<&HashSet<char>>,
