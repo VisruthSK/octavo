@@ -8,7 +8,7 @@ First pre-release. The command line and the library API can still change.
 
 ### Added
 
-- The `octavo` command line: `octavo <input> [output]`, with `--level` (`safe`, `scripts`, `packed`), `--audit`, `--lossy-images`, `--image-quality`, `--max-image-side`, `--no-subset-fonts`, `--strip-licenses`, `--cache-dir`, `--no-cache`, `--maximum`, `--woff2-quality`, `--png-preset`, `--brotli-quality` and `--jobs`.
+- The `octavo` command line: `octavo <input> [output]`, with `--level` (`safe`, `scripts`, `packed`), `--audit`, `--lossy-images`, `--image-quality`, `--max-image-side`, `--no-subset-fonts`, `--strip-licenses`, `--cache-dir`, `--no-cache`, `--maximum`, `--woff2-quality`, `--png-preset`, `--brotli-quality` and `--jobs`, and `--completions` for bash, zsh, fish, elvish, PowerShell and nushell.
 - The `octavo` library: `optimize`, `simplify` and `Simplified::pack`, with typed modes, options, results, warnings and errors. `Options::compression` takes `Compression::Balanced`, `Compression::Maximum` or `Compression::Custom(Tuning)`, and `Options::cache_directory` names the font cache, and `Simplified::pack_checked` steps down to a safer mode when your own check rejects a result.
 - Removal of Quarto's bundled JavaScript libraries (Bootstrap, Popper, Tippy, Clipboard.js, Anchor.js) that the page never uses.
 - JavaScript minification and stylesheet pruning and minification, with custom property values kept verbatim. A rule the CSS parser rejects, or whose `calc()` arithmetic would lose precision, is kept as written and the rest of the stylesheet is still optimized.

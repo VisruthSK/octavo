@@ -30,6 +30,27 @@ $env:CXXFLAGS = "/bigobj"
 cargo install octavo-cli
 ```
 
+## Shell completions
+
+`octavo --completions <shell>` prints a completion script and exits. It supports bash, zsh, fish, elvish, PowerShell and nushell.
+
+```sh
+octavo --completions bash > ~/.local/share/bash-completion/completions/octavo
+octavo --completions zsh > ~/.zfunc/_octavo
+octavo --completions fish > ~/.config/fish/completions/octavo.fish
+```
+
+```powershell
+octavo --completions powershell | Out-String | Invoke-Expression
+```
+
+```nu
+mkdir ($nu.default-config-dir | path join completions)
+octavo --completions nushell | save --force ($nu.default-config-dir | path join completions octavo.nu)
+```
+
+Then add `use completions/octavo.nu *` to your nushell `config.nu`. For PowerShell, put the line in your profile to keep it.
+
 ## Where the bytes go
 
 A near-empty Quarto article is about 1.2 MB, and almost none of it is your content. `embed-resources` inlines a full copy of Bootstrap's CSS (around 950 KB), an icon font, Bootstrap's JavaScript, Popper, Tippy, Clipboard.js and Anchor.js, plus the theme and highlighting styles. A page with no code block and no footnote uses almost none of that.

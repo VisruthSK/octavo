@@ -1,7 +1,7 @@
 use anstream::{eprintln, println};
 use anstyle::{AnsiColor, Style};
 use bytesize::ByteSize;
-use clap::{Args, Parser, builder::Styles, value_parser};
+use clap::{Args, CommandFactory, Parser, ValueEnum, builder::Styles, value_parser};
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{
     Compression, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform, Tuning, Warning,
@@ -47,6 +47,44 @@ struct Cli {
         help = "Worker threads, by default one per logical CPU"
     )]
     jobs: NonZeroUsize,
+    #[arg(
+        long,
+        value_name = "SHELL",
+        help_heading = "Shell",
+        help = "Print a completion script for your shell and exit: bash, elvish, fish, nushell, powershell or zsh"
+    )]
+    completions: Option<CompletionShell>,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    Nushell,
+    Powershell,
+    Zsh,
+}
+
+fn print_completions(shell: CompletionShell) {
+    use clap_complete::{Shell, generate};
+    let mut command = Cli::command();
+    let mut out = std::io::stdout();
+    match shell {
+        CompletionShell::Bash => generate(Shell::Bash, &mut command, "octavo", &mut out),
+        CompletionShell::Elvish => generate(Shell::Elvish, &mut command, "octavo", &mut out),
+        CompletionShell::Fish => generate(Shell::Fish, &mut command, "octavo", &mut out),
+        CompletionShell::Powershell => {
+            generate(Shell::PowerShell, &mut command, "octavo", &mut out)
+        }
+        CompletionShell::Zsh => generate(Shell::Zsh, &mut command, "octavo", &mut out),
+        CompletionShell::Nushell => generate(
+            clap_complete_nushell::Nushell,
+            &mut command,
+            "octavo",
+            &mut out,
+        ),
+    }
 }
 
 const EXAMPLES: &str = "\
@@ -63,8 +101,11 @@ fn default_jobs() -> NonZeroUsize {
 
 #[derive(Args)]
 struct Optimize {
-    #[arg(help = "HTML file written by Quarto with embed-resources: true")]
-    input: PathBuf,
+    #[arg(
+        required_unless_present = "completions",
+        help = "HTML file written by Quarto with embed-resources: true"
+    )]
+    input: Option<PathBuf>,
     #[arg(help = "Where to write the result [default: <input>.min.html]")]
     output: Option<PathBuf>,
     #[arg(
@@ -79,7 +120,7 @@ struct Optimize {
     #[arg(
         long,
         conflicts_with = "output",
-        help = "Show what each step would save, and write nothing"
+        help = "Show what each step would save at --level, and write nothing"
     )]
     audit: bool,
     #[arg(
@@ -184,6 +225,10 @@ fn default_cache_dir() -> Option<PathBuf> {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Some(shell) = cli.completions {
+        print_completions(shell);
+        return ExitCode::SUCCESS;
+    }
     if let Err(error) = rayon::ThreadPoolBuilder::new()
         .num_threads(cli.jobs.get())
         .build_global()
@@ -191,26 +236,30 @@ fn main() -> ExitCode {
         eprintln!("{ERROR}error{ERROR:#}: {error}");
         return ExitCode::FAILURE;
     }
-    let result = if cli.optimize.audit {
-        audit(&cli.optimize.input)
+    let Optimize {
+        input,
+        output,
+        level,
+        audit: audit_only,
+        lossy_images,
+        image_quality,
+        no_subset_fonts,
+        max_image_side,
+        strip_licenses,
+        cache_dir,
+        no_cache,
+        maximum,
+        woff2_quality,
+        png_preset,
+        brotli_quality,
+    } = cli.optimize;
+    let Some(input) = input else {
+        eprintln!("{ERROR}error{ERROR:#}: no input file was given");
+        return ExitCode::FAILURE;
+    };
+    let result = if audit_only {
+        audit(&input, level)
     } else {
-        let Optimize {
-            input,
-            output,
-            level,
-            audit: _,
-            lossy_images,
-            image_quality,
-            no_subset_fonts,
-            max_image_side,
-            strip_licenses,
-            cache_dir,
-            no_cache,
-            maximum,
-            woff2_quality,
-            png_preset,
-            brotli_quality,
-        } = cli.optimize;
         let output = output.unwrap_or_else(|| input.with_extension("min.html"));
         let images = lossy_images.map(|format| {
             let encoding = ImageEncoding::new(format);
@@ -283,10 +332,20 @@ struct Savings {
     after: usize,
 }
 
-fn audit(input: &Path) -> Result<(), String> {
+fn describe(transform: Transform) -> &'static str {
+    match transform {
+        Transform::DeadLibrary => "unused Quarto libraries replaced by stubs",
+        Transform::MinifiedScript => "scripts minified",
+        Transform::PrunedStylesheet => "unused CSS removed, then minified",
+        Transform::RecompressedPng => "PNG images recompressed losslessly",
+        Transform::ReencodedImage => "images re-encoded in a smaller format",
+        Transform::Packed => "scripts, styles and images compressed into one blob",
+    }
+}
+
+fn audit(input: &Path, level: Mode) -> Result<(), String> {
     let src = read(input)?;
-    let out =
-        optimize(&src, Mode::Packed).map_err(|error| format!("{}: {error}", input.display()))?;
+    let out = optimize(&src, level).map_err(|error| format!("{}: {error}", input.display()))?;
     let mut totals: BTreeMap<Transform, Savings> = BTreeMap::new();
     for step in &out.applied {
         let total = totals.entry(step.transform).or_default();
@@ -295,19 +354,23 @@ fn audit(input: &Path) -> Result<(), String> {
         total.after += step.after;
     }
     println!(
-        "{DIM}{:<18} {:>5} {:>10} {:>10} {:>10}{DIM:#}",
-        "transformation", "count", "before", "after", "saved"
+        "{DIM}Audit at the {level} level. Each row covers only the part of the file that step changed, in the order the steps run.{DIM:#}\n"
+    );
+    println!(
+        "{DIM}{:<18} {:<51} {:>5} {:>10} {:>10} {:>10}{DIM:#}",
+        "step", "what it did", "count", "before", "after", "saved"
     );
     for (name, total) in totals {
         println!(
-            "{name:<18} {:>5} {:>10} {:>10} {GOOD}{:>10}{GOOD:#}",
+            "{name:<18} {:<51} {:>5} {:>10} {:>10} {GOOD}{:>10}{GOOD:#}",
+            describe(name),
             total.count,
             size(total.before),
             size(total.after),
             size(total.before.saturating_sub(total.after)),
         );
     }
-    println!("{}", summary(src.len(), out.html.len()));
+    println!("\nWhole file: {}", summary(src.len(), out.html.len()));
     Ok(())
 }
 
