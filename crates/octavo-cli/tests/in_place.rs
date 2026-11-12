@@ -115,7 +115,7 @@ fn audit_reports_without_writing_anything() {
         .output()
         .expect("run octavo");
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("transformation"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("what it did"));
     assert_eq!(fs::read_to_string(&path).expect("read"), original);
     assert!(leftovers(&path).is_empty(), "{:?}", leftovers(&path));
 }
