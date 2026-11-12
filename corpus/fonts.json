@@ -12,5 +12,13 @@
     "url": "https://raw.githubusercontent.com/google/fonts/c30b221beb0c1da59d563feb91ec8656a1fa972a/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
     "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
     "license": "SIL Open Font License 1.1, used only as test input and never redistributed"
+  },
+  {
+    "name": "fira-sans-woff2",
+    "family": "Fira Sans",
+    "file": "fira-sans-woff2.woff2",
+    "url": "https://raw.githubusercontent.com/mozilla/fira/fd8c8c0a3d353cd99e8ca1662942d165e6961407/woff2/FiraSans-Regular.woff2",
+    "sha256": "0fe48aded097c2a11942a70bfef48510abf875a8e800f43d4007dce8d2a3aebe",
+    "license": "SIL Open Font License 1.1, used only as test input and never redistributed"
   }
 ]
