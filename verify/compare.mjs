@@ -1,5 +1,6 @@
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
+import { pixelTolerance } from "./engines.mjs";
 
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
@@ -62,11 +63,10 @@ export const missingFrom = (reference, candidate = "") => {
   return reference.split(";").filter((declaration) => !present.has(canonical(declaration)));
 };
 
-const CHANNEL_ROUNDING = 1;
-const FAINT_LEVELS = 8;
-const FAINT_PIXEL_BUDGET = 12;
-
-export function differences(left, right) {
+export function differences(left, right, tolerance = pixelTolerance()) {
+  const rounding = tolerance.channel;
+  const faintLevels = tolerance.faint;
+  const budget = tolerance.budget;
   let count = 0;
   let rounded = 0;
   const faint = [];
@@ -83,11 +83,11 @@ export function differences(left, right) {
         Math.abs(left.data[at + 3] - right.data[at + 3]),
       );
       if (worst > 0) [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Math.min(anyMinX, x), Math.min(anyMinY, y), Math.max(anyMaxX, x), Math.max(anyMaxY, y)];
-      if (worst <= CHANNEL_ROUNDING) {
+      if (worst <= rounding) {
         if (worst > 0) rounded += 1;
         continue;
       }
-      if (worst <= FAINT_LEVELS) {
+      if (worst <= faintLevels) {
         faint.push([x, y, at]);
         continue;
       }
@@ -96,7 +96,7 @@ export function differences(left, right) {
       [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
     }
   }
-  const spread = count > 0 || faint.length > FAINT_PIXEL_BUDGET;
+  const spread = count > 0 || faint.length > budget;
   if (!spread) rounded += faint.length;
   else for (const [x, y, at] of faint) {
     count += 1;
@@ -119,7 +119,7 @@ function compareScreenshots(a, b, lossy, stats) {
   }
   const { count, rounded, where } = differences(left, right);
   if (stats) stats.roundedPixels += rounded;
-  return count ? [`screenshot: ${count} pixels differ by more than ${CHANNEL_ROUNDING}${where}`] : [];
+  return count ? [`screenshot: ${count} pixels differ by more than ${pixelTolerance().channel}${where}`] : [];
 }
 
 function compareState(a, b, lossy, stats) {

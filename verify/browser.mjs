@@ -2,6 +2,9 @@ import { chromium, firefox, webkit } from "playwright-core";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { basename, delimiter, dirname, join } from "node:path";
+import { capabilities, engineName, engineNotice } from "./engines.mjs";
+
+export { capabilities, engineName, engineNotice };
 const { LOCALAPPDATA = "", PROGRAMFILES = "", "PROGRAMFILES(X86)": PROGRAMFILES_X86 = "", PATH = "" } = process.env;
 
 const installed = {
@@ -85,23 +88,6 @@ export const browserStamp = () => {
 };
 
 const engines = { chromium, firefox, webkit };
-
-export const engineName = (env = process.env) => {
-  const name = env.OCTAVO_BROWSER || "chromium";
-  if (!Object.hasOwn(engines, name)) throw new Error(`OCTAVO_BROWSER must be chromium, firefox or webkit, not ${name}`);
-  return name;
-};
-
-const profiles = {
-  chromium: { states: "protocol" },
-  firefox: { states: "pointer" },
-  webkit: { states: "pointer" },
-};
-
-export const capabilities = (name = engineName()) => profiles[name];
-
-export const engineNotice = (name = engineName()) =>
-  capabilities(name).states === "protocol" ? name : `${name} (hover, focus and active states are applied with real pointer and keyboard events)`;
 
 export const launchOptions = (name, options, executablePath) => {
   if (name === "chromium") return { executablePath, ...options };
