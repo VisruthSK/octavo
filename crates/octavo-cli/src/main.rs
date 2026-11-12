@@ -154,9 +154,9 @@ struct Optimize {
     #[arg(
         long,
         help_heading = "Fonts",
-        help = "Keep text fonts whole instead of only the characters the document uses. Larger, but safe for pages whose scripts add text later"
+        help = "Keep only the characters each text font needs. Often a large saving, but on Linux some hinted fonts draw with slightly different strokes"
     )]
-    no_subset_fonts: bool,
+    subset_fonts: bool,
     #[arg(
         long,
         value_name = "DIRECTORY",
@@ -243,7 +243,7 @@ fn main() -> ExitCode {
         audit: audit_only,
         lossy_images,
         image_quality,
-        no_subset_fonts,
+        subset_fonts,
         max_image_side,
         strip_licenses,
         cache_dir,
@@ -273,7 +273,7 @@ fn main() -> ExitCode {
         });
         let options = Options {
             images,
-            subset_text_fonts: !no_subset_fonts,
+            subset_text_fonts: subset_fonts,
             strip_licenses,
             cache_directory: if no_cache {
                 None

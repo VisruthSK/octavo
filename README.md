@@ -145,7 +145,7 @@ Resources loaded from the network (a CDN script, a web font) do not stop the run
 
 ### Subsetting text fonts
 
-Text fonts are subsetted to the characters the document uses, plus the Latin letters, digits and punctuation. That cuts themed documents by 30 to 56 percent, because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [HarfBuzz](https://harfbuzz.github.io/)'s subsetter and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive, and the checker finds no difference on fonts such as Fira Sans, Inter and Source Sans. Text that JavaScript adds later with characters outside that set falls back to a system font, so pass `--no-subset-fonts` for pages that do that. Icon fonts are always subsetted to the glyphs the CSS can reach.
+Text fonts are kept whole by default. `--subset-fonts` cuts them to the characters the document uses, plus the Latin letters, digits and punctuation, which shrinks themed documents by 30 to 56 percent because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [HarfBuzz](https://harfbuzz.github.io/)'s subsetter and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive, and layout is identical. It is not the default because on Linux Chromium draws some hinted fonts, Fira Sans among them, with slightly different strokes after subsetting, which the checker reports as pixel differences. Text that JavaScript adds later with characters outside the kept set falls back to a system font. Icon fonts are always subsetted to the glyphs the CSS can reach.
 
 ### Licenses
 

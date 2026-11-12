@@ -98,14 +98,14 @@ impl FromStr for Mode {
 
 /// Settings for [`simplify`].
 ///
-/// The default keeps images lossless, subsets text fonts and keeps license
+/// The default keeps images lossless, keeps text fonts whole and keeps license
 /// notices.
 ///
 /// ```
 /// use octavo::{simplify, Options};
 ///
 /// let options = Options::default();
-/// assert!(options.images.is_none() && options.subset_text_fonts && !options.strip_licenses);
+/// assert!(options.images.is_none() && !options.subset_text_fonts && !options.strip_licenses);
 /// ```
 #[derive(Clone, Debug)]
 pub struct Options {
@@ -115,10 +115,12 @@ pub struct Options {
     /// Subset embedded text fonts to the characters in the document plus
     /// the Latin letters, digits and punctuation, keeping every layout
     /// feature and all kerning. This is often the largest saving in a themed
-    /// document, and it is on by default. Text that JavaScript adds later
-    /// with characters outside that set falls back to a system font, so turn
-    /// it off for pages that do that. Icon fonts are always subsetted to the
-    /// glyphs the CSS can reach.
+    /// document, but it is off by default: on Linux, Chromium draws some
+    /// hinted fonts, such as Fira Sans, with slightly different strokes after
+    /// subsetting, so the output is not pixel-exact everywhere. Text that
+    /// JavaScript adds later with characters outside that set falls back to a
+    /// system font. Icon fonts are always subsetted to the glyphs the CSS can
+    /// reach.
     pub subset_text_fonts: bool,
     /// Drop the license and copyright notices of bundled libraries and
     /// fonts. Most open-source licenses require them to stay with copies,
@@ -144,7 +146,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             images: None,
-            subset_text_fonts: true,
+            subset_text_fonts: false,
             strip_licenses: false,
             cache_directory: None,
             compression: Compression::default(),
