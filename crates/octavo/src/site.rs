@@ -28,6 +28,23 @@ pub enum SiteKind {
     Image,
 }
 
+/// What a file in a [`SitePlan`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SiteFileKind {
+    /// An HTML page.
+    Page,
+    /// A stylesheet.
+    Stylesheet,
+    /// A script.
+    Script,
+    /// A font.
+    Font,
+    /// An image.
+    Image,
+    /// Any other file.
+    Other,
+}
+
 /// One file that [`optimize_directory`] made smaller.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SiteChange {
@@ -42,6 +59,24 @@ pub struct SiteChange {
     pub after: u64,
 }
 
+/// One file that a [`SitePlan`] holds.
+#[derive(Clone, Debug)]
+pub struct SiteFile {
+    /// The file's path relative to the output directory.
+    pub path: PathBuf,
+    /// What kind of file it is.
+    pub kind: SiteFileKind,
+    /// Its size in bytes once written.
+    pub size: u64,
+    content: SiteContent,
+}
+
+#[derive(Clone, Debug)]
+enum SiteContent {
+    Bytes(Vec<u8>),
+    Copy(PathBuf),
+}
+
 /// What [`optimize_directory`] did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SiteReport {
@@ -53,8 +88,8 @@ pub struct SiteReport {
     pub bytes: u64,
     /// The files that got smaller.
     pub changes: Vec<SiteChange>,
-    /// Things Octavo skipped, such as symbolic links and files that are not
-    /// valid UTF-8 where text was expected.
+    /// Things Octavo noticed, such as files that are not valid UTF-8 where
+    /// text was expected.
     pub warnings: Vec<String>,
 }
 
@@ -69,6 +104,20 @@ pub enum SiteError {
         input: PathBuf,
         /// The output directory.
         output: PathBuf,
+    },
+    /// A symbolic link that does not point at a regular file inside the
+    /// input.
+    Symlink(PathBuf),
+    /// A file that is neither a regular file nor a directory.
+    UnsupportedFile(PathBuf),
+    /// A planned file was not written, or was written with another size.
+    Incomplete {
+        /// The path of the file, relative to the output directory.
+        path: PathBuf,
+        /// The size in bytes the plan expects.
+        expected: u64,
+        /// The size in bytes the file has.
+        found: u64,
     },
     /// Reading or writing a file failed.
     Io {
@@ -88,6 +137,23 @@ impl fmt::Display for SiteError {
                 "the output {} and the input {} overlap",
                 output.display(),
                 input.display()
+            ),
+            SiteError::Symlink(path) => write!(
+                f,
+                "{} is a symbolic link that does not point at a regular file inside the input",
+                path.display()
+            ),
+            SiteError::UnsupportedFile(path) => {
+                write!(f, "{} is not a regular file or a directory", path.display())
+            }
+            SiteError::Incomplete {
+                path,
+                expected,
+                found,
+            } => write!(
+                f,
+                "{} was written with {found} bytes instead of {expected}",
+                path.display()
             ),
             SiteError::Io { path, source } => write!(f, "{}: {source}", path.display()),
         }
@@ -135,6 +201,10 @@ fn io_error(path: &Path, source: io::Error) -> SiteError {
 /// files in place. Images are never re-encoded lossily and text fonts are never
 /// subsetted here, whatever `options` says.
 ///
+/// The output is written into a staging directory beside `output` and put in
+/// place with renames once every file is there, so a run that fails leaves
+/// the previous output as it was.
+///
 /// ```no_run
 /// use octavo::{optimize_directory, Options};
 /// use std::path::Path;
@@ -147,29 +217,160 @@ fn io_error(path: &Path, source: io::Error) -> SiteError {
 /// # Errors
 ///
 /// Fails if `input` is not a directory, if `output` contains it or sits inside
-/// it, or if a file cannot be read or written.
+/// it, if a file is not a regular file, or if a file cannot be read or
+/// written.
 pub fn optimize_directory(
     input: &Path,
     output: &Path,
     options: &Options,
 ) -> Result<SiteReport, SiteError> {
+    plan_directory(input, options)?.write(output)
+}
+
+/// The output of site mode, worked out before anything is written.
+///
+/// A plan holds every file the output will have: the bytes of the files
+/// Octavo rewrites, and the path of the files it copies, which are read from
+/// disk when the plan is written. The pages are therefore not held in
+/// memory.
+#[derive(Clone, Debug)]
+pub struct SitePlan {
+    input: PathBuf,
+    files: Vec<SiteFile>,
+    report: SiteReport,
+}
+
+impl SitePlan {
+    /// What the plan does to the site's files.
+    #[must_use]
+    pub fn report(&self) -> &SiteReport {
+        &self.report
+    }
+
+    /// The files the plan holds, ordered by path.
+    #[must_use]
+    pub fn files(&self) -> &[SiteFile] {
+        &self.files
+    }
+
+    /// Writes the plan into `output` and returns what it did.
+    ///
+    /// The whole tree is written into a staging directory beside `output`,
+    /// then checked against the plan: every planned file must be there with
+    /// the planned size. Only then is the tree put in place. If `output`
+    /// exists, it is renamed aside first, the staging directory takes its
+    /// place, and the old tree is removed. The promotion is a sequence of
+    /// renames, not one atomic operation, so a reader can see the old tree or
+    /// the new one, but never a half-written tree.
+    ///
+    /// When anything fails before the promotion, the staging directory is
+    /// removed and `output` is left exactly as it was.
+    ///
+    /// # Errors
+    ///
+    /// Fails if `output` contains the input or sits inside it, or if a file
+    /// cannot be written.
+    pub fn write(&self, output: &Path) -> Result<SiteReport, SiteError> {
+        let output = resolve_output(output)?;
+        if output != self.input
+            && (output.starts_with(&self.input) || self.input.starts_with(&output))
+        {
+            return Err(SiteError::OverlappingPaths {
+                input: self.input.clone(),
+                output,
+            });
+        }
+        let staging = staging_path(&output);
+        let previous = previous_path(&output);
+        remove_tree(&staging)?;
+        if let Err(error) = self
+            .write_tree(&staging)
+            .and_then(|()| self.check(&staging))
+        {
+            let _ = remove_tree(&staging);
+            return Err(error);
+        }
+        if let Err(error) = promote(&output, &staging, &previous) {
+            let _ = remove_tree(&staging);
+            return Err(error);
+        }
+        Ok(self.report.clone())
+    }
+
+    fn write_tree(&self, root: &Path) -> Result<(), SiteError> {
+        fs::create_dir_all(root).map_err(|error| io_error(root, error))?;
+        for file in &self.files {
+            let target = root.join(&file.path);
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
+            }
+            match &file.content {
+                SiteContent::Bytes(bytes) => {
+                    fs::write(&target, bytes).map_err(|error| io_error(&target, error))?;
+                }
+                SiteContent::Copy(source) => {
+                    fs::copy(source, &target).map_err(|error| io_error(&target, error))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn check(&self, root: &Path) -> Result<(), SiteError> {
+        for file in &self.files {
+            let path = root.join(&file.path);
+            let size = fs::metadata(&path)
+                .map_err(|error| io_error(&path, error))?
+                .len();
+            if size != file.size {
+                return Err(SiteError::Incomplete {
+                    path: file.path.clone(),
+                    expected: file.size,
+                    found: size,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Works out the output of site mode without writing anything.
+///
+/// The plan holds every file the output will have, with the bytes of the
+/// files Octavo rewrites and the path of the files it copies. Nothing is
+/// written, so a plan can be looked at before it is published, and the same
+/// plan can be written more than once.
+///
+/// The files are the ones [`optimize_directory`] would write: the shared
+/// stylesheets, scripts, fonts and images of a rendered site, changed once
+/// for the whole site, and every other file copied unchanged.
+///
+/// # Errors
+///
+/// Fails if `input` is not a directory, if a file is not a regular file, or
+/// if a file cannot be read.
+///
+/// ```no_run
+/// use octavo::{Options, plan_directory};
+/// use std::path::Path;
+///
+/// let plan = plan_directory(Path::new("_site"), &Options::default())?;
+/// println!("{} files", plan.files().len());
+/// # Ok::<(), octavo::SiteError>(())
+/// ```
+pub fn plan_directory(input: &Path, options: &Options) -> Result<SitePlan, SiteError> {
     let input = fs::canonicalize(input).map_err(|error| io_error(input, error))?;
     if !input.is_dir() {
         return Err(SiteError::NotADirectory(input));
     }
-    let output = resolve_output(output)?;
-    let in_place = output == input;
-    if !in_place && (output.starts_with(&input) || input.starts_with(&output)) {
-        return Err(SiteError::OverlappingPaths { input, output });
-    }
 
     let mut report = SiteReport::default();
-    let mut files: BTreeMap<String, PathBuf> = BTreeMap::new();
-    collect(&input, &input, &mut files, &mut report.warnings)?;
-    report.files = files.len();
-    report.bytes = files
+    let mut sources: BTreeMap<String, PathBuf> = BTreeMap::new();
+    collect(&input, &input, &mut sources)?;
+    report.files = sources.len();
+    report.bytes = sources
         .values()
-        .map(|path| fs::metadata(input.join(path)).map_or(0, |meta| meta.len()))
+        .map(|path| fs::metadata(path).map_or(0, |meta| meta.len()))
         .sum();
 
     let licenses = if options.strip_licenses {
@@ -178,8 +379,8 @@ pub fn optimize_directory(
         Licenses::Keep
     };
     let tuning = options.compression.tuning();
-    let keys: BTreeSet<String> = files.keys().cloned().collect();
-    let read_text = |key: &str| fs::read_to_string(input.join(&files[key]));
+    let keys: BTreeSet<String> = sources.keys().cloned().collect();
+    let read_text = |key: &str| fs::read_to_string(&sources[key]);
 
     let pages: Vec<(String, String)> = keys
         .iter()
@@ -187,7 +388,7 @@ pub fn optimize_directory(
         .filter_map(|key| match read_text(key) {
             Ok(text) => Some(Ok((key.clone(), text))),
             Err(error) if error.kind() == io::ErrorKind::InvalidData => None,
-            Err(error) => Some(Err(io_error(&input.join(&files[key]), error))),
+            Err(error) => Some(Err(io_error(&sources[key], error))),
         })
         .collect::<Result<_, _>>()?;
     report.pages = pages.len();
@@ -272,7 +473,7 @@ pub fn optimize_directory(
     let converted: BTreeMap<String, Vec<u8>> = font_sources
         .par_iter()
         .filter_map(|key| {
-            let bytes = fs::read(input.join(&files[key])).ok()?;
+            let bytes = fs::read(&sources[key]).ok()?;
             let woff2 = fonts::woff2_file(&bytes, options.cache_directory.as_deref(), tuning)?;
             let target = woff2_name(key);
             (woff2.len() < bytes.len() && !keys.contains(&target)).then_some((key.clone(), woff2))
@@ -299,19 +500,20 @@ pub fn optimize_directory(
     }
 
     let mut dropped: BTreeSet<String> = BTreeSet::new();
+    let mut added: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     if !converted.is_empty() {
-        let mentioned = mentioned_fonts(&input, &files, &keys, &converted, &sheet_texts);
-        for (key, woff2) in &converted {
-            let before = fs::metadata(input.join(&files[key])).map_or(0, |meta| meta.len());
+        let mentioned = mentioned_fonts(&sources, &keys, &converted, &sheet_texts);
+        for (key, woff2) in converted {
+            let before = fs::metadata(&sources[&key]).map_or(0, |meta| meta.len());
             report.changes.push(SiteChange {
-                path: PathBuf::from(key),
+                path: PathBuf::from(&key),
                 kind: SiteKind::Font,
                 before,
                 after: woff2.len() as u64,
             });
-            writes.insert(woff2_name(key), woff2.clone());
-            if !mentioned.contains(key) {
-                dropped.insert(key.clone());
+            added.insert(woff2_name(&key), woff2);
+            if !mentioned.contains(&key) {
+                dropped.insert(key);
             }
         }
     }
@@ -340,7 +542,7 @@ pub fn optimize_directory(
         .par_iter()
         .filter(|key| key.to_ascii_lowercase().ends_with(".png"))
         .filter_map(|key| {
-            let bytes = fs::read(input.join(&files[key])).ok()?;
+            let bytes = fs::read(&sources[key]).ok()?;
             let smaller = images::recompress_png_file(&bytes, tuning)?;
             Some((key.clone(), bytes.len() as u64, smaller))
         })
@@ -355,9 +557,43 @@ pub fn optimize_directory(
         writes.insert(key, smaller);
     }
 
-    write_site(&input, &output, &files, &writes, &dropped, in_place)?;
+    let mut files: Vec<SiteFile> = Vec::with_capacity(sources.len() + added.len());
+    for (key, source) in &sources {
+        if dropped.contains(key) {
+            continue;
+        }
+        let content = match writes.remove(key) {
+            Some(bytes) => SiteContent::Bytes(bytes),
+            None => SiteContent::Copy(source.clone()),
+        };
+        let size = match &content {
+            SiteContent::Bytes(bytes) => bytes.len() as u64,
+            SiteContent::Copy(path) => fs::metadata(path).map_or(0, |meta| meta.len()),
+        };
+        files.push(SiteFile {
+            path: PathBuf::from(key),
+            kind: file_kind(key),
+            size,
+            content,
+        });
+    }
+    for (key, bytes) in added {
+        let kind = file_kind(&key);
+        files.push(SiteFile {
+            path: PathBuf::from(key),
+            kind,
+            size: bytes.len() as u64,
+            content: SiteContent::Bytes(bytes),
+        });
+    }
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+
     report.changes.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(report)
+    Ok(SitePlan {
+        input,
+        files,
+        report,
+    })
 }
 
 struct PageFacts {
@@ -442,6 +678,29 @@ fn is_convertible_font(key: &str) -> bool {
     [".woff", ".ttf", ".otf"]
         .iter()
         .any(|ext| lower.ends_with(ext))
+}
+
+fn file_kind(key: &str) -> SiteFileKind {
+    let lower = key.to_ascii_lowercase();
+    if is_page(key) {
+        SiteFileKind::Page
+    } else if lower.ends_with(".css") {
+        SiteFileKind::Stylesheet
+    } else if lower.ends_with(".js") {
+        SiteFileKind::Script
+    } else if [".woff", ".woff2", ".ttf", ".otf"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+    {
+        SiteFileKind::Font
+    } else if [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".avif"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+    {
+        SiteFileKind::Image
+    } else {
+        SiteFileKind::Other
+    }
 }
 
 fn woff2_name(reference: &str) -> String {
@@ -549,8 +808,7 @@ fn rewrite_references(css_text: &str, replace: impl Fn(&str) -> Option<String>) 
 }
 
 fn mentioned_fonts(
-    input: &Path,
-    files: &BTreeMap<String, PathBuf>,
+    sources: &BTreeMap<String, PathBuf>,
     keys: &BTreeSet<String>,
     converted: &BTreeMap<String, Vec<u8>>,
     rewritten: &BTreeMap<String, String>,
@@ -569,7 +827,7 @@ fn mentioned_fonts(
             .iter()
             .any(|ext| lower.ends_with(ext))
         })
-        .filter_map(|key| fs::read_to_string(input.join(&files[key])).ok())
+        .filter_map(|key| fs::read_to_string(&sources[key]).ok())
         .flat_map(|text| {
             names
                 .iter()
@@ -580,11 +838,11 @@ fn mentioned_fonts(
         .collect()
 }
 
+/// Collects every regular file under `root`, refusing anything else.
 fn collect(
     root: &Path,
     directory: &Path,
     files: &mut BTreeMap<String, PathBuf>,
-    warnings: &mut Vec<String>,
 ) -> Result<(), SiteError> {
     let mut entries: Vec<_> = fs::read_dir(directory)
         .map_err(|error| io_error(directory, error))?
@@ -594,24 +852,36 @@ fn collect(
     for entry in entries {
         let path = entry.path();
         let kind = entry.file_type().map_err(|error| io_error(&path, error))?;
-        let relative = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
+        let relative = path.strip_prefix(root).unwrap_or(&path);
+        let key = relative
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
         if kind.is_symlink() {
-            warnings.push(format!(
-                "{} is a symbolic link and was skipped",
-                relative.display()
-            ));
+            let target = symlink_target(root, &path)?;
+            files.insert(key, target);
         } else if kind.is_dir() {
-            collect(root, &path, files, warnings)?;
+            collect(root, &path, files)?;
+        } else if kind.is_file() {
+            files.insert(key, path);
         } else {
-            let key = relative
-                .components()
-                .map(|part| part.as_os_str().to_string_lossy().into_owned())
-                .collect::<Vec<_>>()
-                .join("/");
-            files.insert(key, relative);
+            return Err(SiteError::UnsupportedFile(path));
         }
     }
     Ok(())
+}
+
+/// The file a symbolic link points at, when it is a regular file inside the
+/// root.
+fn symlink_target(root: &Path, link: &Path) -> Result<PathBuf, SiteError> {
+    let Ok(target) = fs::canonicalize(link) else {
+        return Err(SiteError::Symlink(link.to_path_buf()));
+    };
+    if !target.starts_with(root) || !target.is_file() {
+        return Err(SiteError::Symlink(link.to_path_buf()));
+    }
+    Ok(target)
 }
 
 fn resolve_output(output: &Path) -> Result<PathBuf, SiteError> {
@@ -629,47 +899,50 @@ fn resolve_output(output: &Path) -> Result<PathBuf, SiteError> {
     Ok(parent.join(name))
 }
 
-fn write_site(
-    input: &Path,
-    output: &Path,
-    files: &BTreeMap<String, PathBuf>,
-    writes: &BTreeMap<String, Vec<u8>>,
-    dropped: &BTreeSet<String>,
-    in_place: bool,
-) -> Result<(), SiteError> {
-    fs::create_dir_all(output).map_err(|error| io_error(output, error))?;
-    let place = |key: &str, bytes: &[u8]| -> Result<(), SiteError> {
-        let target = output.join(key);
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
-        }
-        let staging = target.with_file_name(format!(
-            "{}.octavo-tmp",
-            target.file_name().unwrap_or_default().to_string_lossy()
-        ));
-        fs::write(&staging, bytes).map_err(|error| io_error(&staging, error))?;
-        fs::rename(&staging, &target).map_err(|error| io_error(&target, error))
-    };
-    for (key, relative) in files {
-        if dropped.contains(key) {
-            if in_place {
-                let path = input.join(relative);
-                fs::remove_file(&path).map_err(|error| io_error(&path, error))?;
-            }
-            continue;
-        }
-        if let Some(bytes) = writes.get(key) {
-            place(key, bytes)?;
-        } else if !in_place {
-            let target = output.join(key);
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
-            }
-            fs::copy(input.join(relative), &target).map_err(|error| io_error(&target, error))?;
-        }
+/// The directory the new tree is written into, beside the output.
+fn staging_path(output: &Path) -> PathBuf {
+    let mut name = output.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".octavo-staging-{}", std::process::id()));
+    output.with_file_name(name)
+}
+
+/// The directory the old output is moved to while the new tree is put in
+/// place.
+fn previous_path(output: &Path) -> PathBuf {
+    let mut name = output.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".octavo-old-{}", std::process::id()));
+    output.with_file_name(name)
+}
+
+/// Puts the staged tree in place of the output.
+fn promote(output: &Path, staging: &Path, previous: &Path) -> Result<(), SiteError> {
+    if fs::symlink_metadata(output).is_err() {
+        return fs::rename(staging, output).map_err(|error| io_error(output, error));
     }
-    for (key, bytes) in writes.iter().filter(|(key, _)| !files.contains_key(*key)) {
-        place(key, bytes)?;
+    fs::rename(output, previous).map_err(|error| io_error(output, error))?;
+    if let Err(error) = fs::rename(staging, output) {
+        return match fs::rename(previous, output) {
+            Ok(()) => Err(io_error(output, error)),
+            Err(restore) => Err(io_error(
+                output,
+                io::Error::other(format!(
+                    "{error}; the previous tree is at {} and could not be put back: {restore}",
+                    previous.display()
+                )),
+            )),
+        };
     }
-    Ok(())
+    remove_tree(previous)
+}
+
+/// Removes a file or a directory, and does nothing when it is not there.
+fn remove_tree(path: &Path) -> Result<(), SiteError> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() => {
+            fs::remove_dir_all(path).map_err(|error| io_error(path, error))
+        }
+        Ok(_) => fs::remove_file(path).map_err(|error| io_error(path, error)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(io_error(path, error)),
+    }
 }

@@ -37,7 +37,10 @@ mod site;
 mod words;
 
 pub use check::Url;
-pub use site::{SiteChange, SiteError, SiteKind, SiteReport, optimize_directory};
+pub use site::{
+    SiteChange, SiteError, SiteFile, SiteFileKind, SiteKind, SitePlan, SiteReport,
+    optimize_directory, plan_directory,
+};
 
 use doc::{Doc, Edit, Edits};
 use std::{
