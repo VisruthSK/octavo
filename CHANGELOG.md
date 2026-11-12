@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Added
+
+- Site mode: `octavo <directory>` optimizes the stylesheets, scripts, fonts and PNG images that a rendered site's pages share, once for the whole site and under the same file names. The library function is `optimize_directory`. `verify/site.mjs` compares every page of the original and the optimized site in Chromium.
+
 ### Changed
 
 - Fonts: `--subset-fonts` cuts text fonts with [skera](https://crates.io/crates/skera) instead of HarfBuzz, so the build no longer compiles C++ for font subsetting. The same characters are kept, every layout feature survives, and the axes of a variable font are unchanged.

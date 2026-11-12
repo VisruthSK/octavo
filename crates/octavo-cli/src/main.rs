@@ -6,8 +6,8 @@ use clap::{
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{
-    Compression, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform, Tuning, Warning,
-    optimize, simplify,
+    Compression, ImageEncoding, ImageFormat, Mode, Options, Quality, SiteKind, Transform, Tuning,
+    Warning, optimize, optimize_directory, simplify,
 };
 use std::{
     collections::BTreeMap,
@@ -33,7 +33,7 @@ const DIM: Style = Style::new().dimmed();
 #[command(
     name = "octavo",
     version,
-    about = "Shrinks the self-contained HTML that Quarto writes",
+    about = "Shrinks the self-contained HTML that Quarto writes, or the shared files of a rendered site",
     after_help = EXAMPLES,
     styles = STYLES,
     arg_required_else_help = true
@@ -95,7 +95,8 @@ Examples:
   octavo deck.html --level safe          keep the page working without JavaScript
   octavo deck.html --lossy-images        smaller, but images are not pixel-exact
   octavo report.html --maximum           the smallest output, however long it takes
-  octavo report.html --audit             show what each step would save";
+  octavo report.html --audit             show what each step would save
+  octavo _site                           optimize a rendered site's shared files once";
 
 fn default_jobs() -> NonZeroUsize {
     std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)
@@ -105,7 +106,7 @@ fn default_jobs() -> NonZeroUsize {
 struct Optimize {
     #[arg(
         required_unless_present = "completions",
-        help = "HTML file written by Quarto with embed-resources: true"
+        help = "HTML file written by Quarto with embed-resources: true, or the output directory of a rendered site"
     )]
     input: Option<PathBuf>,
     #[arg(help = "Where to write the result [default: <input>.min.html]")]
@@ -151,6 +152,12 @@ struct Optimize {
         help_heading = "Images",
     )]
     max_image_side: Option<NonZeroU32>,
+    #[arg(
+        long,
+        help_heading = "Sites",
+        help = "Rewrite a site directory where it is, which cannot be undone. Needed when the output is the input. Run site mode on a complete, fresh render: rules that no page uses are removed"
+    )]
+    in_place: bool,
     #[arg(
         long,
         help_heading = "Fonts",
@@ -286,6 +293,7 @@ fn main() -> ExitCode {
         image_quality,
         subset_fonts,
         max_image_side,
+        in_place,
         strip_licenses,
         cache_dir,
         no_cache,
@@ -298,41 +306,52 @@ fn main() -> ExitCode {
         eprintln!("{ERROR}error{ERROR:#}: no input file was given");
         return ExitCode::FAILURE;
     };
-    let result = if audit_only {
+    let images = lossy_images.map(|format| {
+        let encoding = ImageEncoding::new(format);
+        ImageEncoding {
+            quality: image_quality
+                .and_then(Quality::new)
+                .unwrap_or(encoding.quality),
+            max_side: max_image_side.or(encoding.max_side),
+            ..encoding
+        }
+    });
+    let options = Options {
+        images,
+        subset_text_fonts: subset_fonts,
+        strip_licenses,
+        cache_directory: if no_cache {
+            None
+        } else {
+            cache_dir.or_else(default_cache_dir)
+        },
+        compression: if maximum {
+            Compression::Maximum
+        } else if woff2_quality.is_some() || png_preset.is_some() || brotli_quality.is_some() {
+            Compression::Custom(Tuning {
+                woff2_quality: woff2_quality.unwrap_or(Tuning::BALANCED.woff2_quality),
+                png_preset,
+                brotli_quality,
+            })
+        } else {
+            Compression::Balanced
+        },
+    };
+    let result = if input.is_dir() {
+        if audit_only {
+            Err("--audit works on one file, not a directory".to_string())
+        } else if lossy_images.is_some() {
+            Err(
+                "--lossy-images does not apply to a directory, because files keep their names"
+                    .to_string(),
+            )
+        } else {
+            run_site(&input, output, &options, in_place)
+        }
+    } else if audit_only {
         audit(&input, level)
     } else {
         let output = output.unwrap_or_else(|| input.with_extension("min.html"));
-        let images = lossy_images.map(|format| {
-            let encoding = ImageEncoding::new(format);
-            ImageEncoding {
-                quality: image_quality
-                    .and_then(Quality::new)
-                    .unwrap_or(encoding.quality),
-                max_side: max_image_side.or(encoding.max_side),
-                ..encoding
-            }
-        });
-        let options = Options {
-            images,
-            subset_text_fonts: subset_fonts,
-            strip_licenses,
-            cache_directory: if no_cache {
-                None
-            } else {
-                cache_dir.or_else(default_cache_dir)
-            },
-            compression: if maximum {
-                Compression::Maximum
-            } else if woff2_quality.is_some() || png_preset.is_some() || brotli_quality.is_some() {
-                Compression::Custom(Tuning {
-                    woff2_quality: woff2_quality.unwrap_or(Tuning::BALANCED.woff2_quality),
-                    png_preset,
-                    brotli_quality,
-                })
-            } else {
-                Compression::Balanced
-            },
-        };
         run(&input, &output, level, options)
     };
     match result {
@@ -425,6 +444,89 @@ fn spinner() -> ProgressBar {
     let bar = ProgressBar::new_spinner().with_style(style);
     bar.enable_steady_tick(Duration::from_millis(100));
     bar
+}
+
+fn run_site(
+    input: &Path,
+    output: Option<PathBuf>,
+    options: &Options,
+    in_place: bool,
+) -> Result<(), String> {
+    let started = Instant::now();
+    let output = match output {
+        Some(output) => output,
+        None => {
+            let root = fs::canonicalize(input).map_err(|e| format!("{}: {e}", input.display()))?;
+            let mut name = root.file_name().unwrap_or_default().to_os_string();
+            name.push(".min");
+            root.with_file_name(name)
+        }
+    };
+    let same = fs::canonicalize(&output)
+        .is_ok_and(|existing| fs::canonicalize(input).is_ok_and(|root| root == existing));
+    if same && !in_place {
+        return Err(format!(
+            "{} is both the input and the output. Pass --in-place to rewrite it, which cannot be undone, or choose another output",
+            output.display()
+        ));
+    }
+    let progress = spinner();
+    progress.set_message("optimizing the shared files");
+    let report = optimize_directory(input, &output, options).map_err(|e| e.to_string())?;
+    progress.finish_and_clear();
+    for warning in &report.warnings {
+        eprintln!("{WARN}warning{WARN:#}: {warning}");
+    }
+    let mut by_kind: BTreeMap<SiteKind, Savings> = BTreeMap::new();
+    for change in &report.changes {
+        let total = by_kind.entry(change.kind).or_default();
+        total.count += 1;
+        total.before += change.before as usize;
+        total.after += change.after as usize;
+    }
+    println!(
+        "{DIM}{:<12} {:>5} {:>10} {:>10} {:>10}{DIM:#}",
+        "files", "count", "before", "after", "saved"
+    );
+    for (kind, total) in &by_kind {
+        println!(
+            "{:<12} {:>5} {:>10} {:>10} {GOOD}{:>10}{GOOD:#}",
+            site_kind_name(*kind),
+            total.count,
+            size(total.before),
+            size(total.after),
+            size(total.before.saturating_sub(total.after)),
+        );
+    }
+    let saved: usize = by_kind
+        .values()
+        .map(|total| total.before.saturating_sub(total.after))
+        .sum();
+    let before = report.bytes as usize;
+    let after = before.saturating_sub(saved);
+    println!(
+        "
+{} {DIM}[{} pages, {} files, {:.1?}]{DIM:#} {}",
+        output.display(),
+        report.pages,
+        report.files,
+        started.elapsed(),
+        if after < before {
+            summary(before, after)
+        } else {
+            size(before)
+        }
+    );
+    Ok(())
+}
+
+fn site_kind_name(kind: SiteKind) -> &'static str {
+    match kind {
+        SiteKind::Stylesheet => "stylesheets",
+        SiteKind::Script => "scripts",
+        SiteKind::Font => "fonts",
+        SiteKind::Image => "images",
+    }
 }
 
 fn run(input: &Path, output: &Path, level: Mode, options: Options) -> Result<(), String> {
