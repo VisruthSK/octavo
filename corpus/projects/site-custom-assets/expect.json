@@ -1,6 +1,6 @@
 {
   "tier": "smoke",
-  "description": "Website with custom scss, a stylesheet that imports another that imports a third and uses url(), a local font, a classic script and a module that imports another module, at two directory depths",
+  "description": "Website with custom scss, a local woff2 font beside a legacy ttf, a stylesheet that imports another that imports a third and uses url(), a classic script and a module that imports another module, at two directory depths",
   "pages": 2,
   "files": [
     "styles.css",
@@ -10,7 +10,8 @@
     "js/main.js",
     "js/util.js",
     "img/dot.png",
-    "fonts/fira.ttf"
+    "fonts/fira.woff2",
+    "fonts/legacy.ttf"
   ],
   "interactions": [
     {
@@ -80,6 +81,13 @@
             "fontFamily",
             "Local Fira"
           ]
+        },
+        {
+          "selector": ".fira-legacy",
+          "computed": [
+            "fontFamily",
+            "Local Fira Legacy"
+          ]
         }
       ]
     }
@@ -96,6 +104,7 @@
       ".deeper-used",
       ".brand-card",
       ".fira",
+      ".fira-legacy",
       ".sprite"
     ]
   },
@@ -105,10 +114,11 @@
       "js/main.js",
       "js/util.js",
       "img/dot.png",
-      "fonts/fira.woff2"
+      "fonts/fira.woff2",
+      "fonts/legacy.woff2"
     ],
     "absent": [
-      "fonts/fira.ttf"
+      "fonts/legacy.ttf"
     ]
   }
 }

@@ -6,5 +6,5 @@ title: Custom assets
 <script type="module" src="js/main.js"></script>
 
 ::: {.brand-card}
-A [card]{.fira} with the [sprite]{.sprite .base-used .deeper-used} class.
+A [card]{.fira} with the [sprite]{.sprite .base-used .deeper-used} plus a [legacy face]{.fira-legacy}.
 :::
