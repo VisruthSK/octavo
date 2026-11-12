@@ -224,7 +224,11 @@ export async function hasInteractions(browser, file) {
   }
 }
 
-export async function capture(browser, file, scenario, lossy, { interact = true } = {}) {
+const PATIENCE = 4;
+
+export async function capture(browser, file, scenario, lossy, { interact = true, patient = false } = {}) {
+  const pace = patient ? PATIENCE : 1;
+  const wait = (page, { quiet = 150 } = {}) => settle(page, { quiet: quiet * pace, limit: 3000 * pace });
   const scripted = scenario.javaScriptEnabled !== false;
   const context = await browser.newContext({
     viewport: scenario.viewport,
@@ -245,7 +249,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true 
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
     await page.evaluate(() => document.fonts.ready);
-    if (scripted) await settle(page);
+    if (scripted) await wait(page);
 
     const states = [];
     const record = async (label, extra = {}) => {
@@ -255,7 +259,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true 
     };
     const forced = scripted && !scenario.motion ? await forcedStates(page) : [];
     const accessibility = await settledAccessibilityTree(page);
-    if (scripted) await settle(page);
+    if (scripted) await wait(page);
     await record("load", { forced, accessibility });
     if (interact && scripted && !scenario.media && !scenario.motion) {
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
@@ -263,7 +267,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true 
       states[0].digest = previous;
       for (const [index, interact] of interactions.entries()) {
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
-        await settle(page, { quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : 150 });
+        await wait(page, { quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : 150 });
         const digest = await digestOf(page);
         if (digest === previous && !ALWAYS_OBSERVED.has(index)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });

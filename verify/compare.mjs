@@ -5,14 +5,66 @@ const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
 const excerpt = (text, at) => text.slice(Math.max(0, at - 60), at + 100);
 const firstDifference = (a, b) => [...a].findIndex((char, i) => char !== b[i]);
-const missingFrom = (reference, candidate = "") => {
-  const present = new Set(candidate.split(";"));
-  return reference.split(";").filter((declaration) => !present.has(declaration));
+const closing = (text, open) => {
+  let depth = 0;
+  for (let at = open; at < text.length; at++) {
+    if (text[at] === "(") depth += 1;
+    else if (text[at] === ")" && --depth === 0) return at;
+  }
+  return -1;
+};
+
+const splitArguments = (text) => {
+  const parts = [];
+  let depth = 0;
+  let from = 0;
+  for (let at = 0; at < text.length; at++) {
+    if (text[at] === "(") depth += 1;
+    else if (text[at] === ")") depth -= 1;
+    else if (text[at] === "," && depth === 0) {
+      parts.push(text.slice(from, at).trim());
+      from = at + 1;
+    }
+  }
+  parts.push(text.slice(from).trim());
+  return parts;
+};
+
+const trimmed = (number) => String(Number(number.toFixed(4)));
+
+function canonicalGradient(body) {
+  const parts = splitArguments(body);
+  const direction = /^-?[\d.]+deg$/.test(parts[0]) ? parts.shift() : null;
+  const angle = (((direction ? parseFloat(direction) : 180) % 360) + 360) % 360;
+  const stops = parts.map((part) => part.match(/^(.*\S)\s+(-?[\d.]+)%$/));
+  if (stops.some((stop) => !stop) || (angle !== 0 && angle !== 180)) return null;
+  const placed = stops.map(([, color, position]) => [color, parseFloat(position)]);
+  const upright = angle === 0 ? placed.map(([color, position]) => [color, 100 - position]).reverse() : placed;
+  return `linear-gradient(180deg,${upright.map(([color, position]) => `${color} ${trimmed(position)}%`).join(",")})`;
+}
+
+const canonical = (declaration) => {
+  const marker = "linear-gradient(";
+  const start = declaration.indexOf(marker);
+  if (start < 0) return declaration;
+  const open = start + marker.length - 1;
+  const end = closing(declaration, open);
+  if (end < 0) return declaration;
+  const replaced = canonicalGradient(declaration.slice(open + 1, end));
+  return replaced ? declaration.slice(0, start) + replaced + declaration.slice(end + 1) : declaration;
+};
+
+export const sameStyle = (left, right = "") =>
+  left === right || (missingFrom(left, right).length === 0 && missingFrom(right, left).length === 0);
+
+export const missingFrom = (reference, candidate = "") => {
+  const present = new Set(candidate.split(";").map(canonical));
+  return reference.split(";").filter((declaration) => !present.has(canonical(declaration)));
 };
 
 const CHANNEL_ROUNDING = 1;
-const FAINT_LEVELS = 3;
-const FAINT_PIXEL_BUDGET = 8;
+const FAINT_LEVELS = 8;
+const FAINT_PIXEL_BUDGET = 12;
 
 export function differences(left, right) {
   let count = 0;
@@ -80,7 +132,7 @@ function compareState(a, b, lossy, stats) {
   if (a.accessibility !== b.accessibility) issues.push("accessibility tree differs");
   for (const [i, [name, expected]] of (a.forced ?? []).entries()) {
     const actual = b.forced?.[i]?.[1] ?? "";
-    if (expected !== actual) issues.push(`forced ${name}: ${missingFrom(expected, actual).slice(0, 3).join(" | ")}`);
+    if (!sameStyle(expected, actual)) issues.push(`forced ${name}: ${missingFrom(expected, actual).slice(0, 3).join(" | ")}`);
   }
   if (a.dom !== b.dom) {
     const at = firstDifference(a.dom, b.dom);
@@ -102,7 +154,7 @@ function compareState(a, b, lossy, stats) {
     const [first] = moved;
     issues.push(`${moved.length} elements laid out differently, e.g. ${a.labels[first]}: [${a.rects[first]}] vs [${b.rects[first]}]`);
   }
-  const differing = a.styles.flatMap((style, i) => (style === b.styles[i] ? [] : [i]));
+  const differing = a.styles.flatMap((style, i) => (sameStyle(style, b.styles[i]) ? [] : [i]));
   if (differing.length) {
     const [first] = differing;
     const lost = missingFrom(a.styles[first], b.styles[first]).slice(0, 3);

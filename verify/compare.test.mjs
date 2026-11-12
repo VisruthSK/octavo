@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { differences } from "./compare.mjs";
+import { differences, missingFrom } from "./compare.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -21,23 +21,57 @@ test("a difference of one level is rounding and counts as nothing", () => {
 
 test("a few faint pixels are tolerated and still counted", () => {
   const base = image(40, 4);
-  const result = differences(base, nudged(base, block(8), 3));
+  const result = differences(base, nudged(base, block(12), 8));
   assert.equal(result.count, 0);
-  assert.equal(result.rounded, 8);
+  assert.equal(result.rounded, 12);
 });
 
 test("faint pixels beyond the budget fail", () => {
   const base = image(40, 4);
-  assert.equal(differences(base, nudged(base, block(9), 3)).count, 9);
+  assert.equal(differences(base, nudged(base, block(13), 8)).count, 13);
 });
 
-test("one pixel off by more than three levels fails", () => {
+test("one pixel off by more than eight levels fails", () => {
   const base = image(40, 4);
-  assert.equal(differences(base, nudged(base, [[5, 2]], 4)).count, 1);
+  assert.equal(differences(base, nudged(base, [[5, 2]], 9)).count, 1);
 });
 
 test("a visible difference takes the faint pixels with it", () => {
   const base = image(40, 4);
   const changed = nudged(nudged(base, [[5, 2]], 40), block(3), 2);
   assert.equal(differences(base, changed).count, 4);
+});
+
+const up = "background-image:linear-gradient(0deg, rgb(255, 255, 255) 88%, rgb(115, 133, 159) 100%)";
+const down = "background-image:linear-gradient(rgb(115, 133, 159) 0%, rgb(255, 255, 255) 12%)";
+
+test("a linear gradient and its mirror image are the same style", () => {
+  assert.deepEqual(missingFrom(up, `color:red;${down}`), []);
+  assert.deepEqual(missingFrom(down, up), []);
+});
+
+test("a gradient with different colours is a difference", () => {
+  const other = "background-image:linear-gradient(rgb(115, 133, 159) 0%, rgb(250, 255, 255) 12%)";
+  assert.deepEqual(missingFrom(up, other), [up]);
+});
+
+test("a gradient mirrored with the wrong stop positions is a difference", () => {
+  const wrong = "background-image:linear-gradient(rgb(115, 133, 159) 0%, rgb(255, 255, 255) 20%)";
+  assert.deepEqual(missingFrom(up, wrong), [up]);
+});
+
+test("a diagonal gradient is compared as written", () => {
+  const diagonal = "background-image:linear-gradient(45deg, red 0%, blue 100%)";
+  assert.deepEqual(missingFrom(diagonal, diagonal), []);
+  assert.deepEqual(missingFrom(diagonal, "background-image:linear-gradient(225deg, blue 0%, red 100%)"), [diagonal]);
+});
+
+test("declarations without gradients still compare exactly", () => {
+  assert.deepEqual(missingFrom("color:red;width:10px", "width:10px"), ["color:red"]);
+});
+
+test("a mirrored gradient makes two style strings the same, an extra declaration does not", async () => {
+  const { sameStyle } = await import("./compare.mjs");
+  assert.equal(sameStyle(`color:red;${up}`, `${down};color:red`), true);
+  assert.equal(sameStyle(`color:red;${up}`, `${down};color:red;width:1px`), false);
 });

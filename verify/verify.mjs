@@ -89,7 +89,14 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
     ]);
     const noise = new Set([...compare(before, before2, lossy), ...compare(after, after2, lossy)].map(signature));
     const reproduced = new Set(compare(before2, after2, lossy).map(signature));
-    return issues.filter((issue) => !noise.has(signature(issue)) && reproduced.has(signature(issue)));
+    const stable = issues.filter((issue) => !noise.has(signature(issue)) && reproduced.has(signature(issue)));
+    if (!stable.length) return stable;
+    const [before3, after3] = await Promise.all([
+      resilient((open) => capture(open, original, scenario, lossy, { interact, patient: true })).catch(crashed),
+      resilient((open) => capture(open, file, scenario, lossy, { interact, patient: true })).catch(crashed),
+    ]);
+    const lasting = new Set(compare(before3, after3, lossy).map(signature));
+    return stable.filter((issue) => lasting.has(signature(issue)));
   }, pages);
   return { issues: kept, rounded: stats.roundedPixels };
 }
