@@ -162,7 +162,7 @@ async function settle(page, { quiet = 150, limit = 3000 } = {}) {
           clearTimeout(timer);
           mutations.disconnect();
           resizes.disconnect();
-          removeEventListener("scroll", bump);
+          document.removeEventListener("scroll", bump, { capture: true });
           resolve();
         };
         const bump = () => {
@@ -173,7 +173,7 @@ async function settle(page, { quiet = 150, limit = 3000 } = {}) {
         mutations.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
         const resizes = new ResizeObserver(bump);
         resizes.observe(document.documentElement);
-        addEventListener("scroll", bump, { passive: true });
+        document.addEventListener("scroll", bump, { capture: true, passive: true });
         setTimeout(finish, limit);
         bump();
       }),
