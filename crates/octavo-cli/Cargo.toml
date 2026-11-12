@@ -23,6 +23,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+percent-encoding = "2.3.2"
 octavo = { version = "0.1.0-alpha.1", path = "../octavo" }
 clap = { version = "4", features = ["derive"] }
 anstream = "1.0.0"

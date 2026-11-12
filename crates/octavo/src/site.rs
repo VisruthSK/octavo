@@ -479,7 +479,7 @@ fn resolve(page: &str, reference: &str, keys: &BTreeSet<String>) -> Option<Strin
     keys.contains(&key).then_some(key)
 }
 
-fn reference_spans(css_text: &str) -> Vec<Range<usize>> {
+pub(crate) fn reference_spans(css_text: &str) -> Vec<Range<usize>> {
     let bytes = css_text.as_bytes();
     let mut spans = Vec::new();
     let mut at = 0;

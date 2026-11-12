@@ -6,8 +6,9 @@ use clap::{
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{
-    Compression, ImageEncoding, ImageFormat, Mode, Options, Quality, SiteKind, Transform, Tuning,
-    Warning, optimize, optimize_directory, simplify,
+    Compression, Error as OctavoError, ImageEncoding, ImageFormat, Loaded, Mode, Options, Quality,
+    Resources, SiteKind, Transform, Tuning, Warning, embed_resources, is_self_contained, optimize,
+    optimize_directory, simplify,
 };
 use std::{
     collections::BTreeMap,
@@ -173,6 +174,13 @@ struct Optimize {
     in_place: bool,
     #[arg(
         long,
+        value_name = "DIR",
+        help_heading = "Resources",
+        help = "Directory to search for files that the page links, after its own directory and that directory's parents. Can be repeated"
+    )]
+    resource_path: Vec<PathBuf>,
+    #[arg(
+        long,
         help_heading = "Fonts",
         help = "Keep only the characters each text font needs. Often a large saving, but on Linux some hinted fonts draw with slightly different strokes"
     )]
@@ -315,6 +323,7 @@ fn main() -> ExitCode {
         keep_png,
         image_memory,
         in_place,
+        resource_path,
         strip_licenses,
         cache_dir,
         no_cache,
@@ -363,6 +372,8 @@ fn main() -> ExitCode {
     let result = if input.is_dir() {
         if audit_only {
             Err("--audit works on one file, not a directory".to_string())
+        } else if !resource_path.is_empty() {
+            Err("--resource-path applies to one file, not a directory".to_string())
         } else if lossy_images.is_some() {
             Err(
                 "--lossy-images does not apply to a directory, because files keep their names"
@@ -372,10 +383,10 @@ fn main() -> ExitCode {
             run_site(&input, output, &options, in_place)
         }
     } else if audit_only {
-        audit(&input, level)
+        audit(&input, level, &resource_path)
     } else {
         let output = output.unwrap_or_else(|| input.with_extension("min.html"));
-        run(&input, &output, level, options)
+        run(&input, &output, level, options, &resource_path)
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -415,9 +426,9 @@ struct Savings {
     after: usize,
 }
 
-fn audit(input: &Path, level: Mode) -> Result<(), String> {
-    let src = read(input)?;
-    let out = optimize(&src, level).map_err(|error| format!("{}: {error}", input.display()))?;
+fn audit(input: &Path, level: Mode, resource_paths: &[PathBuf]) -> Result<(), String> {
+    let (src, _) = prepare(input, read(input)?, resource_paths);
+    let out = optimize(&src, level).map_err(|error| failure(input, &error))?;
     let mut totals: BTreeMap<Transform, Savings> = BTreeMap::new();
     for step in &out.applied {
         let total = totals.entry(step.transform).or_default();
@@ -552,18 +563,26 @@ fn site_kind_name(kind: SiteKind) -> &'static str {
     }
 }
 
-fn run(input: &Path, output: &Path, level: Mode, options: Options) -> Result<(), String> {
+fn run(
+    input: &Path,
+    output: &Path,
+    level: Mode,
+    options: Options,
+    resource_paths: &[PathBuf],
+) -> Result<(), String> {
     let started = Instant::now();
-    let src = read(input)?;
+    let original = read(input)?;
+    let original_len = original.len();
     let progress = spinner();
+    progress.set_message("reading the page");
+    let (src, linked) = prepare(input, original, resource_paths);
     progress.set_message("optimizing");
-    let simplified =
-        simplify(&src, options).map_err(|error| format!("{}: {error}", input.display()))?;
+    let simplified = simplify(&src, options).map_err(|error| failure(input, &error))?;
     progress.set_message(format!("packing ({level})"));
     let candidate = simplified.pack(level).html;
     progress.finish_and_clear();
     warn(simplified.warnings());
-    if candidate.len() >= src.len() {
+    if candidate.len() >= src.len() && linked.is_none() {
         if !same_file(input, output) {
             write(output, &src)?;
         }
@@ -573,15 +592,125 @@ fn run(input: &Path, output: &Path, level: Mode, options: Options) -> Result<(),
         );
         return Ok(());
     }
+    let text = if candidate.len() < src.len() {
+        &candidate
+    } else {
+        &src
+    };
     let staged = staging_path(output);
-    write(&staged, &candidate)?;
+    write(&staged, text)?;
     fs::rename(&staged, output).map_err(|e| format!("{}: {e}", output.display()))?;
+    let embedded = linked
+        .as_ref()
+        .map(|linked| format!(", {} linked files embedded", linked.files))
+        .unwrap_or_default();
+    let before = original_len + linked.map_or(0, |linked| linked.bytes as usize);
     println!(
-        "{} {DIM}[{}, {:.1?}]{DIM:#} {}",
+        "{} {DIM}[{}, {:.1?}{embedded}]{DIM:#} {}",
         output.display(),
         level,
         started.elapsed(),
-        summary(src.len(), candidate.len())
+        summary(before, text.len())
     );
     Ok(())
+}
+
+struct Linked {
+    files: usize,
+    bytes: u64,
+}
+
+fn prepare(input: &Path, original: String, resource_paths: &[PathBuf]) -> (String, Option<Linked>) {
+    if is_self_contained(&original) {
+        return (original, None);
+    }
+    let mut resources = FsResources::new(input, resource_paths);
+    let embedded = embed_resources(&original, &mut resources);
+    let linked = Linked {
+        files: embedded.embedded,
+        bytes: embedded.resource_bytes,
+    };
+    (embedded.html, Some(linked))
+}
+
+fn failure(input: &Path, error: &OctavoError) -> String {
+    let hint = if matches!(error, OctavoError::NotSelfContained(_)) {
+        "\nOctavo looked next to the page, in its parent directories and in each --resource-path. Use --resource-path <DIR> to name another directory to search"
+    } else {
+        ""
+    };
+    format!("{}: {error}{hint}", input.display())
+}
+
+const PARENTS_SEARCHED: usize = 9;
+
+struct FsResources {
+    page_dir: PathBuf,
+    extra: Vec<PathBuf>,
+}
+
+impl FsResources {
+    fn new(input: &Path, extra: &[PathBuf]) -> FsResources {
+        let page_dir = fs::canonicalize(input)
+            .ok()
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .unwrap_or_else(|| PathBuf::from("."));
+        FsResources {
+            page_dir,
+            extra: extra.to_vec(),
+        }
+    }
+
+    fn candidates(&self, relative: &str, from: &str) -> Vec<PathBuf> {
+        let trimmed = relative.trim_start_matches('/');
+        let mut found = Vec::new();
+        if !relative.starts_with('/') {
+            let base = if from.is_empty() {
+                Some(self.page_dir.as_path())
+            } else {
+                Path::new(from).parent()
+            };
+            found.extend(base.map(|directory| directory.join(trimmed)));
+        }
+        found.extend(self.extra.iter().map(|directory| directory.join(trimmed)));
+        found.extend(
+            self.page_dir
+                .ancestors()
+                .take(PARENTS_SEARCHED)
+                .map(|directory| directory.join(trimmed)),
+        );
+        let parts: Vec<&str> = trimmed.split('/').collect();
+        if let Some(at) = parts
+            .iter()
+            .position(|part| *part == "site_libs" || part.ends_with("_files"))
+        {
+            let suffix = parts[at..].join("/");
+            found.extend(
+                self.page_dir
+                    .ancestors()
+                    .take(PARENTS_SEARCHED)
+                    .map(|directory| directory.join(&suffix)),
+            );
+        }
+        found
+    }
+}
+
+impl Resources for FsResources {
+    fn load(&mut self, reference: &str, from: &str) -> Option<Loaded> {
+        let end = reference.find(['?', '#']).unwrap_or(reference.len());
+        let decoded = percent_encoding::percent_decode_str(&reference[..end])
+            .decode_utf8()
+            .ok()?;
+        self.candidates(&decoded, from)
+            .into_iter()
+            .find_map(|path| {
+                let bytes = fs::read(&path).ok()?;
+                let id = fs::canonicalize(&path).unwrap_or(path);
+                Some(Loaded {
+                    bytes,
+                    id: id.to_string_lossy().into_owned(),
+                })
+            })
+    }
 }

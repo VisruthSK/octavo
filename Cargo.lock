@@ -1658,6 +1658,7 @@ dependencies = [
  "dirs",
  "indicatif",
  "octavo",
+ "percent-encoding",
  "rayon",
 ]
 
