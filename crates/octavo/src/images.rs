@@ -37,9 +37,10 @@ const PRESET_TIME_BUDGET_NANOSECONDS: u64 = 75_000_000;
 // AVIF speed 10 encodes about 65 percent faster than speed 8, but made three of five
 // sample images 44 to 62 percent larger, so it is kept for the largest images only.
 const LARGE_IMAGE_PIXELS: u64 = 8_000_000;
-// libwebp's lossless encoder adds about 22 bytes per pixel to the decoded image, measured on
-// 13 and 81 megapixel images, and images are encoded in parallel, so they share a budget.
-const WEBP_BYTES_PER_PIXEL: u64 = 28;
+// A whole process encoding one 81 megapixel RGB PNG peaked at 15.4 bytes per pixel: the decoded
+// image, libwebp's own ARGB copy and its encoder state. RGBA input adds a byte per pixel on top,
+// and images are encoded in parallel, so they share a budget.
+const WEBP_BYTES_PER_PIXEL: u64 = 20;
 // Method 2 at quality 50 gave the best size for its time on 3 to 81 megapixel graphics, at about
 // 65 ns per pixel. Method 1 at quality 20 takes half as long for a result 10 points larger.
 const WEBP_THOROUGH_PIXELS: u64 = 20_000_000;
@@ -282,18 +283,27 @@ fn lossless_webp(decoded: &Decoded, budget: &MemoryBudget) -> Option<Vec<u8>> {
         return None;
     }
     let _held = budget.take(decoded.pixels.checked_mul(WEBP_BYTES_PER_PIXEL)?)?;
-    let rgba = image::load_from_memory_with_format(&decoded.image.bytes, image::ImageFormat::Png)
-        .ok()?
-        .into_rgba8();
+    let image =
+        image::load_from_memory_with_format(&decoded.image.bytes, image::ImageFormat::Png).ok()?;
     let mut config = webp::WebPConfig::new().ok()?;
     let thorough = decoded.pixels <= WEBP_THOROUGH_PIXELS;
     config.lossless = 1;
     config.exact = 1;
     config.method = if thorough { 2 } else { 1 };
     config.quality = if thorough { 50.0 } else { 20.0 };
-    let encoded = webp::Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height())
-        .encode_advanced(&config)
-        .ok()?;
+    let encoded = match image {
+        image::DynamicImage::ImageRgb8(rgb) => {
+            webp::Encoder::from_rgb(rgb.as_raw(), rgb.width(), rgb.height())
+                .encode_advanced(&config)
+                .ok()?
+        }
+        other => {
+            let rgba = other.into_rgba8();
+            webp::Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height())
+                .encode_advanced(&config)
+                .ok()?
+        }
+    };
     Some(encoded.to_vec())
 }
 
