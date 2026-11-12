@@ -24,7 +24,9 @@ export function random(seed) {
   };
 }
 
-export const digest = (text) => createHash("sha256").update(text).digest("hex");
+export const digest = (data) => createHash("sha256").update(data).digest("hex");
+
+const filePath = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9_. /-]+$/;
 
 const fail = (id, message) => {
   throw new Error(`${id}: ${message}`);
@@ -34,6 +36,9 @@ const checkExpectation = (id, expect) => {
   if (!outcomes.includes(expect?.outcome)) fail(id, `expect.outcome must be one of ${outcomes.join(", ")}`);
   if (expect.outcome === "rejects" && !(expect.error in rejections)) {
     fail(id, `expect.error must be one of ${Object.keys(rejections).join(", ")}`);
+  }
+  if (expect.grows !== undefined && (typeof expect.grows !== "boolean" || expect.outcome !== "optimizes")) {
+    fail(id, "expect.grows must be a boolean and only applies to optimizing documents");
   }
   for (const key of ["retains", "removes"]) {
     const values = expect[key] ?? [];
@@ -50,8 +55,9 @@ export function define(spec) {
   if (!identifier.test(category ?? "")) fail(id, "category must be lowercase words joined by hyphens");
   if (!tiers.includes(tier)) fail(id, `tier must be one of ${tiers.join(", ")}`);
   if (typeof build !== "function") fail(id, "build must be a function returning the document text");
+  if (spec.files !== undefined && typeof spec.files !== "function") fail(id, "files must be a function returning an object of relative paths and contents");
   checkExpectation(id, expect);
-  return Object.freeze({ browser: expect.outcome === "optimizes", ...spec });
+  return Object.freeze({ browser: expect.outcome === "optimizes", linked: spec.files !== undefined, ...spec });
 }
 
 export function render(spec) {
@@ -59,4 +65,17 @@ export function render(spec) {
   if (typeof html !== "string") fail(spec.id, "build must return a string");
   if (digest(spec.build()) !== digest(html)) fail(spec.id, "build is not deterministic");
   return html;
+}
+
+export function renderFiles(spec) {
+  if (!spec.files) return {};
+  const files = spec.files();
+  for (const [path, content] of Object.entries(files)) {
+    if (!filePath.test(path)) fail(spec.id, `file path ${path} must be relative and stay inside the document's directory`);
+    if (typeof content !== "string" && !(content instanceof Uint8Array)) fail(spec.id, `file ${path} must be a string or bytes`);
+  }
+  const again = spec.files();
+  const summary = (list) => JSON.stringify(Object.entries(list).map(([path, content]) => [path, digest(content)]));
+  if (summary(files) !== summary(again)) fail(spec.id, "files is not deterministic");
+  return files;
 }

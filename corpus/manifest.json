@@ -2309,6 +2309,281 @@
     "sha256": "e3b6bd05ff71db9115389fc55db7a52ecd04824eadcbf4708851ed5b42457e1f"
   },
   {
+    "id": "linked-deferred-script-keeps-its-order",
+    "category": "linking",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "grows": true,
+      "retains": [
+        "defer"
+      ],
+      "removes": [
+        "src=\"late.js\""
+      ]
+    },
+    "bytes": 279,
+    "linked": true,
+    "extraBytes": 2061,
+    "sha256": "a5b320635dfc20d01c13b91690b66fa36d632c37016c27940a900c9e84c3801e"
+  },
+  {
+    "id": "linked-font-face-in-a-stylesheet",
+    "category": "linking",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".face{"
+      ],
+      "removes": [
+        "fira.ttf"
+      ]
+    },
+    "bytes": 185,
+    "linked": true,
+    "extraBytes": 457125,
+    "sha256": "d14310f0f700c395ee97707930d46bba8b20c719e236c154ea0636866b288ca6"
+  },
+  {
+    "id": "linked-icon-and-stylesheet-together",
+    "category": "linking",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".both{"
+      ],
+      "removes": [
+        "icon.png",
+        "both.css"
+      ]
+    },
+    "bytes": 205,
+    "linked": true,
+    "extraBytes": 3894,
+    "sha256": "92614ac2eea5f0c8ebdaf7c7ae6021f154b56550e021717dba213b7789b101aa"
+  },
+  {
+    "id": "linked-image-is-embedded",
+    "category": "linking",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/"
+      ],
+      "removes": [
+        "img/dot.png"
+      ]
+    },
+    "bytes": 165,
+    "linked": true,
+    "extraBytes": 1345,
+    "sha256": "4ce35053c88c6afab74662f74f15f63d64dd5a9e3942b126b546cf6a30e1bc28"
+  },
+  {
+    "id": "linked-image-is-missing",
+    "category": "linking",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-self-contained"
+    },
+    "bytes": 148,
+    "linked": true,
+    "extraBytes": 1345,
+    "sha256": "efe865cee732508b55f0bc0ecfa05c4f7c3cf9f7179367f0b04f9e638fbf445f"
+  },
+  {
+    "id": "linked-module-imports-other-modules",
+    "category": "linking",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "grows": true,
+      "retains": [
+        "type=\"module\""
+      ],
+      "removes": [
+        "./lib/a.js",
+        "./lib/b.js"
+      ]
+    },
+    "bytes": 177,
+    "linked": true,
+    "extraBytes": 3202,
+    "sha256": "052942b5a8d5583f33e934c8a0b9b858007ed32caabd59ae6f1aa3ec86faf159"
+  },
+  {
+    "id": "linked-one-of-two-scripts-is-missing",
+    "category": "linking",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-self-contained"
+    },
+    "bytes": 187,
+    "linked": true,
+    "extraBytes": 25,
+    "sha256": "ae7ed456501b88718f27c683983fac3b0c3af2825296f130aa649ab86caf8552"
+  },
+  {
+    "id": "linked-percent-encoded-file-name",
+    "category": "linking",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".space{"
+      ],
+      "removes": [
+        "my%20style.css"
+      ]
+    },
+    "bytes": 179,
+    "linked": true,
+    "extraBytes": 37,
+    "sha256": "f7d998313f931a4c914cc06407a509168234b7d99fdb8ccb6ec312bf4bed5d72"
+  },
+  {
+    "id": "linked-quarto-files-directory",
+    "category": "linking",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".fig{"
+      ],
+      "removes": [
+        "report_files"
+      ]
+    },
+    "bytes": 188,
+    "linked": true,
+    "extraBytes": 34,
+    "sha256": "908edeb632b30f12097a077c4b2eb0f5ca8b4151c1693a88d6a5e1f0b206a5c1"
+  },
+  {
+    "id": "linked-query-and-fragment-are-ignored-when-reading",
+    "category": "linking",
+    "tier": "full",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".q{"
+      ],
+      "removes": [
+        "style.css"
+      ]
+    },
+    "bytes": 178,
+    "linked": true,
+    "extraBytes": 31,
+    "sha256": "6cdc0d1f4092797e612078d34028cedcab46f80365c2389d2494ac87bdbfc63f"
+  },
+  {
+    "id": "linked-root-relative-site-libs",
+    "category": "linking",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".lib{"
+      ],
+      "removes": [
+        "/site_libs/"
+      ]
+    },
+    "bytes": 185,
+    "linked": true,
+    "extraBytes": 36,
+    "sha256": "8921038dc3eb039608b87286371dd7be059225b11ab52396c7f1cab6f5c9d550"
+  },
+  {
+    "id": "linked-script-is-inlined",
+    "category": "linking",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "__linkedRan"
+      ],
+      "removes": [
+        "src=\"app.js\""
+      ]
+    },
+    "bytes": 155,
+    "linked": true,
+    "extraBytes": 79,
+    "sha256": "f79bf75460ee8f770855a3795f5f05d265d076a3480471bb030e90ac45c0d0db"
+  },
+  {
+    "id": "linked-stylesheet-imports-another-that-uses-urls",
+    "category": "linking",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".used{"
+      ],
+      "removes": [
+        "@import",
+        ".unused",
+        "img/dot.png"
+      ]
+    },
+    "bytes": 177,
+    "linked": true,
+    "extraBytes": 3990,
+    "sha256": "052d23136cc1c433dd9cd4b5d3beda5ea77dea498e71b43d80486ee894691c4e"
+  },
+  {
+    "id": "linked-stylesheet-is-embedded-and-pruned",
+    "category": "linking",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".shown{"
+      ],
+      "removes": [
+        ".gone0",
+        "style.css"
+      ]
+    },
+    "bytes": 174,
+    "linked": true,
+    "extraBytes": 61,
+    "sha256": "ac801d88a1b1b857e401ba75d1654b030bcc586dc840a6cfcaade129bc25e9ca"
+  },
+  {
+    "id": "linked-stylesheet-is-missing",
+    "category": "linking",
+    "tier": "smoke",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-self-contained"
+    },
+    "bytes": 161,
+    "sha256": "68ea3da600bd50a6e470b6fa866c7b68b51ec557335f85b00f89ad9b1367a1be"
+  },
+  {
     "id": "linked-stylesheet-is-rejected",
     "category": "validation",
     "tier": "smoke",
@@ -2319,6 +2594,18 @@
     },
     "bytes": 157,
     "sha256": "696ec230beb4158a3eec3b74c71d242838830d8a507118b7b378a254943a4ce4"
+  },
+  {
+    "id": "linked-stylesheet-outside-the-search-path-is-missing",
+    "category": "linking",
+    "tier": "full",
+    "browser": false,
+    "expect": {
+      "outcome": "rejects",
+      "error": "not-self-contained"
+    },
+    "bytes": 185,
+    "sha256": "200317a2e175a8b3db4d7d05ed0f96782e01b14cd065859ee67f7e7af4e380a3"
   },
   {
     "id": "nothing-to-gain",

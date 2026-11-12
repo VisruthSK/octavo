@@ -1,12 +1,13 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { ensureFonts } from "./fonts.mjs";
-import { digest, render } from "./spec.mjs";
+import { digest, render, renderFiles } from "./spec.mjs";
 import { loadSpecs } from "./specs.mjs";
 
 export const cacheDirectory = join(import.meta.dirname, ".cache");
 export const manifestPath = join(import.meta.dirname, "manifest.json");
-export const documentPath = (id) => join(cacheDirectory, "docs", `${id}.html`);
+export const documentPath = (id, linked = false) =>
+  linked ? join(cacheDirectory, "docs", id, "index.html") : join(cacheDirectory, "docs", `${id}.html`);
 
 export async function materialize() {
   await ensureFonts();
@@ -14,7 +15,17 @@ export async function materialize() {
   const rows = [];
   for (const spec of await loadSpecs()) {
     const html = render(spec);
-    writeFileSync(documentPath(spec.id), html);
+    const files = renderFiles(spec);
+    const names = Object.keys(files).sort();
+    if (spec.linked) {
+      rmSync(join(cacheDirectory, "docs", spec.id), { recursive: true, force: true });
+      for (const name of names) {
+        mkdirSync(dirname(join(cacheDirectory, "docs", spec.id, name)), { recursive: true });
+        writeFileSync(join(cacheDirectory, "docs", spec.id, name), files[name]);
+      }
+    }
+    mkdirSync(dirname(documentPath(spec.id, spec.linked)), { recursive: true });
+    writeFileSync(documentPath(spec.id, spec.linked), html);
     rows.push({
       id: spec.id,
       category: spec.category,
@@ -22,7 +33,11 @@ export async function materialize() {
       browser: spec.browser,
       expect: spec.expect,
       bytes: Buffer.byteLength(html),
-      sha256: digest(html),
+      ...(spec.linked && {
+        linked: true,
+        extraBytes: names.reduce((total, name) => total + Buffer.byteLength(files[name]), 0),
+      }),
+      sha256: digest(spec.linked ? html + JSON.stringify(names.map((name) => [name, digest(files[name])])) : html),
     });
   }
   return rows;

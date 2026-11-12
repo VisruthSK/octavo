@@ -861,3 +861,5 @@ export default [
     },
   },
 ];
+
+export { png };

@@ -71,6 +71,7 @@ const outcomeOf = ({ code, stdout }, same) => {
 };
 
 const check = (row, expect, result, output, input) => {
+  const baseline = input.length + (row.extraBytes ?? 0);
   const problems = [];
   const outcome = outcomeOf(result, output === input);
   const accepted = expect.outcome === "accepts" ? ["optimizes", "keeps"].includes(outcome) : outcome === expect.outcome;
@@ -78,7 +79,7 @@ const check = (row, expect, result, output, input) => {
   if (expect.outcome === "rejects" && outcome === "rejects" && !result.stderr.includes(rejections[expect.error])) {
     problems.push(`expected the ${expect.error} error, got: ${result.stderr.trim().slice(0, 120)}`);
   }
-  if (outcome !== "rejects" && output.length > input.length) problems.push(`output grew from ${input.length} to ${output.length} bytes`);
+  if (outcome !== "rejects" && !expect.grows && output.length > baseline) problems.push(`output grew from ${baseline} to ${output.length} bytes`);
   if (row.level === "safe") {
     for (const text of expect.retains ?? []) if (!output.includes(text)) problems.push(`lost required text: ${text.slice(0, 60)}`);
     for (const text of expect.removes ?? []) if (output.includes(text)) problems.push(`kept text that should go: ${text.slice(0, 60)}`);
@@ -93,7 +94,7 @@ const upstreamRows = upstream
 const [shardPosition, shardCount] = flag("shard", "").split("/").map(Number);
 const ownHandWritten = (_, index) => !shardCount || index % shardCount === shardPosition - 1;
 const handWritten = (await materialize())
-  .map((row) => ({ ...row, path: documentPath(row.id) }))
+  .map((row) => ({ ...row, path: documentPath(row.id, row.linked) }))
   .filter((row) => tier === "full" || row.tier === "smoke")
   .filter(ownHandWritten);
 const rows = [...handWritten, ...upstreamRows];
@@ -105,16 +106,17 @@ const work = selected.flatMap((row) => levels.map((level) => ({ row, level })));
 const results = await pool(work, jobs, async ({ row, level }) => {
   const input = row.path;
   const output = join(outDirectory, `${row.id}.${level}.html`);
-  const result = await run([input, output, "--level", level, "--jobs", String(threads)]);
+  const result = await run([input, output, "--level", level, "--jobs", String(threads), "--no-fetch"]);
   const source = readFileSync(input, "utf8");
   const produced = result.code === 0 ? readFileSync(output, "utf8") : "";
   const excluded = Boolean(row.source) && result.stderr.includes(rejections["not-self-contained"]);
-  const problems = excluded ? [] : check({ level }, row.expect, result, produced, source);
+  const problems = excluded ? [] : check({ level, extraBytes: row.extraBytes }, row.expect, result, produced, source);
   return {
     id: row.id,
     category: row.category,
     level,
-    inBytes: statSync(input).size,
+    inBytes: statSync(input).size + (row.extraBytes ?? 0),
+    linked: Boolean(row.linked),
     outBytes: result.code === 0 ? statSync(output).size : null,
     ms: result.ms,
     outcome: outcomeOf(result, produced === source),
@@ -139,6 +141,7 @@ if (browser) {
     const reports = await verify(
       entries[0].input,
       outputs.map((same) => same[0].output),
+      { linked: entries[0].linked },
     );
     for (const [at, same] of outputs.entries()) {
       for (const entry of same) {
@@ -159,7 +162,7 @@ const medianRate = Math.max(median(large.map((entry) => entry.ms / entry.inBytes
 for (const entry of measured) {
   const allowed = STARTUP_ALLOWANCE_MS + SLOWDOWN_LIMIT * medianRate * entry.inBytes;
   if (entry.ms > allowed) {
-    const retry = await run([entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores)]);
+    const retry = await run([entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores), "--no-fetch"]);
     entry.ms = Math.min(entry.ms, retry.ms);
   }
   if (entry.ms > allowed) {
