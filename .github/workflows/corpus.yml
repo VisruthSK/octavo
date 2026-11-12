@@ -168,7 +168,9 @@ jobs:
           [ -f "$original" ] || original="corpus/.cache/${{ inputs.diagnose }}.html"
           optimized="out/corpus/${{ inputs.diagnose }}.${{ inputs.diagnose_level }}.html"
           if [ -f "$original" ] && [ -f "$optimized" ]; then
-            node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" out/diagnose
+            node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" out/diagnose/subset
+            target/release/octavo "$original" out/whole.html --level "${{ inputs.diagnose_level }}" --no-subset-fonts --no-cache
+            node verify/screenshots.mjs "$PWD/$original" "$PWD/out/whole.html" "${{ inputs.diagnose_scenario }}" out/diagnose/whole
           fi
       - uses: actions/upload-artifact@v7
         if: always() && inputs.diagnose != ''

@@ -196,6 +196,7 @@ const INTERACTIVE_CONTENT =
   "script, details, summary, button, input, select, textarea, dialog, [role=tab], [tabindex], [contenteditable]";
 
 const HOVER = 3;
+const NAVIGATION = 4;
 const ALWAYS_OBSERVED = new Set([HOVER]);
 
 async function digestOf(page) {
@@ -254,6 +255,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true 
     };
     const forced = scripted && !scenario.motion ? await forcedStates(page) : [];
     const accessibility = await settledAccessibilityTree(page);
+    if (scripted) await settle(page);
     await record("load", { forced, accessibility });
     if (interact && scripted && !scenario.media && !scenario.motion) {
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
@@ -261,7 +263,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true 
       states[0].digest = previous;
       for (const [index, interact] of interactions.entries()) {
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
-        await settle(page, { quiet: slideDeck ? 400 : 150 });
+        await settle(page, { quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : 150 });
         const digest = await digestOf(page);
         if (digest === previous && !ALWAYS_OBSERVED.has(index)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });
