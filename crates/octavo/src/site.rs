@@ -1,6 +1,7 @@
 use crate::{
-    Licenses, Options, css,
-    doc::{Doc, Edits},
+    Licenses, Options, Target, Transform,
+    css::{self, WidthRule},
+    doc::{Doc, Edit, Edits},
     fonts,
     html::{AttrName, Element},
     images, js,
@@ -24,8 +25,11 @@ pub enum SiteKind {
     Script,
     /// A font converted to WOFF2.
     Font,
-    /// A PNG recompressed without changing a pixel.
+    /// A PNG recompressed without changing a pixel, or an image re-encoded
+    /// in a lossy format under a new name.
     Image,
+    /// A page whose image references were rewritten to re-encoded images.
+    Page,
 }
 
 /// What a file in a [`SitePlan`] is.
@@ -198,7 +202,13 @@ fn io_error(path: &Path, source: io::Error) -> SiteError {
 /// Pages and every other file are copied unchanged, and files keep their
 /// names, so the pages work as before and browsers still cache the shared
 /// files once. Passing the same directory as `input` and `output` rewrites the
-/// files in place. Images are never re-encoded lossily. With
+/// files in place. With [`Options::images`], PNG and JPEG images that every
+/// page draws at a known width are also re-encoded once, at the largest width
+/// any page draws them at, under the new format's name, and the pages' `src`
+/// attributes follow; every other image is recompressed losslessly or left
+/// as it is. An image stays lossless when its size is unknown on any page,
+/// when it is referenced outside `<img>` tags, and when a PNG has partial
+/// transparency. With
 /// [`Options::subset_text_fonts`], text fonts are also cut to the characters
 /// that any page, script, stylesheet or JSON file of the site can show; when
 /// one of those files cannot be read, every text font stays whole.
@@ -399,6 +409,14 @@ pub fn plan_directory(input: &Path, options: &Options) -> Result<SitePlan, SiteE
         .par_iter()
         .map(|(key, text)| page_facts(key, text, &keys))
         .collect();
+    let page_images: Vec<PageImages> = facts
+        .iter()
+        .map(|page| PageImages {
+            stylesheets: page.stylesheets.clone(),
+            styles: page.styles.clone(),
+            images: page.images.clone(),
+        })
+        .collect();
     let mut words = Words::default();
     let mut stylesheets: BTreeSet<String> = BTreeSet::new();
     let mut scripts: BTreeMap<String, (bool, bool)> = BTreeMap::new();
@@ -537,6 +555,136 @@ pub fn plan_directory(input: &Path, options: &Options) -> Result<SitePlan, SiteE
         }
     }
 
+    if let Some(encoding) = options.images
+        && keys
+            .iter()
+            .filter(|key| is_page(key))
+            .all(|key| pages.iter().any(|(page, _)| page == key))
+    {
+        let ext = match encoding.format {
+            crate::ImageFormat::Avif => "avif",
+            crate::ImageFormat::Webp => "webp",
+        };
+        let sheet_rules: BTreeMap<String, Vec<WidthRule>> = optimized_sheets
+            .par_iter()
+            .map(|(key, text)| (key.clone(), css::width_hints(text)))
+            .collect();
+        let page_uses: Vec<Vec<ImageUse>> = page_images
+            .par_iter()
+            .map(|page| page_image_uses(page, &sheet_rules, &optimized_sheets, &keys))
+            .collect();
+        let mut uses_per_key: BTreeMap<String, Vec<(usize, ImageUse)>> = BTreeMap::new();
+        for (at, uses) in page_uses.iter().enumerate() {
+            for image in uses {
+                uses_per_key
+                    .entry(image.key.clone())
+                    .or_default()
+                    .push((at, image.clone()));
+            }
+        }
+        let mut candidates: Vec<(String, String)> = keys
+            .iter()
+            .filter(|key| is_reencodable(key))
+            .map(|key| (key.clone(), renamed_value(key, ext)))
+            .filter(|(_, target)| !keys.contains(target))
+            .collect();
+        let mut seen_targets: BTreeSet<String> = BTreeSet::new();
+        candidates.retain(|(_, target)| seen_targets.insert(target.clone()));
+        let converted: Vec<(String, String, u64, Vec<u8>)> = candidates
+            .par_iter()
+            .filter_map(|(key, target)| {
+                let uses = uses_per_key.get(key)?;
+                if uses.iter().any(|(_, image)| image.width.is_none()) {
+                    return None;
+                }
+                let limit = uses.iter().filter_map(|(_, image)| image.width).max()?;
+                let bytes = fs::read(&sources[key]).ok()?;
+                if key.to_ascii_lowercase().ends_with(".png") && images::has_partial_alpha(&bytes) {
+                    return None;
+                }
+                if mentioned_elsewhere(key, uses, &pages, &sources, &keys) {
+                    return None;
+                }
+                let (_, encoded) = images::reencode_file(&bytes, encoding, Some(limit))?;
+                Some((key.clone(), target.clone(), bytes.len() as u64, encoded))
+            })
+            .collect();
+        let renames: BTreeMap<String, (String, String)> = converted
+            .iter()
+            .map(|(key, target, _, _)| {
+                let extension = target.rsplit_once('.').map_or(ext, |(_, part)| part);
+                (key.clone(), (target.clone(), extension.to_string()))
+            })
+            .collect();
+        for (key, target, before, encoded) in converted {
+            report.changes.push(SiteChange {
+                path: PathBuf::from(&key),
+                kind: SiteKind::Image,
+                before,
+                after: encoded.len() as u64,
+            });
+            added.insert(target, encoded);
+            dropped.insert(key);
+        }
+        let rewritten: Vec<(usize, String, String)> = pages
+            .par_iter()
+            .enumerate()
+            .filter_map(|(at, (page_key, text))| {
+                if !page_uses[at]
+                    .iter()
+                    .any(|image| renames.contains_key(&image.key))
+                {
+                    return None;
+                }
+                let doc = Doc::new(text);
+                let mut edits = Vec::new();
+                for tag in doc.tags() {
+                    if tag.element != Element::Img || tag.in_svg {
+                        continue;
+                    }
+                    let touches = tag.attrs.iter().any(|attr| {
+                        matches!(attr.name, AttrName::Src | AttrName::DataSrc)
+                            && resolve(page_key, &attr.value, &keys)
+                                .is_some_and(|key| renames.contains_key(&key))
+                    });
+                    if !touches {
+                        continue;
+                    }
+                    let open = tag.open_tag(|name, value| {
+                        if !matches!(name, AttrName::Src | AttrName::DataSrc) {
+                            return Some(value.to_string());
+                        }
+                        let extension = resolve(page_key, value, &keys)
+                            .and_then(|key| renames.get(&key))?
+                            .1
+                            .clone();
+                        Some(renamed_value(value, &extension))
+                    });
+                    edits.push(Edit {
+                        span: tag.span.clone(),
+                        text: open,
+                        transform: Transform::ReencodedImage,
+                        target: Target::Resource(tag.label().to_string()),
+                    });
+                }
+                if edits.is_empty() {
+                    return None;
+                }
+                let applied = Edits::new(edits).apply(text);
+                Some((at, page_key.clone(), applied))
+            })
+            .collect();
+        for (at, page_key, applied) in rewritten {
+            report.changes.push(SiteChange {
+                path: PathBuf::from(&page_key),
+                kind: SiteKind::Page,
+                before: pages[at].1.len() as u64,
+                after: applied.len() as u64,
+            });
+            writes.insert(page_key, applied.into_bytes());
+        }
+    }
+
     let script_changes: Vec<(String, String)> = script_texts
         .par_iter()
         .filter_map(|(key, text)| {
@@ -619,6 +767,36 @@ struct PageFacts {
     words: Words,
     stylesheets: Vec<String>,
     scripts: Vec<(String, bool)>,
+    images: Vec<ImgFact>,
+    styles: Vec<String>,
+}
+
+/// One `<img>` of a page, with everything its rendered width needs.
+#[derive(Clone)]
+struct ImgFact {
+    key: Option<String>,
+    classes: Vec<String>,
+    id: Option<String>,
+    width: Option<String>,
+    style: Option<String>,
+    value_span: Range<usize>,
+}
+
+/// One image reference of one page, with the width it is drawn at when that
+/// is known.
+#[derive(Clone)]
+struct ImageUse {
+    key: String,
+    width: Option<u32>,
+    value_span: Range<usize>,
+}
+
+/// What a page's own `<style>` blocks and linked stylesheets say about the
+/// rendered width of the images it draws.
+struct PageImages {
+    stylesheets: Vec<String>,
+    styles: Vec<String>,
+    images: Vec<ImgFact>,
 }
 
 fn page_facts(key: &str, text: &str, keys: &BTreeSet<String>) -> PageFacts {
@@ -654,10 +832,48 @@ fn page_facts(key: &str, text: &str, keys: &BTreeSet<String>) -> PageFacts {
             _ => {}
         }
     }
+    let images = doc
+        .tags()
+        .iter()
+        .filter(|tag| tag.element == Element::Img && !tag.in_svg)
+        .flat_map(|tag| {
+            tag.attrs
+                .iter()
+                .filter(|attr| matches!(attr.name, AttrName::Src | AttrName::DataSrc))
+                .map(|attr| ImgFact {
+                    key: resolve(key, &attr.value, keys),
+                    classes: tag
+                        .attr(AttrName::Other("class".into()))
+                        .map(|value| {
+                            value
+                                .split_whitespace()
+                                .map(str::to_string)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default(),
+                    id: tag.attr(AttrName::Id).map(str::to_string),
+                    width: tag
+                        .attr(AttrName::Other("width".into()))
+                        .map(str::to_string),
+                    style: tag
+                        .attr(AttrName::Other("style".into()))
+                        .map(str::to_string),
+                    value_span: attr.value_span.clone(),
+                })
+        })
+        .collect();
+    let styles = doc
+        .tags()
+        .iter()
+        .filter(|tag| tag.element == Element::Style && !tag.in_svg)
+        .filter_map(|tag| Some(doc.src()[tag.body.clone()?].to_string()))
+        .collect();
     PageFacts {
         words,
         stylesheets,
         scripts,
+        images,
+        styles,
     }
 }
 
@@ -745,6 +961,194 @@ fn is_page(key: &str) -> bool {
     lower.ends_with(".html") || lower.ends_with(".htm")
 }
 
+fn is_reencodable(key: &str) -> bool {
+    let lower = key.to_ascii_lowercase();
+    [".png", ".jpg", ".jpeg"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+}
+
+/// The image references of a page, with the width each one is drawn at when
+/// that is known from the page's markup and CSS.
+fn page_image_uses(
+    page: &PageImages,
+    sheet_rules: &BTreeMap<String, Vec<WidthRule>>,
+    sheets: &BTreeMap<String, String>,
+    keys: &BTreeSet<String>,
+) -> Vec<ImageUse> {
+    let mut rules: Vec<WidthRule> = Vec::new();
+    let mut queue: Vec<String> = page.stylesheets.clone();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    while let Some(sheet) = queue.pop() {
+        if seen.insert(sheet.clone()) {
+            if let Some(found) = sheet_rules.get(&sheet) {
+                rules.extend(found.iter().cloned());
+            }
+            if let Some(text) = sheets.get(&sheet) {
+                for span in reference_spans(text) {
+                    if let Some(target) = resolve(&sheet, &text[span], keys)
+                        && target.ends_with(".css")
+                        && !seen.contains(&target)
+                    {
+                        queue.push(target);
+                    }
+                }
+            }
+        }
+    }
+    for text in &page.styles {
+        rules.extend(css::width_hints(text));
+    }
+    page.images
+        .iter()
+        .filter_map(|img| {
+            Some(ImageUse {
+                key: img.key.clone()?,
+                width: rendered_width(img, &rules),
+                value_span: img.value_span.clone(),
+            })
+        })
+        .collect()
+}
+
+/// The width an `<img>` is drawn at: the inline style wins over the CSS,
+/// which wins over the `width` attribute, capped by any `max-width` and
+/// raised by any `min-width` of a rule that may match. `None` when any of
+/// that is unknown, so callers can keep the image lossless.
+fn rendered_width(img: &ImgFact, rules: &[WidthRule]) -> Option<u32> {
+    let mut widths: Vec<u32> = Vec::new();
+    let mut min: Option<u32> = None;
+    let mut max: Option<u32> = None;
+    for rule in rules.iter().filter(|rule| matches_img(rule, img)) {
+        for declared in [rule.width, rule.min_width, rule.max_width] {
+            if declared == Some(css::CssWidth::Unknown) {
+                return None;
+            }
+        }
+        if let Some(css::CssWidth::Px(w)) = rule.width
+            && !widths.contains(&w)
+        {
+            widths.push(w);
+        }
+        if let Some(css::CssWidth::Px(w)) = rule.min_width {
+            min = Some(min.map_or(w, |found| found.max(w)));
+        }
+        if let Some(css::CssWidth::Px(w)) = rule.max_width {
+            max = Some(max.map_or(w, |found| found.min(w)));
+        }
+    }
+    let inline = img.style.as_deref().and_then(style_width);
+    let width = match inline {
+        Some(Ok(w)) => w,
+        Some(Err(())) => return None,
+        None => match widths.as_slice() {
+            [] => img.width.as_deref().and_then(px_number)?,
+            [w] => *w,
+            _ => return None,
+        },
+    };
+    let width = min.map_or(width, |found| width.max(found));
+    let width = max.map_or(width, |found| width.min(found));
+    Some(width)
+}
+
+fn matches_img(rule: &WidthRule, img: &ImgFact) -> bool {
+    rule.any_match
+        || (rule
+            .tag
+            .as_ref()
+            .is_none_or(|tag| tag.eq_ignore_ascii_case("img"))
+            && rule.classes.iter().all(|class| {
+                img.classes
+                    .iter()
+                    .any(|own| own.eq_ignore_ascii_case(class))
+            })
+            && rule.ids.iter().all(|id| {
+                img.id
+                    .as_deref()
+                    .is_some_and(|own| own.eq_ignore_ascii_case(id))
+            }))
+}
+
+/// The `width` of an inline `style` attribute: `Some(Ok(w))` in pixels,
+/// `Some(Err(()))` when a width is set in units that cannot be turned into
+/// pixels, and `None` when the style sets no width.
+fn style_width(style: &str) -> Option<Result<u32, ()>> {
+    let mut found = None;
+    for declaration in style.split(';') {
+        let Some((name, value)) = declaration.split_once(':') else {
+            continue;
+        };
+        if !name.trim().eq_ignore_ascii_case("width") {
+            continue;
+        }
+        if value.trim().eq_ignore_ascii_case("auto") {
+            return Some(Err(()));
+        }
+        found = Some(px_number(value).ok_or(()));
+    }
+    found
+}
+
+/// A length in pixels, from `300`, `300px` or `300.5px`.
+fn px_number(value: &str) -> Option<u32> {
+    let trimmed = value.trim();
+    let number = trimmed
+        .strip_suffix('x')
+        .or_else(|| trimmed.strip_suffix('X'))
+        .and_then(|head| head.strip_suffix('p').or_else(|| head.strip_suffix('P')))
+        .unwrap_or(trimmed)
+        .trim();
+    number
+        .parse::<f64>()
+        .ok()
+        .filter(|px| *px >= 0.0 && px.is_finite())
+        .map(|px| px.ceil() as u32)
+}
+
+/// Whether the name of the image appears anywhere that is not one of the
+/// `<img>` references it is about to be renamed in, which would break or
+/// change a use the size of which is unknown.
+fn mentioned_elsewhere(
+    key: &str,
+    uses: &[(usize, ImageUse)],
+    pages: &[(String, String)],
+    sources: &BTreeMap<String, PathBuf>,
+    keys: &BTreeSet<String>,
+) -> bool {
+    let name = key.rsplit('/').next().unwrap_or(key);
+    for (at, (_, text)) in pages.iter().enumerate() {
+        let spans: Vec<&Range<usize>> = uses
+            .iter()
+            .filter(|(page, _)| *page == at)
+            .map(|(_, image)| &image.value_span)
+            .collect();
+        for (found, _) in text.match_indices(name) {
+            if !spans.iter().any(|span| span.contains(&found)) {
+                return true;
+            }
+        }
+    }
+    for other in keys
+        .iter()
+        .filter(|key| !is_page(key) && is_mentionable(key))
+    {
+        if fs::read_to_string(&sources[other]).is_ok_and(|text| text.contains(name)) {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_mentionable(key: &str) -> bool {
+    let lower = key.to_ascii_lowercase();
+    [
+        ".html", ".htm", ".js", ".css", ".json", ".xml", ".svg", ".txt",
+    ]
+    .iter()
+    .any(|ext| lower.ends_with(ext))
+}
+
 fn is_convertible_font(key: &str) -> bool {
     let lower = key.to_ascii_lowercase();
     [".woff", ".ttf", ".otf"]
@@ -776,10 +1180,16 @@ fn file_kind(key: &str) -> SiteFileKind {
 }
 
 fn woff2_name(reference: &str) -> String {
+    renamed_value(reference, "woff2")
+}
+
+/// The reference with its file extension replaced, keeping any `?query` or
+/// `#fragment`.
+fn renamed_value(reference: &str, extension: &str) -> String {
     let end = reference.find(['?', '#']).unwrap_or(reference.len());
     let (path, suffix) = reference.split_at(end);
     let stem = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
-    format!("{stem}.woff2{suffix}")
+    format!("{stem}.{extension}{suffix}")
 }
 
 fn resolve(page: &str, reference: &str, keys: &BTreeSet<String>) -> Option<String> {

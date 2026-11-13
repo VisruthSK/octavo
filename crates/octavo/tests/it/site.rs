@@ -1,5 +1,8 @@
 use image::{ColorType, ImageEncoder, codecs::png};
-use octavo::{Options, SiteError, SiteFileKind, SiteKind, optimize_directory, plan_directory};
+use octavo::{
+    ImageEncoding, ImageFormat, Options, SiteError, SiteFileKind, SiteKind, optimize_directory,
+    plan_directory,
+};
 use skrifa::{FontRef, MetadataProvider};
 use std::{
     fs,
@@ -414,6 +417,144 @@ fn run(site: &Scratch) -> (Scratch, octavo::SiteReport) {
     let out = Scratch::new();
     let report = optimize_directory(site.path(), out.path(), &Options::default()).unwrap();
     (out, report)
+}
+
+fn lossy_options() -> Options {
+    Options {
+        images: Some(ImageEncoding::new(ImageFormat::Webp)),
+        ..Options::default()
+    }
+}
+
+fn run_lossy(site: &Scratch) -> (Scratch, octavo::SiteReport) {
+    let out = Scratch::new();
+    let report = optimize_directory(site.path(), out.path(), &lossy_options()).unwrap();
+    (out, report)
+}
+
+/// A noisy opaque PNG, so a lossy re-encode has something to work with.
+fn noisy_png() -> Vec<u8> {
+    let (width, height) = (200u32, 100u32);
+    let mut pixels = Vec::new();
+    for y in 0..height {
+        for x in 0..width {
+            pixels.extend([
+                ((x * 7) ^ (y * 13)) as u8,
+                ((x * 3) ^ (y * 5)) as u8,
+                (x + y) as u8,
+                255,
+            ]);
+        }
+    }
+    let mut encoded = Vec::new();
+    png::PngEncoder::new(&mut encoded)
+        .write_image(&pixels, width, height, ColorType::Rgba8.into())
+        .unwrap();
+    encoded
+}
+
+fn alpha_png() -> Vec<u8> {
+    let (width, height) = (200u32, 100u32);
+    let mut pixels = Vec::new();
+    for y in 0..height {
+        for x in 0..width {
+            pixels.extend([
+                (x ^ y) as u8,
+                (x * 2) as u8,
+                (y * 3) as u8,
+                if x < 10 { 128 } else { 255 },
+            ]);
+        }
+    }
+    let mut encoded = Vec::new();
+    png::PngEncoder::new(&mut encoded)
+        .write_image(&pixels, width, height, ColorType::Rgba8.into())
+        .unwrap();
+    encoded
+}
+
+fn dimensions(bytes: &[u8]) -> (u32, u32) {
+    if bytes.starts_with(b"RIFF") {
+        let width = u16::from_le_bytes([bytes[26], bytes[27]]) & 0x3fff;
+        let height = u16::from_le_bytes([bytes[28], bytes[29]]) & 0x3fff;
+        return (u32::from(width), u32::from(height));
+    }
+    image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .unwrap()
+        .into_dimensions()
+        .unwrap()
+}
+
+#[test]
+fn an_image_drawn_at_two_sizes_is_re_encoded_once_at_the_larger_one() {
+    let site = Scratch::new();
+    site.write("figure.png", noisy_png());
+    site.write(
+        "index.html",
+        page("", r#"<img src="figure.png" width="64">"#),
+    );
+    site.write(
+        "docs/other.html",
+        page("", r#"<img src="../figure.png" width="128">"#),
+    );
+    let (out, report) = run_lossy(&site);
+    let encoded = out.bytes("figure.webp");
+    assert!(encoded.starts_with(b"RIFF"), "{encoded:?}");
+    assert!(!out.exists("figure.png"));
+    let index = out.read("index.html");
+    assert!(
+        index.contains("figure.webp") && !index.contains("figure.png"),
+        "{index}"
+    );
+    assert!(out.read("docs/other.html").contains("figure.webp"));
+    assert_eq!(dimensions(&encoded), (128, 64));
+    assert!(
+        report
+            .changes
+            .iter()
+            .any(|change| change.kind == SiteKind::Image)
+    );
+}
+
+#[test]
+fn a_width_from_the_stylesheet_limits_the_encoding() {
+    let site = Scratch::new();
+    site.write("style.css", "img { width: 96px; }\n.dead { width: 50%; }\n");
+    site.write("figure.png", noisy_png());
+    site.write(
+        "index.html",
+        page(
+            r#"<link rel="stylesheet" href="style.css">"#,
+            r#"<img src="figure.png">"#,
+        ),
+    );
+    let (out, _) = run_lossy(&site);
+    assert_eq!(dimensions(&out.bytes("figure.webp")), (96, 48));
+    assert!(out.read("index.html").contains("figure.webp"));
+}
+
+#[test]
+fn an_image_with_an_unknown_size_stays_lossless() {
+    let site = Scratch::new();
+    site.write("figure.png", noisy_png());
+    site.write("index.html", page("", r#"<img src="figure.png">"#));
+    let (out, _) = run_lossy(&site);
+    assert!(out.bytes("figure.png").starts_with(b"\x89PNG"));
+    assert!(!out.exists("figure.webp"));
+}
+
+#[test]
+fn a_png_with_partial_transparency_stays_lossless() {
+    let site = Scratch::new();
+    site.write("figure.png", alpha_png());
+    site.write(
+        "index.html",
+        page("", r#"<img src="figure.png" width="64">"#),
+    );
+    let (out, _) = run_lossy(&site);
+    assert!(out.bytes("figure.png").starts_with(b"\x89PNG"));
+    assert!(!out.exists("figure.webp"));
 }
 
 #[test]

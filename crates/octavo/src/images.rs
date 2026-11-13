@@ -157,7 +157,8 @@ fn decode(uri: &str) -> Option<Decoded> {
 
 fn reencode(decoded: &Decoded, lossy: Option<ImageEncoding>, tuning: Tuning) -> Option<String> {
     lossy
-        .and_then(|encoding| encode(decoded, encoding))
+        .and_then(|encoding| reencode_file(&decoded.image.bytes, encoding, None))
+        .map(|(mime, bytes)| data::encode_base64(mime, &bytes))
         .or_else(|| recompress(decoded, tuning))
 }
 
@@ -195,28 +196,73 @@ pub(crate) fn recompress_png_file(bytes: &[u8], tuning: Tuning) -> Option<Vec<u8
     recompress_png(bytes, u64::from(width) * u64::from(height), tuning)
 }
 
-fn encode(decoded: &Decoded, lossy: ImageEncoding) -> Option<String> {
-    if decoded.pixels > MAX_LOSSY_PIXELS {
+/// Re-encodes one image file's bytes in a lossy format, shrinking it to the
+/// optional width limit first. Returns the MIME type and bytes of the new
+/// format, which the caller names, only when the result is smaller or the
+/// image was resized.
+pub(crate) fn reencode_file(
+    bytes: &[u8],
+    encoding: ImageEncoding,
+    width_limit: Option<u32>,
+) -> Option<(Mime, Vec<u8>)> {
+    let (source_width, source_height) = image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?
+        .into_dimensions()
+        .ok()?;
+    let pixels = u64::from(source_width) * u64::from(source_height);
+    if pixels > MAX_LOSSY_PIXELS {
         return None;
     }
-    let mut image = image::load_from_memory(&decoded.image.bytes)
-        .ok()?
-        .into_rgba8();
+    let mut image = image::load_from_memory(bytes).ok()?.into_rgba8();
     let mut resized = false;
-    if let Some(side) = lossy
+    if let Some(side) = encoding
         .max_side
         .filter(|&side| image.width().max(image.height()) > side.get())
     {
         image = shrink(image, side)?;
         resized = true;
     }
+    if let Some(limit) = width_limit.filter(|&limit| image.width() > limit) {
+        image = shrink_to_width(image, limit)?;
+        resized = true;
+    }
     let pixels = u64::from(image.width()) * u64::from(image.height());
-    let (mime, bytes) = match lossy.format {
-        ImageFormat::Avif => (Mime::ImageAvif, avif(&image, lossy.quality.get(), pixels)?),
-        ImageFormat::Webp => (Mime::ImageWebp, webp(&image, lossy.quality.get())?),
+    let (mime, encoded) = match encoding.format {
+        ImageFormat::Avif => (
+            Mime::ImageAvif,
+            avif(&image, encoding.quality.get(), pixels)?,
+        ),
+        ImageFormat::Webp => (Mime::ImageWebp, webp(&image, encoding.quality.get())?),
     };
-    (resized || bytes.len() * 10 < decoded.image.bytes.len() * 9)
-        .then(|| data::encode_base64(mime, &bytes))
+    (resized || encoded.len() * 10 < bytes.len() * 9).then_some((mime, encoded))
+}
+
+/// Whether any pixel of the image is not fully opaque. A file that cannot be
+/// decoded counts as partially transparent.
+pub(crate) fn has_partial_alpha(bytes: &[u8]) -> bool {
+    !image::load_from_memory(bytes)
+        .ok()
+        .is_some_and(|image| image.to_rgba8().pixels().all(|p| p.0[3] == 255))
+}
+
+fn shrink_to_width(image: RgbaImage, width: u32) -> Option<RgbaImage> {
+    let (source_width, source_height) = (image.width(), image.height());
+    let scale = f64::from(width) / f64::from(source_width);
+    let height = ((f64::from(source_height) * scale).round() as u32).max(1);
+    let source = Image::from_vec_u8(
+        source_width,
+        source_height,
+        image.into_raw(),
+        PixelType::U8x4,
+    )
+    .ok()?;
+    let mut resized = Image::new(width, height, PixelType::U8x4);
+    let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::CatmullRom));
+    Resizer::new()
+        .resize(&source, &mut resized, &options)
+        .ok()?;
+    RgbaImage::from_raw(width, height, resized.into_vec())
 }
 
 fn shrink(image: RgbaImage, side: NonZeroU32) -> Option<RgbaImage> {

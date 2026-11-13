@@ -8,10 +8,16 @@ use crate::{
 };
 use indexmap::IndexSet;
 use lightningcss::{
-    properties::Property,
-    rules::CssRule,
+    declaration::DeclarationBlock,
+    properties::{
+        Property, PropertyId,
+        size::{MaxSize, Size},
+    },
+    rules::{CssRule, CssRuleList},
     selector::{Component, Selector},
     stylesheet::{MinifyOptions, ParserOptions, PrinterOptions, StyleSheet},
+    values::length::{LengthPercentage, LengthValue},
+    values::percentage::DimensionPercentage,
     vendor_prefix::VendorPrefix,
     visitor::{Visit, VisitTypes, Visitor},
 };
@@ -404,6 +410,150 @@ fn unshield(css: &str, saved: &[String]) -> String {
         out.push_str(&part[tail..]);
     }
     out
+}
+
+/// One width, as a stylesheet states it: a pixel length, or anything that
+/// cannot be turned into pixels, such as a percentage or a `calc()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CssWidth {
+    Px(u32),
+    Unknown,
+}
+
+/// One style rule, reduced to what an `<img>` size needs: whether the
+/// selector could match an element, and the `width`, `min-width` and
+/// `max-width` it declares.
+#[derive(Clone, Debug)]
+pub(crate) struct WidthRule {
+    pub(crate) any_match: bool,
+    pub(crate) tag: Option<String>,
+    pub(crate) classes: Vec<String>,
+    pub(crate) ids: Vec<String>,
+    pub(crate) width: Option<CssWidth>,
+    pub(crate) min_width: Option<CssWidth>,
+    pub(crate) max_width: Option<CssWidth>,
+}
+
+/// The style rules of a stylesheet that set a width, so a page can work out
+/// the rendered size of the images it draws. A stylesheet that cannot be
+/// parsed yields one rule that may match anything, so callers fail closed.
+pub(crate) fn width_hints(css: &str) -> Vec<WidthRule> {
+    let mut rules = Vec::new();
+    match parse(css) {
+        Ok(sheet) => collect_width_rules(&sheet.rules, &mut rules),
+        Err(_) => rules.push(WidthRule {
+            any_match: true,
+            tag: None,
+            classes: Vec::new(),
+            ids: Vec::new(),
+            width: Some(CssWidth::Unknown),
+            min_width: None,
+            max_width: None,
+        }),
+    }
+    rules
+}
+
+fn collect_width_rules(list: &CssRuleList<'_>, rules: &mut Vec<WidthRule>) {
+    for rule in &list.0 {
+        match rule {
+            CssRule::Style(style) => {
+                let widths = width_declarations(&style.declarations);
+                for selector in &style.selectors.0 {
+                    rules.push(width_rule(selector, &widths));
+                }
+                collect_width_rules(&style.rules, rules);
+            }
+            CssRule::Media(rule) => collect_width_rules(&rule.rules, rules),
+            CssRule::Supports(rule) => collect_width_rules(&rule.rules, rules),
+            CssRule::Container(rule) => collect_width_rules(&rule.rules, rules),
+            _ => {}
+        }
+    }
+}
+
+fn width_declarations(
+    decls: &DeclarationBlock<'_>,
+) -> (Option<CssWidth>, Option<CssWidth>, Option<CssWidth>) {
+    let mut found = (None, None, None);
+    let all = decls
+        .declarations
+        .iter()
+        .chain(&decls.important_declarations);
+    for property in all {
+        match property {
+            Property::Width(Size::LengthPercentage(value))
+            | Property::MinWidth(Size::LengthPercentage(value)) => {
+                let width = css_width(value);
+                if matches!(property, Property::Width(_)) {
+                    found.0 = Some(width);
+                } else {
+                    found.1 = Some(width);
+                }
+            }
+            Property::MaxWidth(MaxSize::LengthPercentage(value))
+            | Property::MaxWidth(MaxSize::FitContentFunction(value)) => {
+                found.2 = Some(css_width(value));
+            }
+            Property::MaxWidth(MaxSize::None) => found.2 = None,
+            Property::Width(_) | Property::MinWidth(_) => {
+                if matches!(property, Property::Width(_)) {
+                    found.0 = Some(CssWidth::Unknown);
+                } else {
+                    found.1 = Some(CssWidth::Unknown);
+                }
+            }
+            Property::MaxWidth(_) => found.2 = Some(CssWidth::Unknown),
+            Property::Unparsed(unparsed) => match unparsed.property_id {
+                PropertyId::Width | PropertyId::InlineSize => {
+                    found.0 = Some(CssWidth::Unknown);
+                }
+                PropertyId::MinWidth | PropertyId::MinInlineSize => {
+                    found.1 = Some(CssWidth::Unknown)
+                }
+                PropertyId::MaxWidth | PropertyId::MaxInlineSize => {
+                    found.2 = Some(CssWidth::Unknown)
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    found
+}
+
+fn css_width(value: &LengthPercentage) -> CssWidth {
+    match value {
+        DimensionPercentage::Dimension(LengthValue::Px(px)) => {
+            CssWidth::Px((*px).max(0.0).ceil() as u32)
+        }
+        _ => CssWidth::Unknown,
+    }
+}
+
+fn width_rule(
+    selector: &Selector<'_>,
+    (width, min_width, max_width): &(Option<CssWidth>, Option<CssWidth>, Option<CssWidth>),
+) -> WidthRule {
+    let mut rule = WidthRule {
+        any_match: false,
+        tag: None,
+        classes: Vec::new(),
+        ids: Vec::new(),
+        width: *width,
+        min_width: *min_width,
+        max_width: *max_width,
+    };
+    for component in selector.iter_raw_match_order() {
+        match component {
+            Component::LocalName(local) => rule.tag = Some(local.name.to_string()),
+            Component::Class(name) => rule.classes.push(name.to_string()),
+            Component::ID(name) => rule.ids.push(name.to_string()),
+            Component::ExplicitUniversalType => {}
+            _ => rule.any_match = true,
+        }
+    }
+    rule
 }
 
 struct KeepUnprefixed;

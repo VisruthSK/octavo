@@ -131,15 +131,13 @@ fn a_named_output_directory_is_used() {
 }
 
 #[test]
-fn audit_and_lossy_images_are_refused_for_a_directory() {
+fn audit_is_refused_for_a_directory() {
     let root = scratch();
     site(&root);
-    for flag in ["--audit", "--lossy-images"] {
-        let output = octavo(&[root.as_os_str(), flag.as_ref()]);
-        assert!(!output.status.success(), "{flag}");
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains(flag), "{stderr}");
-    }
+    let output = octavo(&[root.as_os_str(), "--audit".as_ref()]);
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--audit"), "{stderr}");
     let _ = fs::remove_dir_all(&root);
 }
 
