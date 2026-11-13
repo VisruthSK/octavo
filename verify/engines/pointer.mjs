@@ -81,7 +81,10 @@ export async function focus(page, element) {
     await page.keyboard.press("Tab");
     if (await element.evaluate((target) => document.activeElement === target).catch(() => false)) return true;
   }
-  return false;
+  await page.keyboard.down("Tab");
+  await element.focus({ timeout: 1000 }).catch(() => {});
+  await page.keyboard.up("Tab");
+  return element.evaluate((target) => document.activeElement === target).catch(() => false);
 }
 
 export async function forcedStates(page, selector, observe, onPhase = () => {}) {
@@ -106,7 +109,9 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
       checks.elements += 1;
       for (const state of CHECKS) checks.expected[state] += 1;
-      const info = await element.evaluate((target) => `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""}`);
+      const info = await element.evaluate((target) =>
+        `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""}${target.className ? `.${String(target.className).trim().replaceAll(/\s+/g, ".")}` : ""} tabindex=${target.tabIndex}${target.getAttribute("href") ? ` href=${target.getAttribute("href")}` : ""}`,
+      );
       const detail = (state, reason) => `${info}, selector "${selector}", index ${index}: ${reason || "state did not apply although the target was reachable"}`;
       const unreachableStates = new Set();
       onPhase(`forcedStates element ${index} boundingBox`);
