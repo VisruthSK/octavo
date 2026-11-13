@@ -189,20 +189,24 @@ mod tests {
 
     #[test]
     fn two_overlapping_edits_report_the_one_that_lost() {
-        let src = "0123456789";
+        let src = "0123456789ab";
         let edits = Edits::new(vec![
             edit(0..6, "a", Transform::MinifiedScript),
             edit(3..9, "b", Transform::PrunedStylesheet),
+            edit(9..12, "c", Transform::RecompressedPng),
         ]);
         let kept: Vec<Transform> = edits.kept().iter().map(|edit| edit.transform).collect();
-        assert_eq!(kept, [Transform::MinifiedScript]);
+        assert_eq!(
+            kept,
+            [Transform::MinifiedScript, Transform::RecompressedPng]
+        );
         assert_eq!(edits.skipped().len(), 1);
         let skipped = &edits.skipped()[0];
         assert_eq!(skipped.transform, Transform::PrunedStylesheet);
         assert_eq!(skipped.target.to_string(), "x");
         assert_eq!(skipped.winner, Transform::MinifiedScript);
         let out = edits.apply(src);
-        assert_eq!(out, "a6789");
+        assert_eq!(out, "a678c");
         let delta: isize = edits
             .kept()
             .iter()
