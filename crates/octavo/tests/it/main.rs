@@ -6,3 +6,4 @@ mod pipeline;
 mod regressions;
 mod types;
 mod validation;
+mod woff2;
