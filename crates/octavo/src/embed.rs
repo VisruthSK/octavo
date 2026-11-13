@@ -543,6 +543,59 @@ fn import_specifiers(code: &str) -> Vec<Range<usize>> {
     found
 }
 
+fn reference_spans(css_text: &str) -> Vec<Range<usize>> {
+    let bytes = css_text.as_bytes();
+    let mut spans = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        let rest = &bytes[at..];
+        if rest.starts_with(b"/*") {
+            at += rest
+                .windows(2)
+                .position(|pair| pair == b"*/")
+                .map_or(rest.len(), |end| end + 2);
+        } else if rest.len() >= 4 && rest[..4].eq_ignore_ascii_case(b"url(") {
+            let (span, next) = delimited(bytes, at + 4, b')');
+            spans.extend(span);
+            at = next;
+        } else if rest.len() >= 7 && rest[..7].eq_ignore_ascii_case(b"@import") {
+            let mut start = at + 7;
+            while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
+                start += 1;
+            }
+            if matches!(bytes.get(start), Some(b'"' | b'\'')) {
+                let (span, next) = delimited(bytes, start, b')');
+                spans.extend(span);
+                at = next;
+            } else {
+                at += 7;
+            }
+        } else {
+            at += 1;
+        }
+    }
+    spans
+}
+
+fn delimited(bytes: &[u8], from: usize, closer: u8) -> (Option<Range<usize>>, usize) {
+    let mut start = from;
+    while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
+        start += 1;
+    }
+    let (start, end_marker) = match bytes.get(start) {
+        Some(&quote @ (b'"' | b'\'')) => (start + 1, quote),
+        _ => (start, closer),
+    };
+    let Some(length) = bytes[start..].iter().position(|&byte| byte == end_marker) else {
+        return (None, bytes.len());
+    };
+    let mut end = start + length;
+    while end > start && bytes[end - 1].is_ascii_whitespace() {
+        end -= 1;
+    }
+    (Some(start..end), start + length + 1)
+}
+
 #[cfg(test)]
 mod scanner_tests {
     use super::*;
@@ -732,57 +785,4 @@ mod scanner_tests {
         let code = "import a from './a.js'; import b from '../b.js';";
         assert_eq!(slices(code, import_specifiers(code)), ["./a.js", "../b.js"]);
     }
-}
-
-fn reference_spans(css_text: &str) -> Vec<Range<usize>> {
-    let bytes = css_text.as_bytes();
-    let mut spans = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        let rest = &bytes[at..];
-        if rest.starts_with(b"/*") {
-            at += rest
-                .windows(2)
-                .position(|pair| pair == b"*/")
-                .map_or(rest.len(), |end| end + 2);
-        } else if rest.len() >= 4 && rest[..4].eq_ignore_ascii_case(b"url(") {
-            let (span, next) = delimited(bytes, at + 4, b')');
-            spans.extend(span);
-            at = next;
-        } else if rest.len() >= 7 && rest[..7].eq_ignore_ascii_case(b"@import") {
-            let mut start = at + 7;
-            while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
-                start += 1;
-            }
-            if matches!(bytes.get(start), Some(b'"' | b'\'')) {
-                let (span, next) = delimited(bytes, start, b')');
-                spans.extend(span);
-                at = next;
-            } else {
-                at += 7;
-            }
-        } else {
-            at += 1;
-        }
-    }
-    spans
-}
-
-fn delimited(bytes: &[u8], from: usize, closer: u8) -> (Option<Range<usize>>, usize) {
-    let mut start = from;
-    while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
-        start += 1;
-    }
-    let (start, end_marker) = match bytes.get(start) {
-        Some(&quote @ (b'"' | b'\'')) => (start + 1, quote),
-        _ => (start, closer),
-    };
-    let Some(length) = bytes[start..].iter().position(|&byte| byte == end_marker) else {
-        return (None, bytes.len());
-    };
-    let mut end = start + length;
-    while end > start && bytes[end - 1].is_ascii_whitespace() {
-        end -= 1;
-    }
-    (Some(start..end), start + length + 1)
 }
