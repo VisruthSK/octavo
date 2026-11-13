@@ -1,16 +1,22 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 export const directory = join(root, "corpus", ".cache", "verdicts");
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-export const verifierHash = () => {
-  const folder = join(root, "verify");
-  const names = readdirSync(folder)
-    .filter((name) => name.endsWith(".mjs"))
+const verifierSources = (folder) =>
+  readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(folder, entry.name);
+    if (entry.isDirectory()) return entry.name === "node_modules" ? [] : verifierSources(path);
+    return entry.name.endsWith(".mjs") && !entry.name.endsWith(".test.mjs") ? [path] : [];
+  });
+
+export const verifierHash = (folder = join(root, "verify")) => {
+  const names = verifierSources(folder)
+    .map((path) => relative(folder, path).replaceAll("\\", "/"))
     .sort()
     .concat("package-lock.json");
   const hash = createHash("sha256");
