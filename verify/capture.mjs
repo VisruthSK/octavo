@@ -125,12 +125,17 @@ function observe({ lossy, probe, motion, linked, prints = [] }) {
     let text = "";
     for (const name of style) {
       if (name.startsWith("--")) continue;
+      if (["width", "height", "inline-size", "block-size"].includes(name)) continue;
       const position = name.startsWith("background-position");
       if (noImage && position) continue;
       if (!legacyBox && /^-[a-z]+-box-/.test(name)) continue;
       const raw = style.getPropertyValue(name);
       const value = linked ? raw.replace(/url\([^)]*\)/g, "url()") : raw;
       text += `${prefix}${name}:${position ? value.replace(/\b0px\b/g, "0%") : value};`;
+    }
+    for (const name of ["width", "height"]) {
+      const value = style.getPropertyValue(name);
+      if (value) text += `${prefix}${name}:${value};`;
     }
     return text;
   };
