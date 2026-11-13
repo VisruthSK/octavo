@@ -195,12 +195,7 @@ fn collect_chars(css: &[&str], loose: &[&str], settings: &Settings) -> Chars {
     Chars { icons, text }
 }
 
-fn decide(
-    face: &Face,
-    usage: &Usage,
-    chars: &Chars,
-    settings: &Settings,
-) -> Outcome {
+fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Outcome {
     let plain = face
         .family
         .chars()
