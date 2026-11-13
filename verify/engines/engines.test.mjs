@@ -129,8 +129,14 @@ test("browser identity changes with launch arguments and channel", () => {
 
 test("webkit error comparison keeps the error kind and ignores the source snippet", () => {
   assert.equal(webkit.normalizeError("null is not an object (evaluating 'document.body.className=`built-3`')"), "null is not an object");
+  assert.equal(webkit.normalizeError("undefined is not an object (evaluating 'ev.currentSlide.querySelector')"), "undefined is not an object");
+  assert.equal(webkit.normalizeError("undefined is not an object (evaluating 'ev.currentSlide.querySelector')"), webkit.normalizeError("undefined is not an object (evaluating 'e.currentSlide.querySelector')"));
+  assert.notEqual(webkit.normalizeError("undefined is not an object (evaluating 'e.x')"), webkit.normalizeError("null is not an object (evaluating 'e.x')"));
   assert.equal(chromium.normalizeError("TypeError: null is not an object"), "TypeError: null is not an object");
   assert.equal(firefox.normalizeError("TypeError: null is not an object"), "TypeError: null is not an object");
+  assert.equal(firefox.normalizeError("can't access property \"querySelector\", ev.currentSlide is undefined"), "can't access property \"querySelector\", <value> is undefined");
+  assert.equal(firefox.normalizeError("can't access property \"querySelector\", e.currentSlide is undefined"), firefox.normalizeError("can't access property \"querySelector\", ev.currentSlide is undefined"));
+  assert.notEqual(firefox.normalizeError("can't access property \"querySelector\", e.x is undefined"), firefox.normalizeError("can't access property \"classList\", e.x is undefined"));
 });
 
 test("a timed out capture closes its own browser context", async () => {

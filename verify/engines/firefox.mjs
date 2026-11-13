@@ -20,4 +20,6 @@ export const identity = (browser, { channel = "" } = {}) => {
   return `${label} ${browser.version()} ${path} ${stamp} channel=${channel} args=[]`;
 };
 export const settle = (page, settlePage, options) => settlePage(page, options);
-export const normalizeError = (message) => message;
+const PROPERTY_ACCESS_ON_VALUE = /(can't access property "[^"]*", )\S+( is (?:undefined|null))/g;
+
+export const normalizeError = (message) => message.replace(PROPERTY_ACCESS_ON_VALUE, "$1<value>$2");
