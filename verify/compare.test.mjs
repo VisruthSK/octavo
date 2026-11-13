@@ -74,6 +74,13 @@ test("a font family with its quotes removed is the same style", () => {
   assert.deepEqual(missingFrom("font-family:Menlo, monospace", "font-family:monospace"), ["font-family:Menlo, monospace"]);
 });
 
+test("a quoted keyword or a name that needs its quotes is not the unquoted one", () => {
+  assert.deepEqual(missingFrom('font-family:"serif"', "font-family:serif"), ['font-family:"serif"']);
+  assert.deepEqual(missingFrom('font-family:"Monospace", Menlo', "font-family:monospace, Menlo"), ['font-family:"Monospace", Menlo']);
+  assert.deepEqual(missingFrom('font-family:"1Face"', "font-family:1Face"), ['font-family:"1Face"']);
+  assert.deepEqual(missingFrom("font-family:'Fira Sans', serif", 'font-family:"Fira Sans", serif'), []);
+});
+
 test("quotes elsewhere in a declaration still matter", () => {
   assert.deepEqual(missingFrom('content:"a"', "content:a"), ['content:"a"']);
 });
