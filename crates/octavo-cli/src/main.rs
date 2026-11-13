@@ -177,12 +177,8 @@ struct Optimize {
         help = "Do not download files that the page links from the web. Such a page keeps needing the network"
     )]
     no_fetch: bool,
-    #[arg(
-        long,
-        help_heading = "Fonts",
-        help = "Keep only the characters each text font needs. Often a large saving, but on Linux some hinted fonts draw with slightly different strokes"
-    )]
-    subset_fonts: bool,
+    #[arg(long, help_heading = "Fonts")]
+    no_subset_fonts: bool,
     #[arg(
         long,
         value_name = "DIRECTORY",
@@ -272,6 +268,16 @@ fn command() -> clap::Command {
                 "Shrink images whose longest side is over this many pixels{side}"
             ))
         })
+        .mut_arg("no_subset_fonts", |arg| {
+            arg.help(format!(
+                "Keep the text fonts whole instead of subsetting them to the characters the document uses [default: subsetting is {}]",
+                if Options::default().subset_text_fonts {
+                    "on"
+                } else {
+                    "off"
+                }
+            ))
+        })
         .mut_arg("woff2_quality", |arg| {
             arg.help(format!(
                 "Quality of re-encoded fonts [default: {}, slowest: {}]",
@@ -316,7 +322,7 @@ fn main() -> ExitCode {
         audit: audit_only,
         lossy_images,
         image_quality,
-        subset_fonts,
+        no_subset_fonts,
         max_image_side,
         keep_png,
         image_memory,
@@ -334,6 +340,7 @@ fn main() -> ExitCode {
         eprintln!("{ERROR}error{ERROR:#}: no input file was given");
         return ExitCode::FAILURE;
     };
+    let output = output.unwrap_or_else(|| input.with_extension("min.html"));
     let images = lossy_images.map(|format| {
         let encoding = ImageEncoding::new(format);
         ImageEncoding {
@@ -346,7 +353,7 @@ fn main() -> ExitCode {
     });
     let options = Options {
         images,
-        subset_text_fonts: subset_fonts,
+        subset_text_fonts: !no_subset_fonts,
         strip_licenses,
         keep_png,
         image_memory: image_memory.map(|mib| mib.saturating_mul(1_048_576)),
@@ -368,9 +375,8 @@ fn main() -> ExitCode {
         },
     };
     let result = if audit_only {
-        audit(&input, level, &resource_path, !no_fetch)
+        audit(&input, level, options, &resource_path, !no_fetch)
     } else {
-        let output = output.unwrap_or_else(|| input.with_extension("min.html"));
         run(&input, &output, level, options, &resource_path, !no_fetch)
     };
     match result {
@@ -411,9 +417,17 @@ struct Savings {
     after: usize,
 }
 
-fn audit(input: &Path, level: Mode, resource_paths: &[PathBuf], fetch: bool) -> Result<(), String> {
+fn audit(
+    input: &Path,
+    level: Mode,
+    options: Options,
+    resource_paths: &[PathBuf],
+    fetch: bool,
+) -> Result<(), String> {
     let (src, _) = prepare(input, read(input)?, resource_paths, fetch);
-    let out = optimize(&src, level).map_err(|error| failure(input, &error))?;
+    let out = simplify(&src, options)
+        .map_err(|error| failure(input, &error))?
+        .pack(level);
     let mut totals: BTreeMap<Transform, Savings> = BTreeMap::new();
     for step in &out.applied {
         let total = totals.entry(step.transform).or_default();

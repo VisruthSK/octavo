@@ -116,7 +116,7 @@ flowchart TD
     Q --> W[Complete the word index]
     S --> W
     W --> C[css: parse once, prune, minify]
-    C --> F[fonts: rewrite @font-face, subset icon fonts]
+    C --> F[fonts: rewrite @font-face, subset fonts]
     I --> E[Merge edits]
     J --> E
     F --> E
@@ -132,7 +132,7 @@ flowchart TD
 | `quarto` | Removes Bootstrap JavaScript, Popper, Tippy, Clipboard.js and Anchor.js when the markup never uses them, and stubs the globals that Quarto's own runtime calls regardless | The markup uses the library, or another script mentions it |
 | `js` | Minifies scripts and turns data-URI module scripts into inline modules | The script does not parse, or is already minified |
 | `css` | Deletes rules that need a class, id or tag found nowhere in the markup or any script, then minifies. Custom property values are kept verbatim | A rule the parser rejects, or whose `calc()` arithmetic would lose precision, is kept as written and the rest of the sheet is still optimized |
-| `fonts` | Keeps the one source browsers use (the last `src`, preferring WOFF2, then WOFF, then TrueType and OpenType), converts it to WOFF2, drops legacy EOT and SVG copies, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. Text fonts stay whole unless you pass `--subset-fonts` | The family name is written with escapes |
+| `fonts` | Keeps the one source browsers use (the last `src`, preferring WOFF2, then WOFF, then TrueType and OpenType), converts it to WOFF2, drops legacy EOT and SVG copies, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. Text fonts are subsetted, except hinted static fonts, which are kept whole | The family name is written with escapes |
 | `images` | Recompresses embedded PNGs losslessly, and converts an 8-bit PNG to lossless WebP when that is smaller. With `--lossy-images`, re-encodes PNG and JPEG as AVIF or WebP and shrinks anything wider than 3840 px | PNG recompression skips images over 40 megapixels. WebP conversion skips PNGs that carry colour, gamma or animation data, and images that need more than `--image-memory` |
 | `pack` | Gathers scripts, styles, stylesheet links, inline SVG, images and data blocks into one compressed blob, restored in place by a synchronous loader. The blob uses DEFLATE or Brotli, whichever gives the smaller page | A Content-Security-Policy meta tag. Modules and import maps are never packed |
 
@@ -168,7 +168,7 @@ packed                 1  751.1 KiB  458.1 KiB  293.0 KiB
 packed level: 2.8 MiB -> 458.1 KiB (6.3x smaller)
 ```
 
-Each row covers only the part of the file that step changed, and the steps run in the order shown.
+Each row covers only the part of the file that step changed, and the steps run in the order shown. When a hinted static font is kept whole, a `font-kept-whole` row appears with a `0 B` saving, because those fonts are not subsetted.
 
 ### Compression effort
 
@@ -199,7 +199,7 @@ Lossy AVIF is about 40% smaller than lossless WebP on the eCOTS deck, but it cha
 
 Fonts converted whole are remembered in your user cache directory (`~/.cache/octavo` on Linux, `~/Library/Caches/octavo` on macOS, `%LOCALAPPDATA%\octavo` on Windows), in a `fonts` subfolder with one file per distinct font, named by a hash of its bytes and quality. Documents from the same theme embed the same fonts, so later runs skip the slowest step. Subsetted fonts are never stored. `--cache-dir <directory>` chooses another place and `--no-cache` turns the cache off.
 
-Text fonts stay whole by default. `--subset-fonts` cuts them to the characters the document uses plus the Latin letters, digits and punctuation, which is often the largest saving in a themed document, because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [skera](https://crates.io/crates/skera) and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive and layout is identical. Chromium on Linux draws some hinted static fonts, Fira Sans among them, with slightly different stroke shading after subsetting, and the checker reports that as pixel differences. Text that JavaScript adds later with characters outside the kept set falls back to a system font. Icon fonts are always subsetted to the glyphs the CSS can reach.
+Text fonts are subsetted by default. Octavo cuts them to the characters the document uses plus the Latin letters, digits and punctuation, which is often the largest saving in a themed document, because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [skera](https://crates.io/crates/skera) and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive and layout is identical. Hinted static fonts, those with `fpgm`, `prep` and `cvt ` tables, are kept whole instead, because Chromium on Linux draws them with slightly different stroke shading after subsetting. Variable fonts and fonts without hinting programs are subsetted. `--no-subset-fonts` keeps the text fonts whole instead, and a font kept whole for this reason shows up in `--audit` as a `font-kept-whole` row. Text that JavaScript adds later with characters outside the kept set falls back to a system font. Icon fonts are always subsetted to the glyphs the CSS can reach.
 
 ### Licenses
 
@@ -235,7 +235,7 @@ A web file that cannot be downloaded does not stop the run. It is reported as a 
 - The Brotli decoder runs through `new Function`, and `packed` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` header that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, allow `unsafe-eval` for the packed pages or use `--level scripts`, which never needs it.
 - Modules, import maps and elements whose attributes contain character references are never packed.
 - Downloads trust Mozilla's root certificates. A web file that needs a login cannot be embedded.
-- `--subset-fonts` can change how some hinted fonts are drawn on Linux, as described under [Fonts](#fonts).
+- Text fonts that are hinted static fonts are kept whole instead of subsetted, so subsetting saves nothing for them, as described under [Fonts](#fonts).
 - Octavo rounds CSS numbers to six significant digits and the verifier compares them at that precision.
 
 ## The libraries doing the real work

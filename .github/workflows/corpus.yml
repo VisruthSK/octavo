@@ -35,6 +35,9 @@ on:
       diagnose_level:
         description: Which level of the document to capture
         default: packed
+      octavo_args:
+        description: Extra arguments passed to every octavo invocation
+        default: ""
 
 concurrency:
   group: corpus-${{ github.workflow }}-${{ github.event_name }}-${{ inputs.tier || 'auto' }}-${{ github.event.pull_request.number || github.ref }}
@@ -169,7 +172,7 @@ jobs:
           restore-keys: |
             verdicts-${{ matrix.shard }}-${{ strategy.job-total }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 23 || 95 }}"
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 23 || 95 }}" --octavo-args "${{ inputs.octavo_args }}"
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 25 || 100 }}
       - uses: actions/cache/save@v6
         if: always()
@@ -185,7 +188,7 @@ jobs:
           optimized="out/corpus/${{ inputs.diagnose }}.${{ inputs.diagnose_level }}.html"
           if [ -f "$original" ] && [ -f "$optimized" ]; then
             node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" out/diagnose/whole
-            target/release/octavo "$original" out/subset.html --level "${{ inputs.diagnose_level }}" --subset-fonts --no-cache
+            target/release/octavo "$original" out/subset.html --level "${{ inputs.diagnose_level }}" --no-cache
             node verify/screenshots.mjs "$PWD/$original" "$PWD/out/subset.html" "${{ inputs.diagnose_scenario }}" out/diagnose/subset
           fi
       - uses: actions/upload-artifact@v7

@@ -3,7 +3,8 @@
 //!
 //! A document goes through a fixed series of stages: dead Quarto runtime
 //! libraries are removed, scripts and stylesheets are minified and pruned,
-//! fonts are converted to WOFF2 (icon fonts are subsetted to the glyphs the
+//! fonts are converted to WOFF2 (text fonts are subsetted, hinted static
+//! fonts are kept whole, and icon fonts are subsetted to the glyphs the
 //! CSS can reach), and images are recompressed.
 //! Each stage reads the document and returns edits to byte ranges, so
 //! anything Octavo does not understand stays exactly as it was.
@@ -101,16 +102,18 @@ impl FromStr for Mode {
 
 /// Settings for [`simplify`].
 ///
-/// The default keeps images lossless, keeps text fonts whole and keeps license
-/// notices.
+/// The default keeps images lossless, subsets text fonts to the characters
+/// the document uses (keeping hinted static fonts whole, because Chromium
+/// draws them with slightly different strokes on Linux after subsetting)
+/// and keeps license notices.
 ///
 /// ```
 /// use octavo::{simplify, Options};
 ///
 /// let options = Options::default();
-/// assert!(options.images.is_none() && !options.subset_text_fonts && !options.strip_licenses);
+/// assert!(options.images.is_none() && options.subset_text_fonts && !options.strip_licenses);
 /// ```
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Options {
     /// Re-encode embedded PNG and JPEG images when that makes them smaller.
     /// `None` keeps them as they are, recompressed losslessly.
@@ -118,12 +121,15 @@ pub struct Options {
     /// Subset embedded text fonts to the characters in the document plus
     /// the Latin letters, digits and punctuation, keeping every layout
     /// feature and all kerning. This is often the largest saving in a themed
-    /// document, but it is off by default: on Linux, Chromium draws some
-    /// hinted fonts, such as Fira Sans, with slightly different strokes after
-    /// subsetting, so the output is not pixel-exact everywhere. Text that
-    /// JavaScript adds later with characters outside that set falls back to a
-    /// system font. Icon fonts are always subsetted to the glyphs the CSS can
-    /// reach.
+    /// document, and it is on by default. Hinted static fonts, those with
+    /// `fpgm`, `prep` and `cvt ` tables, are kept whole instead, because
+    /// Chromium on Linux draws them with slightly different strokes after
+    /// subsetting; variable fonts and fonts without hinting programs are
+    /// subsetted. When a font is kept whole for this reason, an entry with
+    /// [`Transform::FontKeptWhole`] appears in [`Applied`], so audits show
+    /// it. Text that JavaScript adds later with characters outside that set
+    /// falls back to a system font. Icon fonts are always subsetted to the
+    /// glyphs the CSS can reach.
     pub subset_text_fonts: bool,
     /// Drop the license and copyright notices of bundled libraries and
     /// fonts. Most open-source licenses require them to stay with copies,
@@ -163,6 +169,20 @@ impl Options {
     /// [`Options::image_memory`] is `None`: 2.5 GiB, which fits one 81
     /// megapixel image at a time.
     pub const DEFAULT_IMAGE_MEMORY: u64 = 2_684_354_560;
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            images: None,
+            subset_text_fonts: true,
+            strip_licenses: false,
+            keep_png: false,
+            image_memory: None,
+            cache_directory: None,
+            compression: Compression::default(),
+        }
+    }
 }
 
 /// How much time to spend compressing.
@@ -385,6 +405,10 @@ pub enum Transform {
     RecompressedPng,
     /// An image was re-encoded in a lossy format.
     ReencodedImage,
+    /// An hinted static text font was kept whole instead of subsetted,
+    /// because Chromium draws hinted static fonts differently on Linux
+    /// after subsetting.
+    FontKeptWhole,
     /// Resources were compressed into one blob.
     Packed,
 }
@@ -397,6 +421,7 @@ impl fmt::Display for Transform {
             Transform::PrunedStylesheet => "stylesheet-pruned",
             Transform::RecompressedPng => "png-recompressed",
             Transform::ReencodedImage => "image-reencoded",
+            Transform::FontKeptWhole => "font-kept-whole",
             Transform::Packed => "packed",
         })
     }
@@ -667,7 +692,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     } else {
         Licenses::Keep
     };
-    let (images, (removals, scripts, styles)) = rayon::join(
+    let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
         || {
             images::stage(
                 &doc,
@@ -685,7 +710,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             let removals = quarto::stage(&doc, &markup);
             let removed: Vec<Range<usize>> =
                 removals.iter().map(|edit| edit.span.clone()).collect();
-            let (scripts, styles) = rayon::join(
+            let (scripts, (styles, kept_whole)) = rayon::join(
                 || js::stage(&doc, &removed, licenses),
                 || {
                     let words = doc.words(markup, parts, &removed);
@@ -699,7 +724,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
                     )
                 },
             );
-            (removals, scripts, styles)
+            (removals, scripts, styles, kept_whole)
         },
     );
     let edits: Vec<Edit> = removals
@@ -709,7 +734,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         .chain(images)
         .collect();
     let edits = Edits::new(edits);
-    let applied = edits
+    let mut applied: Vec<Applied> = edits
         .kept()
         .iter()
         .map(|edit| Applied {
@@ -719,6 +744,12 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             after: edit.text.len(),
         })
         .collect();
+    applied.extend(kept_whole.into_iter().map(|(family, bytes)| Applied {
+        transform: Transform::FontKeptWhole,
+        target: Target::Resource(family),
+        before: bytes,
+        after: bytes,
+    }));
     let html = edits.apply(src);
     Ok(Simplified {
         scanned: html::Scanned::new(html),

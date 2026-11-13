@@ -40,6 +40,8 @@ enum Decision {
     Replace { uri: String, notice: Option<String> },
 }
 
+type Outcome = (Decision, Option<(String, usize)>);
+
 struct RuleFacts {
     pseudo_only: bool,
     declared: Vec<String>,
@@ -87,7 +89,7 @@ pub(crate) fn rewrite(
     sheets: &mut [Option<StyleSheet<'_>>],
     loose: &[&str],
     settings: &Settings,
-) -> Vec<Vec<String>> {
+) -> Rewritten {
     let faces: Vec<Vec<Option<Face>>> = sheets
         .par_iter_mut()
         .map(|sheet| {
@@ -99,7 +101,10 @@ pub(crate) fn rewrite(
         })
         .collect();
     if faces.iter().all(Vec::is_empty) {
-        return vec![Vec::new(); sheets.len()];
+        return Rewritten {
+            notices: vec![Vec::new(); sheets.len()],
+            kept_whole: Vec::new(),
+        };
     }
     let usage = collect_usage(sheets, loose);
     let surviving: Vec<String> = sheets
@@ -108,19 +113,28 @@ pub(crate) fn rewrite(
         .collect();
     let surviving: Vec<&str> = surviving.iter().map(String::as_str).collect();
     let chars = collect_chars(&surviving, loose, settings);
-    let decisions: Vec<Vec<Decision>> = faces
+    let decisions: Vec<Vec<Outcome>> = faces
         .par_iter()
         .map(|sheet_faces| {
             sheet_faces
                 .par_iter()
                 .map(|face| match face {
                     Some(face) => decide(face, &usage, &chars, settings),
-                    None => Decision::Keep,
+                    None => (Decision::Keep, None),
                 })
                 .collect()
         })
         .collect();
-    sheets
+    let kept_whole: Vec<(String, usize)> = decisions
+        .iter()
+        .flat_map(|sheet| sheet.iter())
+        .filter_map(|(_, kept)| kept.clone())
+        .collect();
+    let decisions: Vec<Vec<Decision>> = decisions
+        .into_iter()
+        .map(|sheet| sheet.into_iter().map(|(decision, _)| decision).collect())
+        .collect();
+    let notices = sheets
         .par_iter_mut()
         .zip(&decisions)
         .map(|(sheet, decisions)| {
@@ -133,7 +147,16 @@ pub(crate) fn rewrite(
             }
             apply.notices
         })
-        .collect()
+        .collect();
+    Rewritten {
+        notices,
+        kept_whole,
+    }
+}
+
+pub(crate) struct Rewritten {
+    pub(crate) notices: Vec<Vec<String>>,
+    pub(crate) kept_whole: Vec<(String, usize)>,
 }
 
 fn collect_usage(sheets: &mut [Option<StyleSheet<'_>>], loose: &[&str]) -> Usage {
@@ -172,41 +195,52 @@ fn collect_chars(css: &[&str], loose: &[&str], settings: &Settings) -> Chars {
     Chars { icons, text }
 }
 
-fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Decision {
+fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Outcome {
     let plain = face
         .family
         .chars()
         .all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_'));
     if !plain {
-        return Decision::Keep;
+        return (Decision::Keep, None);
     }
     let in_markup = settings.words.mentions(&face.family);
     let Some(pseudo_only) = usage
         .of(&face.family.to_lowercase())
         .or(in_markup.then_some(false))
     else {
-        return Decision::Drop;
+        return (Decision::Drop, None);
     };
     let Some(font) = data::decode(&face.uri) else {
-        return Decision::Keep;
+        return (Decision::Keep, None);
     };
+    let text = !(pseudo_only && !in_markup);
     let subset = if pseudo_only && !in_markup {
         Some(&chars.icons)
     } else {
         chars.text.as_ref()
     };
+    let kept_bytes = font.bytes.len();
     match transcode(
         &font.bytes,
         subset,
+        text,
         settings.notices,
         settings.cache,
         settings.tuning,
     ) {
-        Some(transcoded) => Decision::Replace {
-            uri: data::encode_base64(Mime::FontWoff2, &transcoded.woff2),
-            notice: transcoded.notice,
-        },
-        None => Decision::Keep,
+        Some(transcoded) => {
+            let kept = transcoded
+                .kept_whole
+                .then(|| (face.family.clone(), kept_bytes));
+            (
+                Decision::Replace {
+                    uri: data::encode_base64(Mime::FontWoff2, &transcoded.woff2),
+                    notice: transcoded.notice,
+                },
+                kept,
+            )
+        }
+        None => (Decision::Keep, None),
     }
 }
 
@@ -441,28 +475,56 @@ fn string_literals<'i>(parser: &mut Parser<'i, '_>, chars: &mut HashSet<char>) {
 struct Transcoded {
     woff2: Vec<u8>,
     notice: Option<String>,
+    kept_whole: bool,
 }
 
 fn transcode(
     bytes: &[u8],
     chars: Option<&HashSet<char>>,
+    text: bool,
     notices: Licenses,
     cache: Option<&Path>,
     tuning: Tuning,
 ) -> Option<Transcoded> {
     let quality = tuning.woff2_quality.min(11);
+    let sfnt: Cow<[u8]> = match bytes.get(..4)? {
+        b"wOFF" => Cow::Owned(wuff::decompress_woff1(bytes).ok()?),
+        b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
+        _ => Cow::Borrowed(bytes),
+    };
+    let kept_whole = text && chars.is_some() && !subsetting_is_exact(&sfnt);
+    let chars = if kept_whole { None } else { chars };
     let (Some(root), None) = (cache, chars) else {
-        return convert(bytes, chars, notices, quality);
+        return convert(&sfnt, chars, notices, quality).map(|converted| Transcoded {
+            kept_whole,
+            ..converted
+        });
     };
     let directory = root.join(cache::FONTS);
     let key = cache::key(&[bytes, &[quality]]);
     if let Some(entry) = cache::load(&directory, &key).and_then(|entry| Transcoded::decode(&entry))
     {
-        return Some(entry);
+        return Some(Transcoded {
+            kept_whole,
+            ..entry
+        });
     }
-    let converted = convert(bytes, chars, notices, quality)?;
+    let converted = convert(&sfnt, chars, notices, quality)?;
     cache::store(&directory, &key, &converted.encode());
-    Some(converted)
+    Some(Transcoded {
+        kept_whole,
+        ..converted
+    })
+}
+
+fn subsetting_is_exact(sfnt: &[u8]) -> bool {
+    let Ok(font) = Sfnt::new(sfnt) else {
+        return false;
+    };
+    let hinting = [b"fpgm", b"prep", b"cvt "]
+        .iter()
+        .any(|tag| font.table_data(SfntTag::new(tag)).is_some());
+    font.fvar().is_ok() || !hinting
 }
 
 impl Transcoded {
@@ -482,6 +544,7 @@ impl Transcoded {
         (woff2.starts_with(b"wOF2")).then(|| Transcoded {
             woff2: woff2.to_vec(),
             notice: (!notice.is_empty()).then(|| String::from_utf8_lossy(notice).into_owned()),
+            kept_whole: false,
         })
     }
 }
@@ -499,16 +562,12 @@ fn transform_glyf_loca(sfnt: &[u8]) -> bool {
 }
 
 fn convert(
-    bytes: &[u8],
+    sfnt: &[u8],
     chars: Option<&HashSet<char>>,
     notices: Licenses,
     quality: u8,
 ) -> Option<Transcoded> {
-    let sfnt: Cow<[u8]> = match bytes.get(..4)? {
-        b"wOFF" => Cow::Owned(wuff::decompress_woff1(bytes).ok()?),
-        b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
-        _ => Cow::Borrowed(bytes),
-    };
+    let sfnt: Cow<[u8]> = Cow::Borrowed(sfnt);
     let subset = chars.and_then(|chars| subsetted(&sfnt, chars));
     let notice = subset.as_ref().and_then(|_| {
         if notices == Licenses::Keep {
@@ -529,6 +588,7 @@ fn convert(
         )
         .ok()?,
         notice,
+        kept_whole: false,
     })
 }
 

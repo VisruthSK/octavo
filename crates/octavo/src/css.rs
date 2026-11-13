@@ -488,7 +488,7 @@ pub(crate) fn stage(
     licenses: Licenses,
     cache: Option<&Path>,
     tuning: Tuning,
-) -> Vec<Edit> {
+) -> (Vec<Edit>, Vec<(String, usize)>) {
     let sources: Vec<(&Tag, Cow<str>)> = doc
         .tags()
         .iter()
@@ -556,12 +556,13 @@ pub(crate) fn stage(
         cache,
         tuning,
     };
-    let notices = fonts::rewrite(&mut sheets, &loose, &settings);
+    let rewritten = fonts::rewrite(&mut sheets, &loose, &settings);
+    let notices = &rewritten.notices;
     let printed: Vec<Option<String>> = sheets
         .par_iter()
         .zip(&shielded)
         .zip(&isolated)
-        .zip(&notices)
+        .zip(notices)
         .map(|(((sheet, shielded), isolated), notices)| {
             print(sheet.as_ref()?, shielded, isolated.as_ref(), notices)
         })
@@ -571,7 +572,7 @@ pub(crate) fn stage(
         .zip(&printed)
         .filter_map(|(shielded, printed)| printed.as_ref().map(|css| (shielded.source, css)))
         .collect();
-    sources
+    let edits: Vec<Edit> = sources
         .iter()
         .filter_map(|(tag, source)| {
             let css: &String = printed.get(source.as_ref())?;
@@ -599,7 +600,8 @@ pub(crate) fn stage(
             })
         })
         .filter(Edit::shrinks)
-        .collect()
+        .collect();
+    (edits, rewritten.kept_whole)
 }
 
 fn stylesheet<'a>(doc: &'a Doc, tag: &Tag) -> Option<Cow<'a, str>> {
