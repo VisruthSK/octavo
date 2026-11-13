@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { cpus } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
 import { cacheDirectory } from "./build.mjs";
+import { accountFor, captureDifference, readExcluded, writeExcluded } from "./excluded.mjs";
 import { featuresOf, selectStratified } from "./select.mjs";
 
 const quarto = process.env.QUARTO ?? "quarto";
@@ -187,42 +188,86 @@ const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const sourcesPath = join(import.meta.dirname, "sources.json");
 export const selectionPath = join(import.meta.dirname, "selection.json");
 
+async function determinismReason(browser, file, capture, scenarios) {
+  for (const scenario of scenarios) {
+    const [before, after] = await Promise.all([
+      capture(browser, file, scenario, false, { root: dirname(file) }),
+      capture(browser, file, scenario, false, { root: dirname(file) }),
+    ]);
+    const difference = captureDifference(before, after);
+    if (difference) return `${scenario.name}: ${difference}`;
+  }
+  return null;
+}
+
 export async function chooseUpstream({ jobs = 4 } = {}) {
   const sources = readJson(sourcesPath);
   const version = spawnSync(quarto, ["--version"], { encoding: "utf8" }).stdout.trim();
   mkdirSync(rendered, { recursive: true });
   const selected = [];
+  const excluded = [];
   let candidatesSeen = 0;
-  const skipped = new Map();
-  for (const source of sources) {
-    const directory = extract(source, await download(source));
-    const eligible = candidates(directory);
-    const pooled = [];
-    await pool(eligible, jobs, async ({ file, path, format }) => {
-      const id = `${source.name}-${slug(path.replace(/\.qmd$/, ""))}`;
-      const outcome = await renderDocument({ id, file });
-      if (!outcome.text) {
-        skipped.set(outcome.reason, (skipped.get(outcome.reason) ?? 0) + 1);
-        return;
-      }
-      pooled.push({
-        id,
-        format,
-        group: featureOf(path),
-        category: `${source.name}-${format}`,
-        source: { name: source.name, path },
-        quarto: version,
-        features: featuresOf(outcome.markup),
+  let browser;
+  let capture;
+  let scenarios;
+  try {
+    for (const source of sources) {
+      const directory = extract(source, await download(source));
+      const eligible = candidates(directory);
+      const pooled = [];
+      await pool(eligible, jobs, async ({ file, path, format }) => {
+        const id = `${source.name}-${slug(path.replace(/\.qmd$/, ""))}`;
+        const outcome = await renderDocument({ id, file });
+        if (!outcome.text) {
+          excluded.push({ id, reason: outcome.reason });
+          return;
+        }
+        pooled.push({
+          id,
+          format,
+          group: featureOf(path),
+          category: `${source.name}-${format}`,
+          source: { name: source.name, path },
+          quarto: version,
+          features: featuresOf(outcome.markup),
+        });
       });
-    });
-    pooled.sort((a, b) => a.id.localeCompare(b.id));
-    const smoke = new Set(selectStratified(pooled, source.smoke).map((pick) => pick.id));
-    for (const entry of pooled) selected.push({ ...entry, tier: smoke.has(entry.id) ? "smoke" : "full" });
-    candidatesSeen += eligible.length;
+      pooled.sort((a, b) => a.id.localeCompare(b.id));
+      if (pooled.length > 0) {
+        if (!capture) {
+          const [{ launch }, loaded] = await Promise.all([import("../verify/browser.mjs"), import("../verify/capture.mjs")]);
+          browser ??= launch({ args: ["--allow-file-access-from-files", "--disable-dev-shm-usage"] });
+          capture = loaded.capture;
+          scenarios = loaded.scenarios;
+        }
+        const open = await browser;
+        const kept = [];
+        await pool(pooled, jobs, async (entry) => {
+          const difference = await determinismReason(open, join(rendered, `${entry.id}.html`), capture, scenarios).catch(
+            (error) => `capture failed: ${error.message}`,
+          );
+          if (!difference) {
+            kept.push(entry);
+            return;
+          }
+          const reason = difference.startsWith("capture failed") ? difference : `differs from itself (${difference})`;
+          excluded.push({ id: entry.id, reason: reason.slice(0, 240) });
+        });
+        pooled.length = 0;
+        pooled.push(...kept);
+        pooled.sort((a, b) => a.id.localeCompare(b.id));
+      }
+      const smoke = new Set(selectStratified(pooled, source.smoke).map((pick) => pick.id));
+      for (const entry of pooled) selected.push({ ...entry, tier: smoke.has(entry.id) ? "smoke" : "full" });
+      candidatesSeen += eligible.length;
+    }
+  } finally {
+    if (browser) await (await browser).close().catch(() => {});
   }
   selected.sort((a, b) => a.id.localeCompare(b.id));
+  writeExcluded(excluded);
   writeFileSync(selectionPath, `${JSON.stringify(selected, null, 2)}\n`);
-  return { candidates: candidatesSeen, selected, skipped };
+  return { candidates: candidatesSeen, selected, excluded };
 }
 
 export const inShard = (index, shard) => !shard || index % shard.count === shard.index;
@@ -230,7 +275,13 @@ export const inShard = (index, shard) => !shard || index % shard.count === shard
 export async function renderSelected({ jobs = 4, tier = "full", shard } = {}) {
   const sources = readJson(sourcesPath);
   mkdirSync(rendered, { recursive: true });
-  const entries = readJson(selectionPath)
+  const excluded = readExcluded();
+  const excludedIds = excluded.map((entry) => entry.id);
+  for (const entry of excluded) console.log(`excluded ${entry.id}: ${entry.reason}`);
+  const selection = readJson(selectionPath);
+  const conflicts = accountFor(selection.map((entry) => entry.id), [], excludedIds).conflicts;
+  if (conflicts.length > 0) throw new Error(`excluded.json and selection.json both list:\n${conflicts.join("\n")}`);
+  const entries = selection
     .filter((entry) => tier === "full" || entry.tier === tier)
     .filter((_, index) => inShard(index, shard));
   const done = [];
@@ -250,6 +301,10 @@ export async function renderSelected({ jobs = 4, tier = "full", shard } = {}) {
   }
   if (failures.length > 0) {
     throw new Error(`${failures.length} pinned documents failed to render:\n${failures.sort().join("\n")}`);
+  }
+  const missing = accountFor(entries.map((entry) => entry.id), done.map((entry) => entry.id), excludedIds).missing;
+  if (missing.length > 0) {
+    throw new Error(`${missing.length} pinned documents are missing from the render:\n${missing.join("\n")}`);
   }
   done.sort((a, b) => a.id.localeCompare(b.id));
   writeFileSync(indexPath, `${JSON.stringify(done, null, 2)}\n`);
@@ -279,9 +334,10 @@ if (process.argv[1]?.endsWith("upstream.mjs")) {
   };
   const jobs = Number(flag("jobs") ?? Math.max(1, Math.floor(cpus().length / 4)));
   if (process.argv.includes("--select")) {
-    const { candidates: seen, selected, skipped } = await chooseUpstream({ jobs });
-    const dropped = [...skipped].map(([reason, count]) => `${count} ${reason}`).join(", ");
-    console.log(`${seen} candidates${dropped ? `, dropped ${dropped}` : ""}`);
+    const { candidates: seen, selected, excluded } = await chooseUpstream({ jobs });
+    const dropped = [...Map.groupBy(excluded, (entry) => entry.reason)].map(([reason, entries]) => `${entries.length} ${reason}`);
+    console.log(`${seen} candidates${dropped.length ? `, dropped ${dropped.join(", ")}` : ""}`);
+    console.log(`wrote ${excluded.length} reasons to excluded.json`);
     const byFormat = Map.groupBy(selected, (entry) => entry.format);
     console.log(
       `wrote ${selected.length} to selection.json (${formats.map((format) => `${format} ${byFormat.get(format)?.length ?? 0}`).join(", ")})`,

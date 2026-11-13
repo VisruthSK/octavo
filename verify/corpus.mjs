@@ -7,6 +7,7 @@ import { brotliCompressSync } from "node:zlib";
 import { documentPath, materialize } from "../corpus/build.mjs";
 import { readRendered, renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
+import { GROWTH_LIMIT, compareBaseline, mergeBaseline, readBaseline, writeBaseline } from "../corpus/baseline.mjs";
 
 const SLOWDOWN_LIMIT = 100;
 const RATE_FLOOR_BYTES = 256 * 1024;
@@ -19,7 +20,9 @@ const flag = (name, fallback) => {
 };
 const tier = flag("tier", "smoke");
 const levels = flag("levels", tier === "full" ? "safe,scripts,packed" : "safe,packed").split(",");
-const filter = new RegExp(flag("filter", "."));
+const filterText = flag("filter", ".");
+const filter = new RegExp(filterText);
+const updateBaseline = process.argv.includes("--update-baseline");
 const cores = cpus().length;
 const jobs = Number(flag("jobs", Math.max(1, Math.floor(cores / 2))));
 const threads = Math.max(1, Math.floor(cores / jobs));
@@ -170,6 +173,21 @@ for (const entry of measured) {
   }
 }
 
+const baseline = readBaseline();
+let gate = null;
+let updated = null;
+if (updateBaseline) {
+  const prune = tier === "full" && !shardCount && filterText === ".";
+  updated = mergeBaseline(baseline, measured, { prune });
+  writeBaseline(updated);
+} else {
+  gate = compareBaseline(baseline, measured);
+  for (const row of gate.growth) {
+    const entry = measured.find((candidate) => candidate.id === row.id && candidate.level === row.level);
+    entry?.problems.push(`output grew from ${row.before} to ${row.after} bytes for ${row.level} (+${(row.change * 100).toFixed(2)}%, over the ${GROWTH_LIMIT * 100}% baseline)`);
+  }
+}
+
 const overall = [...Map.groupBy(
   measured.filter((entry) => entry.outBytes !== null),
   (entry) => entry.level,
@@ -194,6 +212,20 @@ for (const [name, entries] of [...categories].sort(([a], [b]) => a.localeCompare
   lines.push(
     `| ${name} | ${entries.length} | ${kib(sum(entries, (e) => e.inBytes))} | ${kib(sum(produced, (e) => e.outBytes))} | ${median(ratios).toFixed(2)} | ${percentile(times, 0.5).toFixed(0)} | ${percentile(times, 0.95).toFixed(0)} | ${kib(sum(entries, (e) => e.baselines.naive))} | ${kib(sum(entries, (e) => e.baselines.brotliOriginal))} |`,
   );
+}
+if (updated) {
+  lines.push(``, `## Size baseline`, ``, `Wrote ${Object.keys(updated).length} documents to corpus/baseline.json.`);
+} else if (gate?.compared > 0) {
+  lines.push(``, `## Size baseline`, ``, `| Category / level | Docs | Baseline KiB | Now KiB | Change |`, `|---|---|---|---|---|`);
+  for (const row of gate.categories) {
+    lines.push(`| ${row.category} / ${row.level} | ${row.docs} | ${kib(row.before)} | ${kib(row.after)} | ${row.change >= 0 ? "+" : ""}${(row.change * 100).toFixed(2)}% |`);
+  }
+  if (gate.unrecorded.length > 0) lines.push(``, `No baseline recorded for ${gate.unrecorded.length} document/level pairs.`);
+  if (gate.growth.length > 0) {
+    lines.push(``, `${gate.growth.length} outputs grew by more than ${GROWTH_LIMIT * 100}%:`, ...gate.growth.slice(0, 20).map((row) => `- ${row.id} (${row.level}): ${row.before} to ${row.after} bytes, +${(row.change * 100).toFixed(2)}%`));
+  }
+} else {
+  lines.push(``, `## Size baseline`, ``, `No baseline recorded. Run with --update-baseline to write one.`);
 }
 const slowest = [...results].sort((a, b) => b.ms - a.ms).slice(0, 5);
 lines.push(``, `## Slowest`, ...slowest.map((e) => `- ${e.id} (${e.level}): ${e.ms.toFixed(0)} ms for ${kib(e.inBytes)} KiB`));

@@ -31,6 +31,8 @@ corpus/
   docs/<topic>.mjs   one array of specs per topic
   build.mjs       writes .cache/<id>.html and manifest.json
   spec.test.mjs   checks the specs and the manifest (node --test "corpus/**/*.test.mjs")
+  excluded.json   documents dropped from the Quarto selection, with the reason
+  baseline.json   output size per document and level
 ```
 
 A document is an object:
@@ -73,7 +75,7 @@ node corpus/upstream.mjs [--tier smoke|full] [--jobs N] [--shard K/N]
 node corpus/upstream.mjs --select
 ```
 
-The first command renders the listed documents with Quarto into `.cache/rendered/` and writes `index.json`. `--shard` renders one share, which is how CI splits the full tier. The second command rebuilds `selection.json`: it extracts the example documents, renders each in its own format, and drops those that fail, need the network or are not self-contained, printing a count per reason. It is needed only when `sources.json` changes. Nothing rendered is committed, because the HTML depends on the Quarto version. Set `QUARTO` to the executable when it is not on `PATH`.
+The first command renders the listed documents with Quarto into `.cache/rendered/` and writes `index.json`. `--shard` renders one share, which is how CI splits the full tier. It reads `corpus/excluded.json` first and prints every excluded document with its reason, and a document that fails to render or is missing from the render stops the run. The second command rebuilds `selection.json` and `excluded.json`: it extracts the example documents, renders each in its own format, loads each render twice in Chromium with the verifier's capture, and drops those that fail, need the network, are not self-contained or differ from themselves, recording every drop with its reason in `excluded.json`. It is needed only when `sources.json` changes. Nothing rendered is committed, because the HTML depends on the Quarto version. Set `QUARTO` to the executable when it is not on `PATH`.
 
 ### Pages that link files
 
@@ -163,6 +165,15 @@ node verify/corpus.mjs --tier full --browser --filter '^css-'
 | `--no-upstream` | Skip Quarto's documents |
 | `--binary <path>` | The Octavo binary to run |
 | `--out <dir>` | Where the report is written. The default is `out/corpus` |
+| `--update-baseline` | Write `corpus/baseline.json` from this run instead of comparing with it |
+
+## Size baseline
+
+`corpus/baseline.json` records the output size of every document at each level. A run compares each measured output with the baseline and fails when an output is more than 0.5% larger, naming the document and printing the change per category in `report.md`. A document or level without a baseline entry is reported but does not fail the run, so the gate can land before the baseline exists.
+
+`--update-baseline` writes the measured sizes into `corpus/baseline.json` instead of comparing, merging with the entries already there. A full run with no shard or filter also drops entries for documents that are gone. Commit the rewritten baseline on its own, with a note on what changed.
+
+The baseline comes from a full run on `main`: dispatch the Corpus workflow with `tier=full` and `baseline=true`, download the `baseline` artifact and commit its `baseline.json`. Each shard writes its share, and the `baseline` job merges the shards into one file.
 
 ## What the runner checks
 
@@ -170,3 +181,5 @@ node verify/corpus.mjs --tier full --browser --filter '^css-'
 - With `--browser`, each optimized page is compared with the original in the scenarios defined in `verify/capture.mjs`: desktop light and dark, mobile, tablet, print, JavaScript off and animations on, plus an interaction sweep.
 - A document that takes more than 100 times the corpus median time per byte, plus a fixed startup allowance, is run again once and fails if it is still over.
 - The report lists size and time per document and level, compares each level with a naive minifier (comments and whitespace between tags removed) and with Brotli applied to the original, and totals the sizes by category and level. `report.md` and `report.json` are written to the output directory.
+- The output size of every document and level is compared with `corpus/baseline.json`; growth over 0.5% fails the run, and `--update-baseline` rewrites the baseline in its own commit.
+- Every document in `corpus/excluded.json` is listed with its reason. A document that fails to render, or is missing from the render, stops the run.
