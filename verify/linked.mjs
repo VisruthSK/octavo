@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:f
 import { join, resolve } from "node:path";
 import { brotliCompressSync, constants } from "node:zlib";
 import { inShard, readRendered, renderLinked, renderedPath } from "../corpus/upstream.mjs";
+import { formatHeartbeat, formatProgress } from "./progress.mjs";
 import { closeBrowser, verify } from "./verify.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -31,11 +32,26 @@ const octavo = (input, output) => {
 
 mkdirSync(outDirectory, { recursive: true });
 const rows = [];
-for (const entry of selected) {
+const inFlight = new Map();
+const heartbeat = setInterval(() => {
+  if (inFlight.size === 0) return;
+  const items = [...inFlight.values()].map((item) => ({
+    id: item.id,
+    level: item.level,
+    seconds: Math.round((Date.now() - item.startedAt) / 1000),
+  }));
+  console.log(formatHeartbeat(items, selected.length));
+}, 60_000);
+heartbeat.unref?.();
+
+for (const [index, entry] of selected.entries()) {
   const directory = join(outDirectory, entry.id);
   const row = { id: entry.id };
+  const docStarted = Date.now();
+  inFlight.set(entry.id, { id: entry.id, level, startedAt: docStarted });
   const linked = await renderLinked(entry, directory);
   if (!linked.page) {
+    inFlight.delete(entry.id);
     rows.push({ ...row, note: "the linked render failed" });
     continue;
   }
@@ -50,10 +66,14 @@ for (const entry of selected) {
     row.issues = issues;
   }
   rmSync(directory, { recursive: true, force: true });
+  inFlight.delete(entry.id);
   rows.push(row);
+  const elapsed = Math.round((Date.now() - docStarted) / 1000);
+  console.log(formatProgress(index + 1, selected.length, entry.id, level, elapsed));
   const ratio = row.linkedRoute.size ? (row.linkedRoute.size / row.embeddedRoute.size).toFixed(3) : "-";
   console.log(entry.id.padEnd(64), row.note ? `REFUSED ${row.note}` : `linked/embedded size ${ratio}${row.issues ? (row.issues.length ? `  FAIL ${row.issues[0].slice(0, 100)}` : "  browser ok") : ""}`);
 }
+clearInterval(heartbeat);
 if (browser) await closeBrowser();
 
 const worked = rows.filter((row) => row.linkedRoute && !row.note && row.embeddedRoute?.size);

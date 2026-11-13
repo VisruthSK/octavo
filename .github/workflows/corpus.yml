@@ -259,9 +259,21 @@ jobs:
         with:
           path: corpus/.cache
           key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
+      - uses: actions/cache/restore@v6
+        with:
+          path: corpus/.cache/verdicts
+          key: verdicts-${{ matrix.browser }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-${{ github.sha }}
+          restore-keys: |
+            verdicts-${{ matrix.browser }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}"
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
+      - uses: actions/cache/save@v6
+        if: always()
+        continue-on-error: true
+        with:
+          path: corpus/.cache/verdicts
+          key: verdicts-${{ matrix.browser }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-${{ github.sha }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:
