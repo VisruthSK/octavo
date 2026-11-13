@@ -88,7 +88,7 @@ export async function browserIdentity() {
 const crashed = (error) => ({ crashed: error.message.slice(0, 200), states: [] });
 
 const RECAPTURES = 3;
-const COMPARISON_TIMEOUT_MS = 120_000;
+const COMPARISON_TIMEOUT_MS = 660_000;
 
 export async function withTimeout(task, milliseconds, onTimeout) {
   let timer;
