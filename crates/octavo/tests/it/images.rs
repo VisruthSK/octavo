@@ -121,13 +121,11 @@ fn photographic_png() -> Vec<u8> {
 }
 
 fn lossy(format: ImageFormat, max_side: Option<NonZeroU32>) -> Options {
-    Options {
-        images: Some(ImageEncoding {
-            max_side,
-            ..ImageEncoding::new(format)
-        }),
-        ..Options::default()
-    }
+    let mut options = Options::default();
+    let mut encoding = ImageEncoding::new(format);
+    encoding.max_side = max_side;
+    options.images = Some(encoding);
+    options
 }
 
 #[test]

@@ -342,37 +342,34 @@ fn main() -> ExitCode {
     };
     let output = output.unwrap_or_else(|| input.with_extension("min.html"));
     let images = lossy_images.map(|format| {
-        let encoding = ImageEncoding::new(format);
-        ImageEncoding {
-            quality: image_quality
-                .and_then(Quality::new)
-                .unwrap_or(encoding.quality),
-            max_side: max_image_side.or(encoding.max_side),
-            ..encoding
-        }
+        let mut encoding = ImageEncoding::new(format);
+        encoding.quality = image_quality
+            .and_then(Quality::new)
+            .unwrap_or(encoding.quality);
+        encoding.max_side = max_image_side.or(encoding.max_side);
+        encoding
     });
-    let options = Options {
-        images,
-        subset_text_fonts: !no_subset_fonts,
-        strip_licenses,
-        keep_png,
-        image_memory: image_memory.map(|mib| mib.saturating_mul(1_048_576)),
-        cache_directory: if no_cache {
-            None
-        } else {
-            cache_dir.or_else(default_cache_dir)
-        },
-        compression: if maximum {
-            Compression::Maximum
-        } else if woff2_quality.is_some() || png_preset.is_some() || brotli_quality.is_some() {
-            Compression::Custom(Tuning {
-                woff2_quality: woff2_quality.unwrap_or(Tuning::BALANCED.woff2_quality),
-                png_preset,
-                brotli_quality,
-            })
-        } else {
-            Compression::Balanced
-        },
+    let mut options = Options::default();
+    options.images = images;
+    options.subset_text_fonts = !no_subset_fonts;
+    options.strip_licenses = strip_licenses;
+    options.keep_png = keep_png;
+    options.image_memory = image_memory.map(|mib| mib.saturating_mul(1_048_576));
+    options.cache_directory = if no_cache {
+        None
+    } else {
+        cache_dir.or_else(default_cache_dir)
+    };
+    options.compression = if maximum {
+        Compression::Maximum
+    } else if woff2_quality.is_some() || png_preset.is_some() || brotli_quality.is_some() {
+        let mut tuning = Tuning::BALANCED;
+        tuning.woff2_quality = woff2_quality.unwrap_or(Tuning::BALANCED.woff2_quality);
+        tuning.png_preset = png_preset;
+        tuning.brotli_quality = brotli_quality;
+        Compression::Custom(tuning)
+    } else {
+        Compression::Balanced
     };
     let result = if audit_only {
         audit(&input, level, options, &resource_path, !no_fetch)
