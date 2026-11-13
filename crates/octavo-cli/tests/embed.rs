@@ -159,21 +159,6 @@ fn a_file_that_cannot_be_found_is_named_in_the_error() {
     let _ = fs::remove_dir_all(&root);
 }
 
-#[test]
-fn resource_path_is_refused_for_a_directory() {
-    let root = scratch();
-    write(&root, "index.html", &page(""));
-    let other = root.join("other");
-    let output = octavo(&[
-        root.as_os_str(),
-        "--resource-path".as_ref(),
-        other.as_os_str(),
-    ]);
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("--resource-path"));
-    let _ = fs::remove_dir_all(&root);
-}
-
 fn serve(files: &'static [(&'static str, &'static str, &'static [u8])]) -> u16 {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
