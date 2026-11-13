@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { captureDeadline } from "../capture.mjs";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,4 +94,13 @@ test("webkit error comparison keeps the error kind and ignores the source snippe
   assert.equal(webkit.normalizeError("null is not an object (evaluating 'document.body.className=`built-3`')"), "null is not an object");
   assert.equal(chromium.normalizeError("TypeError: null is not an object"), "TypeError: null is not an object");
   assert.equal(firefox.normalizeError("TypeError: null is not an object"), "TypeError: null is not an object");
+});
+
+test("a timed out capture closes its own browser context", async () => {
+  let closed = false;
+  const deadline = captureDeadline({ close: async () => { closed = true; } }, 1);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(deadline.timedOut(), true);
+  await deadline.close();
+  assert.equal(closed, true);
 });

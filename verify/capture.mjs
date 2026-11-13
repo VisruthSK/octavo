@@ -383,8 +383,30 @@ export async function hasInteractions(browser, file) {
 }
 
 const PATIENCE = 4;
+const CAPTURE_TIMEOUT_MS = 100_000;
 
-export async function capture(browser, file, scenario, lossy, { interact = true, patient = false, root, linked = false } = {}) {
+export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS) {
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    void context.close().catch(() => {});
+  }, timeoutMs);
+  return {
+    timedOut: () => timedOut,
+    close: async () => {
+      clearTimeout(timer);
+      await context.close().catch(() => {});
+    },
+  };
+}
+
+export async function capture(
+  browser,
+  file,
+  scenario,
+  lossy,
+  { interact = true, patient = false, root, linked = false, timeoutMs = CAPTURE_TIMEOUT_MS } = {},
+) {
   const pace = patient ? PATIENCE : 1;
   const forms = rootForms(root);
   const scripted = scenario.javaScriptEnabled !== false;
@@ -396,6 +418,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
     javaScriptEnabled: scripted,
     ...engine.contextOptions,
   });
+  const deadline = captureDeadline(context, timeoutMs);
   try {
     await context.addInitScript(seedRandom);
     await context.addInitScript(trackTimers);
@@ -464,7 +487,10 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
       base,
       checks: { ...forced.checks, screenshots: { taken: recorded.filter((state) => state.screenshot).length, total: recorded.length } },
     }, forms);
+  } catch (error) {
+    if (deadline.timedOut()) throw new Error(`capture timed out after ${timeoutMs} ms`);
+    throw error;
   } finally {
-    await context.close();
+    await deadline.close();
   }
 }

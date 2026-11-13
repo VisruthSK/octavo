@@ -20,6 +20,10 @@ const flag = (name, fallback) => {
   return at < 0 ? fallback : (process.argv[at + 1] ?? fallback);
 };
 const tier = flag("tier", "smoke");
+const deadlineMinutes = Number(flag("deadline-minutes", "0"));
+if (!Number.isFinite(deadlineMinutes) || deadlineMinutes < 0) throw new RangeError("deadline-minutes must be a non-negative number");
+const deadlineAt = deadlineMinutes ? Date.now() + deadlineMinutes * 60_000 : Infinity;
+const deadlineReached = () => Date.now() >= deadlineAt;
 const revalidatePercent = Number(flag("revalidate", process.env.CI && tier === "full" ? "5" : "0"));
 const levels = flag("levels", tier === "full" ? "safe,scripts,packed" : "safe,packed").split(",");
 const filter = new RegExp(flag("filter", "."));
@@ -48,14 +52,14 @@ const run = (args) =>
     child.on("close", (code) => done({ code, stdout, stderr, ms: Number(process.hrtime.bigint() - started) / 1e6 }));
   });
 
-const pool = async (items, limit, work) => {
+const pool = async (items, limit, work, unstarted) => {
   const results = new Array(items.length);
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(limit, items.length) }, async () => {
       while (next < items.length) {
         const at = next++;
-        results[at] = await work(items[at]);
+        results[at] = deadlineReached() ? await unstarted(items[at]) : await work(items[at]);
       }
     }),
   );
@@ -107,6 +111,25 @@ rmSync(outDirectory, { recursive: true, force: true });
 mkdirSync(outDirectory, { recursive: true });
 
 const work = selected.flatMap((row) => levels.map((level) => ({ row, level })));
+const deadlineFailure = ({ row, level }) => {
+  const input = row.path;
+  const source = readFileSync(input, "utf8");
+  return {
+    id: row.id,
+    category: row.category,
+    level,
+    inBytes: statSync(input).size,
+    outBytes: null,
+    ms: 0,
+    outcome: "not run",
+    baselines: { naive: naive(source).length, brotliOriginal: brotli(source), brotliOptimized: null },
+    problems: [`not processed because the ${deadlineMinutes}-minute verification deadline was reached`],
+    excluded: null,
+    browser: false,
+    input,
+    output: join(outDirectory, `${row.id}.${level}.html`),
+  };
+};
 const results = await pool(work, jobs, async ({ row, level }) => {
   const input = row.path;
   const output = join(outDirectory, `${row.id}.${level}.html`);
@@ -134,7 +157,7 @@ const results = await pool(work, jobs, async ({ row, level }) => {
     input,
     output,
   };
-});
+}, deadlineFailure);
 
 const timing = { original: 0, optimized: 0, compare: 0, cached: 0 };
 const browserCache = { hits: 0, misses: 0 };
@@ -211,6 +234,9 @@ if (browser) {
         });
       }
     }
+  }, (entries) => {
+    cache.misses += entries.length;
+    for (const entry of entries) entry.problems.push(`browser comparison not started because the ${deadlineMinutes}-minute verification deadline was reached`);
   });
   await closeBrowser();
   browserName = identity;
@@ -219,11 +245,12 @@ if (browser) {
 }
 
 const measured = results.filter((entry) => !entry.excluded);
-const large = measured.filter((entry) => entry.inBytes >= RATE_FLOOR_BYTES);
+const timed = measured.filter((entry) => entry.outBytes !== null);
+const large = timed.filter((entry) => entry.inBytes >= RATE_FLOOR_BYTES);
 const medianRate = Math.max(median(large.map((entry) => entry.ms / entry.inBytes)), 1e-6);
-for (const entry of measured) {
+for (const entry of timed) {
   const allowed = STARTUP_ALLOWANCE_MS + SLOWDOWN_LIMIT * medianRate * entry.inBytes;
-  if (entry.ms > allowed) {
+  if (entry.ms > allowed && !deadlineReached()) {
     const retry = await run([entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores)]);
     entry.ms = Math.min(entry.ms, retry.ms);
   }
