@@ -53,6 +53,9 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
   await session.send("CSS.enable");
   const { root } = await session.send("DOM.getDocument", { depth: 0 });
   const { nodeIds } = await session.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector });
+  await page.evaluate((selector) => {
+    window[Symbol.for("octavo.interactive")] = document.querySelectorAll(selector);
+  }, selector);
   const states = [];
   const checks = { elements: Math.min(nodeIds.length, 40), hover: 0, focus: 0, focusVisible: 0, active: 0 };
   for (const [index, nodeId] of nodeIds.slice(0, 40).entries()) {
@@ -68,6 +71,9 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
     checks.active += 1;
     await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [] });
   }
+  await page.evaluate(() => {
+    delete window[Symbol.for("octavo.interactive")];
+  });
   await session.detach();
   return { states, checks };
 }
