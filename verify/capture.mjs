@@ -1,5 +1,6 @@
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { capabilities } from "./engines.mjs";
+import { engine } from "./engines/index.mjs";
 
 export const SCENARIOS = {
   "desktop-light": { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light", pixels: true },
@@ -125,8 +126,9 @@ function observe({ lossy, probe, motion, linked, prints = [] }) {
       if (name.startsWith("--")) continue;
       const position = name.startsWith("background-position");
       if (noImage && position) continue;
-      if (!legacyBox && name.startsWith("-webkit-box-")) continue;
-      const value = style.getPropertyValue(name);
+      if (!legacyBox && /^-[a-z]+-box-/.test(name)) continue;
+      const raw = style.getPropertyValue(name);
+      const value = linked ? raw.replace(/url\([^)]*\)/g, "url()") : raw;
       text += `${prefix}${name}:${position ? value.replace(/\b0px\b/g, "0%") : value};`;
     }
     return text;
@@ -203,137 +205,10 @@ function observe({ lossy, probe, motion, linked, prints = [] }) {
   };
 }
 
-const GUARD = () => {
-  const hold = (event) => event.stopImmediatePropagation();
-  const block = (event) => {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  };
-  for (const type of ["mousedown", "mouseup"]) document.addEventListener(type, hold, true);
-  document.addEventListener("click", block, true);
-  window.octavoGuard = { hold, block };
-};
-
-const UNGUARD = () => {
-  if (!window.octavoGuard) return;
-  for (const type of ["mousedown", "mouseup"]) document.removeEventListener(type, window.octavoGuard.hold, true);
-  document.removeEventListener("click", window.octavoGuard.block, true);
-  delete window.octavoGuard;
-};
-
-const STATES = ["hover", "focus", "active"];
-
-const emptyChecks = (elements) => ({ elements, hover: 0, focus: 0, focusVisible: 0, active: 0 });
-
-async function focusWithTab(page, index) {
-  for (let step = 0; step < 80; step++) {
-    await page.keyboard.press("Tab");
-    const at = await page.evaluate((probe) => {
-      const target = document.querySelectorAll(probe.selector)[probe.index];
-      const active = document.activeElement;
-      const key = active ? `${active.tagName}:${active.id}:${(active.textContent || "").slice(0, 16)}` : "";
-      const state = (window.octavoTab ??= { key: "", stuck: 0 });
-      state.stuck = state.key === key ? state.stuck + 1 : 0;
-      state.key = key;
-      if (!target || !active || active === document.body) return { reached: false, passed: false, stuck: state.stuck > 2 };
-      if (active === target) return { reached: true, passed: false, stuck: false };
-      const passed = Boolean(target.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING);
-      return { reached: false, passed, stuck: state.stuck > 2 };
-    }, { selector: INTERACTIVE, index });
-    if (at.reached) return true;
-    if (at.passed || at.stuck) return false;
-  }
-  return false;
-}
-
-async function pointerStates(page) {
-  const interactive = page.locator(INTERACTIVE);
-  const count = Math.min(await interactive.count(), 40);
-  const states = [];
-  const checks = emptyChecks(0);
-  const scroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
-  const restore = () => page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), scroll);
-  const probe = (index) => page.evaluate(observe, { probe: { selector: INTERACTIVE, index } });
-  await page.evaluate(GUARD);
-  try {
-    for (let index = 0; index < count; index++) {
-      const element = interactive.nth(index);
-      await element.scrollIntoViewIfNeeded().catch(() => {});
-      let box = await element.boundingBox().catch(() => null);
-      if (!box || !box.width || !box.height) {
-        for (const state of STATES) states.push([`:${state} on interactive #${index}`, "hidden"]);
-        continue;
-      }
-      checks.elements += 1;
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      let seen = await probe(index);
-      for (let attempt = 0; attempt < 3 && !seen.states.hover; attempt++) {
-        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-        await page.waitForTimeout(50);
-        seen = await probe(index);
-      }
-      states.push([`:hover on interactive #${index}`, seen.style]);
-      if (seen.states.hover) checks.hover += 1;
-      await page.evaluate(() => document.activeElement?.blur());
-      if (capabilities().focusVisible) {
-        await page.keyboard.press("Shift");
-        await element.focus({ timeout: 1000 }).catch(() => {});
-      } else {
-        await focusWithTab(page, index);
-      }
-      seen = await probe(index);
-      for (let attempt = 0; attempt < 3 && !seen.states.focus; attempt++) {
-        await element.focus({ timeout: 1000 }).catch(() => {});
-        await page.waitForTimeout(50);
-        seen = await probe(index);
-      }
-      states.push([`:focus on interactive #${index}`, seen.style]);
-      if (seen.states.focus) checks.focus += 1;
-      if (seen.states.focusVisible) checks.focusVisible += 1;
-      await page.evaluate(() => document.activeElement?.blur());
-      await restore();
-      await page.mouse.down();
-      seen = await probe(index);
-      states.push([`:active on interactive #${index}`, seen.style]);
-      if (seen.states.active) checks.active += 1;
-      await page.mouse.up();
-      await restore();
-    }
-  } finally {
-    await page.evaluate(UNGUARD);
-    await page.mouse.move(0, 0).catch(() => {});
-    await restore();
-  }
-  return { states, checks };
-}
-
-async function protocolStates(page) {
-  const session = await page.context().newCDPSession(page);
-  await session.send("DOM.enable");
-  await session.send("CSS.enable");
-  const { root } = await session.send("DOM.getDocument", { depth: 0 });
-  const { nodeIds } = await session.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector: INTERACTIVE });
-  const states = [];
-  const checks = emptyChecks(Math.min(nodeIds.length, 40));
-  for (const [index, nodeId] of nodeIds.slice(0, 40).entries()) {
-    for (const state of [["hover"], ["focus", "focus-visible"], ["active"]]) {
-      await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: state });
-      const seen = await page.evaluate(observe, { probe: { selector: INTERACTIVE, index } });
-      states.push([`:${state[0]} on interactive #${index}`, seen.style]);
-    }
-    checks.hover += 1;
-    checks.focus += 1;
-    checks.focusVisible += 1;
-    checks.active += 1;
-    await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [] });
-  }
-  await session.detach();
-  return { states, checks };
-}
-
-async function forcedStates(page) {
-  return capabilities().forcedStates === "protocol" ? protocolStates(page) : pointerStates(page);
-}
+const emptyChecks = (elements) => ({
+  states: [],
+  checks: { elements, hover: 0, focus: 0, focusVisible: 0, active: 0 },
+});
 
 const QUIET = 150;
 const LIMIT = 3000;
@@ -461,18 +336,39 @@ const HOVER = 3;
 const NAVIGATION = 4;
 const ALWAYS_OBSERVED = new Set([HOVER]);
 
-async function digestOf(page) {
-  return page.evaluate(async () => {
+async function digestOf(page, forms = [], linked = false) {
+  return page.evaluate(async ({ forms, linked }) => {
     const clone = document.documentElement.cloneNode(true);
     clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
-    for (const node of clone.querySelectorAll('[src^="data:"], [data-src^="data:"]')) {
+    for (const node of clone.querySelectorAll(linked ? "[src], [data-src], [srcset]" : '[src^="data:"], [data-src^="data:"]')) {
       node.removeAttribute("src");
       node.removeAttribute("data-src");
+      if (linked) node.removeAttribute("srcset");
     }
-    const text = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
+    const html = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
+    const text = forms.reduce((current, form) => current.split(form).join("{site}"), html);
     const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
     return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-  });
+  }, { forms, linked });
+}
+
+function rootForms(root) {
+  if (!root) return [];
+  const slashed = resolve(root).replaceAll("\\", "/");
+  const withoutDrive = slashed.replace(/^[A-Za-z]:/, "");
+  const url = pathToFileURL(resolve(root)).href;
+  const forms = new Set([url, decodeURI(url), `file://${slashed}`, slashed, withoutDrive, encodeURI(slashed), encodeURI(withoutDrive)]);
+  return [...forms].filter((form) => form.length > 3).sort((a, b) => b.length - a.length);
+}
+
+function scrubDeep(value, forms) {
+  if (!forms.length) return value;
+  if (typeof value === "string") return forms.reduce((text, form) => text.split(form).join("{site}"), value);
+  if (Array.isArray(value)) return value.map((item) => scrubDeep(item, forms));
+  if (value && typeof value === "object" && !ArrayBuffer.isView(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrubDeep(item, forms)]));
+  }
+  return value;
 }
 
 export async function hasInteractions(browser, file) {
@@ -488,8 +384,9 @@ export async function hasInteractions(browser, file) {
 
 const PATIENCE = 4;
 
-export async function capture(browser, file, scenario, lossy, { interact = true, patient = false, linked = false } = {}) {
+export async function capture(browser, file, scenario, lossy, { interact = true, patient = false, root, linked = false } = {}) {
   const pace = patient ? PATIENCE : 1;
+  const forms = rootForms(root);
   const scripted = scenario.javaScriptEnabled !== false;
   const context = await browser.newContext({
     viewport: scenario.viewport,
@@ -497,6 +394,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
     deviceScaleFactor: 1,
     reducedMotion: scenario.motion ? "no-preference" : "reduce",
     javaScriptEnabled: scripted,
+    ...engine.contextOptions,
   });
   try {
     await context.addInitScript(seedRandom);
@@ -505,8 +403,8 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
     const errors = [];
     const requests = [];
     const network = { pending: 0, count: 0, last: 0 };
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+    page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
+    page.on("console", (message) => message.type() === "error" && errors.push(engine.normalizeError(message.text())));
     page.on("request", (request) => {
       if (/^(data|blob|about):/.test(request.url())) return;
       network.pending += 1;
@@ -520,7 +418,8 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
     };
     page.on("requestfinished", finished);
     page.on("requestfailed", finished);
-    const wait = (options = {}) => settle(page, { quiet: (options.quiet ?? QUIET) * pace, limit: LIMIT * pace, network });
+    const wait = (options = {}) =>
+      engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: LIMIT * pace, network });
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
@@ -536,19 +435,19 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
       states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints })), screenshot, ...extra });
     };
     await wait();
-    const forced = scripted && !scenario.motion ? await forcedStates(page) : { states: [], checks: emptyChecks(0) };
+    const forced = scripted && !scenario.motion ? await engine.forcedStates(page, INTERACTIVE, observe) : emptyChecks(0);
     const accessibility = await settledAccessibilityTree(page);
     await wait();
     await record("load", { forced: forced.states, accessibility });
     const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
     if (interact && scripted && scenario.sweep) {
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
-      let previous = await digestOf(page);
+      let previous = await digestOf(page, forms, linked);
       states[0].digest = previous;
       for (const [index, interact] of interactions.entries()) {
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
         await wait({ quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : QUIET });
-        const digest = await digestOf(page);
+        const digest = await digestOf(page, forms, linked);
         if (digest === previous && !ALWAYS_OBSERVED.has(index)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });
           continue;
@@ -558,13 +457,13 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
       }
     }
     const recorded = states.filter((state) => !state.unchanged);
-    return {
+    return scrubDeep({
       states,
       errors,
       requests,
       base,
       checks: { ...forced.checks, screenshots: { taken: recorded.filter((state) => state.screenshot).length, total: recorded.length } },
-    };
+    }, forms);
   } finally {
     await context.close();
   }

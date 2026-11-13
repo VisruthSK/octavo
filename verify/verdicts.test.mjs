@@ -13,7 +13,7 @@ const key = (overrides = {}) =>
     optimized: "b".repeat(64),
     level: "safe",
     verifier: "c".repeat(64),
-    browser: "chromium 140.0.0.1",
+    browser: "Browser A 140.0.0.1",
     scenarios: "d".repeat(64),
     version: "octavo 1.2.3",
     ...overrides,
@@ -26,7 +26,7 @@ test("the key depends on the original, the optimized file, the level, the verifi
   assert.notEqual(base, key({ optimized: "e".repeat(64) }));
   assert.notEqual(base, key({ level: "packed" }));
   assert.notEqual(base, key({ verifier: "f".repeat(64) }));
-  assert.notEqual(base, key({ browser: "chromium 141.0.0.1" }));
+  assert.notEqual(base, key({ browser: "Browser A 141.0.0.1" }));
   assert.notEqual(base, key({ scenarios: "e".repeat(64) }));
   assert.notEqual(base, key({ version: "octavo 1.2.4" }));
 });

@@ -1,0 +1,96 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import * as chromium from "./chromium.mjs";
+import * as firefox from "./firefox.mjs";
+import * as webkit from "./webkit.mjs";
+import { checksOf, engineName, engineNames, engineNotice } from "./index.mjs";
+
+const engines = { chromium, firefox, webkit };
+const shape = {
+  name: "string",
+  label: "string",
+  tag: "string",
+  isolated: "boolean",
+  contextOptions: "object",
+  pixel: "object",
+  noise: "object",
+  launch: "function",
+  identity: "function",
+  settle: "function",
+  normalizeError: "function",
+  forcedStates: "function",
+  focus: "function",
+};
+
+test("every engine implements the whole interface with the right types and nothing else", () => {
+  for (const [name, module] of Object.entries(engines)) {
+    assert.deepEqual(Object.keys({ ...module }).sort(), Object.keys(shape).sort(), name);
+    for (const [key, type] of Object.entries(shape)) {
+      const value = module[key];
+      if (type === "object") assert.ok(value && typeof value === "object", `${name}.${key}`);
+      else assert.equal(typeof value, type, `${name}.${key}`);
+    }
+    assert.equal(module.name, name);
+  }
+});
+
+test("no verifier file outside the engines names a browser", () => {
+  const verify = join(dirname(fileURLToPath(import.meta.url)), "..");
+  for (const file of readdirSync(verify).filter((entry) => entry.endsWith(".mjs"))) {
+    assert.doesNotMatch(readFileSync(join(verify, file), "utf8"), /chromium|firefox|webkit/i, file);
+  }
+});
+
+test("chromium is the default engine", () => {
+  assert.equal(engineName({}), "chromium");
+  assert.equal(engineName({ OCTAVO_BROWSER: "" }), "chromium");
+});
+
+test("firefox and webkit are selected by name", () => {
+  assert.equal(engineName({ OCTAVO_BROWSER: "firefox" }), "firefox");
+  assert.equal(engineName({ OCTAVO_BROWSER: "webkit" }), "webkit");
+});
+
+test("an unknown engine is refused with its name", () => {
+  assert.throws(() => engineName({ OCTAVO_BROWSER: "safari" }), /not safari/);
+  assert.throws(() => engineName({ OCTAVO_BROWSER: "toString" }), /not toString/);
+});
+
+test("every engine is listed and described", () => {
+  assert.deepEqual(engineNames, ["chromium", "firefox", "webkit"]);
+  for (const module of Object.values(engines)) assert.ok(module.label, module.name);
+  assert.match(engineNotice(), /\(\w+\)/);
+});
+
+test("every engine has a pixel tolerance above its measured noise", () => {
+  for (const [name, module] of Object.entries(engines)) {
+    assert.ok(module.pixel.channel >= 1, name);
+    assert.ok(module.pixel.channel > module.noise.max, name);
+    assert.ok(module.pixel.faint >= module.pixel.channel, name);
+    assert.ok(module.pixel.budget >= 0, name);
+    assert.ok(module.noise.pixels > 0, name);
+    assert.equal(module.noise.differing, 0, name);
+  }
+});
+
+test("firefox gives every capture a browser of its own", () => {
+  assert.equal(firefox.isolated, true);
+  assert.equal(chromium.isolated, false);
+  assert.equal(webkit.isolated, false);
+});
+
+test("a check that could not be applied is reported", () => {
+  assert.deepEqual(checksOf({ elements: 4, hover: 4, focus: 4, focusVisible: 4, active: 4 }), []);
+  assert.deepEqual(checksOf({ elements: 4, hover: 3, focus: 4, focusVisible: 4, active: 4 }), ["hover on 1 of 4 elements"]);
+  assert.deepEqual(checksOf({ elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0, screenshots: { taken: 3, total: 4 } }), ["screenshot on 1 of 4 states"]);
+  assert.deepEqual(checksOf(null), []);
+});
+
+test("webkit error comparison keeps the error kind and ignores the source snippet", () => {
+  assert.equal(webkit.normalizeError("null is not an object (evaluating 'document.body.className=`built-3`')"), "null is not an object");
+  assert.equal(chromium.normalizeError("TypeError: null is not an object"), "TypeError: null is not an object");
+  assert.equal(firefox.normalizeError("TypeError: null is not an object"), "TypeError: null is not an object");
+});

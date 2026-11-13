@@ -1,10 +1,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { PNG } from "pngjs";
-import { launch } from "./browser.mjs";
+import { launch } from "./engines/index.mjs";
 import { capture, scenarios } from "./capture.mjs";
 import { differences } from "./compare.mjs";
-import { engineNotice } from "./engines.mjs";
+import { engineNotice } from "./engines/index.mjs";
 import { readManifest } from "../corpus/build.mjs";
 
 const root = resolve(import.meta.dirname, "..");

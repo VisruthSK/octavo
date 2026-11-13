@@ -1,11 +1,10 @@
 import { cpus } from "node:os";
-import { launch } from "./browser.mjs";
 import { capture, hasInteractions, scenariosFor } from "./capture.mjs";
 import { compare, signature } from "./compare.mjs";
-import { checksOf, engineNotice, isolatedBrowser } from "./engines.mjs";
+import { checksOf, engine, engineNotice, launch } from "./engines/index.mjs";
 
 const wanted = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
-const isolated = isolatedBrowser();
+const isolated = engine.isolated;
 export const pages = isolated ? Math.min(wanted, 4) : wanted;
 
 class Slots {
@@ -74,6 +73,15 @@ export async function closeBrowser() {
   shared = undefined;
   if (open) await (await open).close().catch(() => {});
   for (const entry of pool.splice(0)) await entry.open.close().catch(() => {});
+}
+
+export async function browserIdentity() {
+  const held = await acquire();
+  try {
+    return engine.identity(held.open);
+  } finally {
+    await held.release();
+  }
 }
 
 const crashed = (error) => ({ crashed: error.message.slice(0, 200), states: [] });

@@ -1,6 +1,6 @@
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
-import { pixelTolerance } from "./engines.mjs";
+import { engine } from "./engines/index.mjs";
 
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
@@ -66,7 +66,7 @@ export const missingFrom = (reference, candidate = "") => {
   return reference.split(";").filter((declaration) => !present.has(canonical(declaration)));
 };
 
-export function differences(left, right, tolerance = pixelTolerance()) {
+export function differences(left, right, tolerance = engine.pixel) {
   const rounding = tolerance.channel;
   const faintLevels = tolerance.faint;
   const budget = tolerance.budget;
@@ -128,7 +128,7 @@ function compareScreenshots(a, b, lossy, stats) {
   }
   const { count, rounded, where } = differences(left, right);
   if (stats) stats.roundedPixels += rounded;
-  return count ? [`screenshot: ${count} pixels differ by more than ${pixelTolerance().channel}${where}`] : [];
+  return count ? [`screenshot: ${count} pixels differ by more than ${engine.pixel.channel}${where}`] : [];
 }
 
 function compareState(a, b, lossy, stats) {

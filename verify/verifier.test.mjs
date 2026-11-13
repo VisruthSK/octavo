@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeBrowser, verify, withTimeout } from "./verify.mjs";
-import { checksOf, engineName, engineNames } from "./engines.mjs";
+import { checksOf, engine, engineNames } from "./engines/index.mjs";
 
 after(closeBrowser);
 
@@ -55,8 +55,8 @@ test("an identical copy passes every scenario", async () => {
   assert.deepEqual(await scenariosFailing(page(base), page(base)), []);
 });
 
-test(`the self-test runs in ${engineName()}`, () => {
-  assert.ok(engineNames.includes(engineName()));
+test(`the self-test runs in ${engine.label}`, () => {
+  assert.ok(engineNames.includes(engine.name));
 });
 
 test("every forced state is applied on every engine", async () => {

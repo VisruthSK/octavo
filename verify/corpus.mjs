@@ -8,8 +8,7 @@ import { documentPath, materialize } from "../corpus/build.mjs";
 import { readRendered, renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
 import { scenariosFor } from "./capture.mjs";
-import { engineName, engineNotice } from "./browser.mjs";
-import { checksOf } from "./engines.mjs";
+import { engine, engineNotice, checksOf } from "./engines/index.mjs";
 
 const SLOWDOWN_LIMIT = 100;
 const RATE_FLOOR_BYTES = 256 * 1024;
@@ -140,16 +139,16 @@ const results = await pool(work, jobs, async ({ row, level }) => {
 const timing = { original: 0, optimized: 0, compare: 0, cached: 0 };
 const browserCache = { hits: 0, misses: 0 };
 let browserName = "";
-const engineTag = engineName() === "chromium" ? "" : `[${engineName()}] `;
+const engineTag = engine.tag;
 const browserChecks = { scenarios: new Set(), totals: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0 }, degraded: [] };
 
 if (browser) {
   const { closeBrowser, pages, verifyLevels } = await import("./verify.mjs");
-  const { browserIdentity } = await import("./browser.mjs");
+  const { browserIdentity } = await import("./verify.mjs");
   const { readVerdict, revalidateVerdict, shouldRevalidate, verdictKey, verifierHash, writeVerdict } = await import("./verdicts.mjs");
   const verifier = verifierHash();
   console.log(`browser: ${engineNotice()}`);
-  const identity = `${engineName()} ${await browserIdentity()}`;
+  const identity = await browserIdentity();
   const documents = [...Map.groupBy(results.filter((entry) => entry.browser), (entry) => entry.input).values()];
   const cache = { hits: 0, misses: 0 };
   await pool(documents, pages, async (entries) => {
