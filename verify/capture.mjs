@@ -156,6 +156,14 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
 
   const clone = document.documentElement.cloneNode(true);
   clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
+  if (linked) {
+    for (const node of clone.querySelectorAll("[src], [data-src], [srcset]")) {
+      for (const attribute of ["src", "data-src", "srcset"]) node.removeAttribute(attribute);
+    }
+    for (const node of clone.querySelectorAll("[style*='url(']")) {
+      node.setAttribute("style", node.getAttribute("style").replace(/url([^)]*)/g, "url()"));
+    }
+  }
   const embedded = [...clone.querySelectorAll("img")].flatMap((img) =>
     ["src", "data-src"].flatMap((attribute) => {
       const value = img.getAttribute(attribute);
