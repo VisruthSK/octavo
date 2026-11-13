@@ -42,15 +42,9 @@ fn png_with_comment(comment: &str) -> Vec<u8> {
 }
 
 fn png_only(src: &str) -> String {
-    simplified(
-        src,
-        Options {
-            keep_png: true,
-            ..Options::default()
-        },
-    )
-    .pack(Mode::Safe)
-    .html
+    let mut options = Options::default();
+    options.keep_png = true;
+    simplified(src, options).pack(Mode::Safe).html
 }
 
 fn page(attr: &str, png: &[u8]) -> String {
@@ -121,13 +115,11 @@ fn photographic_png() -> Vec<u8> {
 }
 
 fn lossy(format: ImageFormat, max_side: Option<NonZeroU32>) -> Options {
-    Options {
-        images: Some(ImageEncoding {
-            max_side,
-            ..ImageEncoding::new(format)
-        }),
-        ..Options::default()
-    }
+    let mut options = Options::default();
+    let mut encoding = ImageEncoding::new(format);
+    encoding.max_side = max_side;
+    options.images = Some(encoding);
+    options
 }
 
 #[test]

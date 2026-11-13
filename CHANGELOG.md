@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file. The format is b
 ### Changed
 
 - Fonts are re-encoded to WOFF2 with [`ttf2woff2`](https://crates.io/crates/ttf2woff2), a pure Rust encoder, instead of `woofwoof`, which wraps Google's C++ WOFF2 library. `Tuning::woff2_quality` still controls the Brotli quality of the output. The `glyf`/`loca` transformation is applied only when the font's `glyf` table is at most 131070 bytes, so the rebuilt short `loca` table cannot overflow when `glyf` exceeds what the short format can address.
+- The public enums and `Options` are `#[non_exhaustive]`, so adding variants or fields later is not a breaking change.
 - Fonts: text fonts are subsetted by default, with [skera](https://crates.io/crates/skera) instead of HarfBuzz, so the build no longer compiles C++ for font subsetting. The same characters are kept, every layout feature survives, and the axes of a variable font are unchanged. Hinted static fonts, those with `fpgm`, `prep` and `cvt ` tables, are kept whole because Chromium on Linux draws them with slightly different stroke shading after subsetting; variable fonts and fonts without hinting programs are subsetted. A font kept whole for this reason is listed by `--audit` as a `font-kept-whole` row with a `0 B` saving. `--subset-fonts` is replaced by `--no-subset-fonts`.
 - The `--audit` output now applies the same options as a normal run, instead of only the defaults.
 

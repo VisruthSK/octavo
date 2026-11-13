@@ -61,6 +61,7 @@ use std::{
 /// # Ok::<(), octavo::Error>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Mode {
     /// Minify and prune. The output needs nothing the original did not.
     Safe,
@@ -114,6 +115,7 @@ impl FromStr for Mode {
 /// assert!(options.images.is_none() && options.subset_text_fonts && !options.strip_licenses);
 /// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Options {
     /// Re-encode embedded PNG and JPEG images when that makes them smaller.
     /// `None` keeps them as they are, recompressed losslessly.
@@ -192,10 +194,13 @@ impl Default for Options {
 ///
 /// assert_eq!(Compression::default(), Compression::Balanced);
 /// assert!(Compression::Maximum.tuning().woff2_quality > Compression::Balanced.tuning().woff2_quality);
-/// let custom = Compression::Custom(Tuning { png_preset: Some(0), ..Tuning::BALANCED });
+/// let mut tuning = Tuning::BALANCED;
+/// tuning.png_preset = Some(0);
+/// let custom = Compression::Custom(tuning);
 /// assert_eq!(custom.tuning().png_preset, Some(0));
 /// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Compression {
     /// A good balance: output a few percent larger than the smallest
     /// possible, in a fraction of the time.
@@ -224,6 +229,7 @@ impl Compression {
 /// The compressor settings behind a [`Compression`]. Values above a
 /// setting's range count as its maximum.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Tuning {
     /// The Brotli quality of re-encoded WOFF2 fonts, 0 to 11.
     pub woff2_quality: u8,
@@ -309,6 +315,7 @@ impl Quality {
 /// assert_eq!("webp".parse::<ImageFormat>(), Ok(ImageFormat::Webp));
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ImageFormat {
     /// AVIF: the smallest, and decoded by every current browser.
     Avif,
@@ -351,6 +358,7 @@ impl FromStr for ImageFormat {
 /// assert_eq!(encoding.max_side.map(|side| side.get()), Some(3840));
 /// ```
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct ImageEncoding {
     /// The format to encode to.
     pub format: ImageFormat,
@@ -394,6 +402,7 @@ impl ImageEncoding {
 /// assert_eq!(Transform::DeadLibrary.to_string(), "dead-library");
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum Transform {
     /// A Quarto runtime library the document never uses was removed.
     DeadLibrary,
@@ -435,6 +444,7 @@ impl fmt::Display for Transform {
 /// assert_eq!(Target::Library(Library::Clipboard).to_string(), "ClipboardJS");
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum Library {
     /// `tippy.js`, bundled with Quarto to power footnote, citation and
     /// cross-reference popups.
@@ -485,6 +495,7 @@ impl fmt::Display for Library {
 /// assert_eq!(Target::Resources(NonZeroUsize::new(3).expect("non-zero")).to_string(), "3 resources");
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Target {
     /// A bundled library, named by the global it defined.
     Library(Library),
@@ -587,6 +598,7 @@ pub struct Output {
 /// assert_eq!(optimize("just some words", Mode::Safe).unwrap_err(), Error::NotHtml);
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Error {
     /// The input has no `<html>` element.
     NotHtml,
