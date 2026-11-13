@@ -2,6 +2,7 @@ import { cpus } from "node:os";
 import { capture, hasInteractions, scenariosFor } from "./capture.mjs";
 import { compare, signature } from "./compare.mjs";
 import { checksOf, engine, engineNotice, launch, withIncompleteCheckIssues } from "./engines/index.mjs";
+import { worthRetrying } from "./transient.mjs";
 
 const wanted = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
 const isolated = engine.isolated;
@@ -67,7 +68,6 @@ async function acquire() {
   return { open, release: async () => { entry.busy = false; } };
 }
 
-const lost = (error) => /closed|disconnected|crashed/i.test(error.message);
 
 export async function closeBrowser() {
   const open = shared;
@@ -122,7 +122,7 @@ async function take(file, scenario, lossy, options) {
     try {
       return await capture(held.open, file, scenario, lossy, options);
     } catch (error) {
-      if (!lost(error) || attempt > 0) throw error;
+      if (!worthRetrying(error, attempt)) throw error;
     } finally {
       await held.release();
     }
