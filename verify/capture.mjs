@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
+import { canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 
 export const SCENARIOS = {
   "desktop-light": { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light", pixels: true },
@@ -138,6 +139,7 @@ function observe({ lossy, probe, motion, linked, prints = [] }) {
     if (!element) return { style: "", states: {} };
     return {
       style: describe(element, null),
+      writingMode: getComputedStyle(element).writingMode,
       states: {
         hover: element.matches(":hover"),
         focus: element.matches(":focus"),
@@ -199,6 +201,7 @@ function observe({ lossy, probe, motion, linked, prints = [] }) {
       return [x, y, width, height].map((n) => Math.round(n * 100) / 100);
     }),
     styles: elements.map((el) => pseudosOf(el).map((pseudo) => describe(el, pseudo)).join("")),
+    writingModes: elements.map((el) => getComputedStyle(el).writingMode),
     fonts: [...document.fonts].filter((font) => font.status === "loaded").map((font) => font.family).sort(),
     sheets: document.styleSheets.length,
     scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
@@ -465,7 +468,11 @@ export async function capture(
       phase = `image fingerprints ${label}`;
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       phase = `page observation ${label}`;
-      states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints })), screenshot, ...extra });
+      const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints });
+      observation.styles = observation.styles.map((style, index) => canonicalStyle(style, observation.writingModes[index]));
+      delete observation.writingModes;
+      observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
+      states.push({ label, ...observation, screenshot, ...extra });
     };
     await wait("before forced states");
     phase = "forcedStates element count";

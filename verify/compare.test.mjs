@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { differences, missingFrom } from "./compare.mjs";
+import { canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -79,6 +80,27 @@ test("a quoted keyword or a name that needs its quotes is not the unquoted one",
   assert.deepEqual(missingFrom('font-family:"Monospace", Menlo', "font-family:monospace, Menlo"), ['font-family:"Monospace", Menlo']);
   assert.deepEqual(missingFrom('font-family:"1Face"', "font-family:1Face"), ['font-family:"1Face"']);
   assert.deepEqual(missingFrom("font-family:'Fira Sans', serif", 'font-family:"Fira Sans", serif'), []);
+});
+
+test("font fallback order remains significant", () => {
+  assert.deepEqual(missingFrom("font-family:Arial, serif", "font-family:serif, Arial"), ["font-family:Arial, serif"]);
+});
+
+test("loaded font-family serialization normalizes only syntactic quotes and keeps case", () => {
+  assert.equal(canonicalFontFamily('"Source Sans Pro"'), "Source Sans Pro");
+  assert.equal(canonicalFontFamily('"serif"'), '"serif"');
+  assert.notEqual(canonicalFontFamily('"Arial"'), canonicalFontFamily("arial"));
+});
+
+test("horizontal inline size matches width only at the same resolved value", () => {
+  assert.deepEqual(missingFrom(canonicalStyle("inline-size:33.333332%"), canonicalStyle("width:33.333332%")), []);
+  assert.deepEqual(missingFrom(canonicalStyle("inline-size:33.333332%"), canonicalStyle("width:34%")), ["width:33.333332%"]);
+});
+
+test("vertical inline size resolves to height and remains distinct from width", () => {
+  const inline = canonicalStyle("inline-size:40px", "vertical-rl");
+  assert.deepEqual(missingFrom(inline, canonicalStyle("height:40px", "vertical-rl")), []);
+  assert.deepEqual(missingFrom(inline, canonicalStyle("width:40px", "vertical-rl")), ["height:40px"]);
 });
 
 test("quotes elsewhere in a declaration still matter", () => {

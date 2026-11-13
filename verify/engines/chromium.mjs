@@ -1,6 +1,7 @@
 import { chromium as launcher } from "playwright-core";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { canonicalStyle } from "../styles.mjs";
 
 export { focus } from "./pointer.mjs";
 
@@ -54,7 +55,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       onPhase(`forcedStates element ${index} ${state[0]}`);
       await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: state });
       const seen = await page.evaluate(observe, { probe: { selector, index } });
-      states.push([`:${state[0]} on interactive #${index}`, seen.style]);
+      states.push([`:${state[0]} on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
     }
     checks.hover += 1;
     checks.focus += 1;

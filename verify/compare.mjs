@@ -1,6 +1,7 @@
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import { engine } from "./engines/index.mjs";
+import { canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
@@ -44,21 +45,8 @@ function canonicalGradient(body) {
   return `linear-gradient(180deg,${upright.map(([color, position]) => `${color} ${trimmed(position)}%`).join(",")})`;
 }
 
-const KEYWORD_FAMILIES = new Set([
-  "serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-serif", "ui-sans-serif",
-  "ui-monospace", "ui-rounded", "math", "emoji", "fangsong", "inherit", "initial", "unset", "revert", "revert-layer", "default",
-]);
-const BARE_FAMILY = /^-?[A-Za-z_][\w-]*(?: -?[A-Za-z_][\w-]*)*$/;
-
-const familyName = (name) => {
-  const quoted = name.trim().match(/^(["'])(.*)\1$/);
-  if (!quoted) return name.trim();
-  const inner = quoted[2];
-  return BARE_FAMILY.test(inner) && !KEYWORD_FAMILIES.has(inner.toLowerCase()) ? inner : `"${inner}"`;
-};
-
 const unquotedFamilies = (declaration) =>
-  declaration.replace(/font-family:(.*)$/, (_, value) => `font-family:${value.split(",").map(familyName).join(", ")}`);
+  declaration.replace(/font-family:(.*)$/, (_, value) => `font-family:${value.split(",").map(canonicalFontFamily).join(", ")}`);
 
 const canonical = (declaration) => {
   const text = unquotedFamilies(declaration);
@@ -177,7 +165,7 @@ function compareState(a, b, lossy, stats) {
     const [first] = moved;
     issues.push(`${moved.length} elements laid out differently, e.g. ${a.labels[first]}: [${a.rects[first]}] vs [${b.rects[first]}]`);
   }
-  const differing = a.styles.flatMap((style, i) => (sameStyle(style, b.styles[i]) ? [] : [i]));
+  const differing = a.styles.flatMap((style, i) => (sameStyle(canonicalStyle(style, a.writingModes?.[i]), canonicalStyle(b.styles[i], b.writingModes?.[i])) ? [] : [i]));
   if (differing.length) {
     const [first] = differing;
     const lost = missingFrom(a.styles[first], b.styles[first]).slice(0, 3);

@@ -1,3 +1,5 @@
+import { canonicalStyle } from "../styles.mjs";
+
 const GUARD = () => {
   const hold = (event) => event.stopImmediatePropagation();
   const block = (event) => {
@@ -66,7 +68,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         await page.waitForTimeout(50);
         seen = await probe(index);
       }
-      states.push([`:hover on interactive #${index}`, seen.style]);
+      states.push([`:hover on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
       if (seen.states.hover) checks.hover += 1;
       await page.evaluate(() => document.activeElement?.blur());
       onPhase(`forcedStates element ${index} focus`);
@@ -77,7 +79,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         await page.waitForTimeout(50);
         seen = await probe(index);
       }
-      states.push([`:focus on interactive #${index}`, seen.style]);
+      states.push([`:focus on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
       if (seen.states.focus) checks.focus += 1;
       if (seen.states.focusVisible) checks.focusVisible += 1;
       await page.evaluate(() => document.activeElement?.blur());
@@ -85,7 +87,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       onPhase(`forcedStates element ${index} active`);
       await page.mouse.down();
       seen = await probe(index);
-      states.push([`:active on interactive #${index}`, seen.style]);
+      states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
       if (seen.states.active) checks.active += 1;
       await page.mouse.up();
       await restore();
