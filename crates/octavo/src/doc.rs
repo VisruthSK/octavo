@@ -19,28 +19,41 @@ impl Edit {
     }
 }
 
+pub(crate) struct SkippedEdit {
+    pub(crate) transform: Transform,
+    pub(crate) target: Target,
+    pub(crate) winner: Transform,
+}
+
 pub(crate) struct Edits {
     items: Vec<Edit>,
+    skipped: Vec<SkippedEdit>,
 }
 
 impl Edits {
     pub(crate) fn new(mut edits: Vec<Edit>) -> Edits {
         edits.sort_by_key(|edit| edit.span.start);
         let mut items: Vec<Edit> = Vec::with_capacity(edits.len());
+        let mut skipped: Vec<SkippedEdit> = Vec::new();
         for edit in edits {
-            if items
-                .last()
-                .is_some_and(|last| edit.span.start < last.span.end)
-            {
-                continue;
+            match items.last() {
+                Some(last) if edit.span.start < last.span.end => skipped.push(SkippedEdit {
+                    transform: edit.transform,
+                    target: edit.target,
+                    winner: last.transform,
+                }),
+                _ => items.push(edit),
             }
-            items.push(edit);
         }
-        Edits { items }
+        Edits { items, skipped }
     }
 
     pub(crate) fn kept(&self) -> &[Edit] {
         &self.items
+    }
+
+    pub(crate) fn skipped(&self) -> &[SkippedEdit] {
+        &self.skipped
     }
 
     pub(crate) fn apply(&self, src: &str) -> String {
@@ -175,18 +188,27 @@ mod tests {
     }
 
     #[test]
-    fn an_overlapping_edit_is_neither_applied_nor_kept() {
+    fn two_overlapping_edits_report_the_one_that_lost() {
+        let src = "0123456789";
         let edits = Edits::new(vec![
             edit(0..6, "a", Transform::MinifiedScript),
             edit(3..9, "b", Transform::PrunedStylesheet),
-            edit(9..12, "c", Transform::RecompressedPng),
         ]);
         let kept: Vec<Transform> = edits.kept().iter().map(|edit| edit.transform).collect();
-        assert_eq!(
-            kept,
-            [Transform::MinifiedScript, Transform::RecompressedPng]
-        );
-        assert_eq!(edits.apply("0123456789ab"), "a678c");
+        assert_eq!(kept, [Transform::MinifiedScript]);
+        assert_eq!(edits.skipped().len(), 1);
+        let skipped = &edits.skipped()[0];
+        assert_eq!(skipped.transform, Transform::PrunedStylesheet);
+        assert_eq!(skipped.target.to_string(), "x");
+        assert_eq!(skipped.winner, Transform::MinifiedScript);
+        let out = edits.apply(src);
+        assert_eq!(out, "a6789");
+        let delta: isize = edits
+            .kept()
+            .iter()
+            .map(|edit| edit.text.len() as isize - edit.span.len() as isize)
+            .sum();
+        assert_eq!(delta, out.len() as isize - src.len() as isize);
     }
 
     #[test]
@@ -196,6 +218,15 @@ mod tests {
             edit(2..4, "y", Transform::MinifiedScript),
         ]);
         assert_eq!(edits.kept().len(), 1);
+        assert_eq!(
+            edits
+                .skipped()
+                .iter()
+                .map(|edit| edit.transform)
+                .collect::<Vec<_>>(),
+            [Transform::MinifiedScript]
+        );
+        assert_eq!(edits.skipped()[0].winner, Transform::DeadLibrary);
         assert_eq!(edits.apply("abcdef"), "abxef");
     }
 }

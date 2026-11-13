@@ -537,6 +537,22 @@ pub struct Applied {
     pub after: usize,
 }
 
+/// One edit the engine rejected because another edit claimed the same bytes.
+///
+/// Skipped edits are not applied and their sizes do not contribute to the
+/// byte accounting: the `after` minus `before` deltas of the [`Applied`]
+/// entries sum to the difference between the output and input sizes.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct Skipped {
+    /// The transformation that lost.
+    pub transform: Transform,
+    /// What it would have changed.
+    pub target: Target,
+    /// The transformation whose edit kept the contested bytes.
+    pub winner: Transform,
+}
+
 /// Something worth knowing about a document that does not stop optimization.
 ///
 /// ```
@@ -585,6 +601,12 @@ pub struct Output {
     pub html: String,
     /// Every transformation applied, in order.
     pub applied: Vec<Applied>,
+    /// Every edit rejected because another edit claimed the same bytes, with
+    /// the transform that lost and the one that won.
+    ///
+    /// The `after` minus `before` deltas of `applied` sum to `html.len()`
+    /// minus the input length; skipped edits change nothing.
+    pub skipped: Vec<Skipped>,
     /// Things worth knowing about the input, such as resources it loads from
     /// the network and therefore cannot work without one.
     pub warnings: Vec<Warning>,
@@ -762,11 +784,21 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         before: bytes,
         after: bytes,
     }));
+    let skipped: Vec<Skipped> = edits
+        .skipped()
+        .iter()
+        .map(|edit| Skipped {
+            transform: edit.transform,
+            target: edit.target.clone(),
+            winner: edit.winner,
+        })
+        .collect();
     let html = edits.apply(src);
     Ok(Simplified {
         scanned: html::Scanned::new(html),
         compression: options.compression,
         applied,
+        skipped,
         warnings: links
             .remote()
             .cloned()
@@ -793,6 +825,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
 pub struct Simplified {
     scanned: html::Scanned,
     applied: Vec<Applied>,
+    skipped: Vec<Skipped>,
     warnings: Vec<Warning>,
     compression: Compression,
 }
@@ -813,6 +846,21 @@ impl Simplified {
         &self.warnings
     }
 
+    /// The edits that were rejected because another edit claimed the same
+    /// bytes. Each names the transform that lost and the one that won.
+    ///
+    /// ```
+    /// use octavo::{simplify, Options};
+    ///
+    /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
+    /// assert!(simplified.skipped().is_empty());
+    /// # Ok::<(), octavo::Error>(())
+    /// ```
+    #[must_use]
+    pub fn skipped(&self) -> &[Skipped] {
+        &self.skipped
+    }
+
     /// Produces the final document for `mode`, keeping the unpacked document
     /// when packing would not make it smaller.
     ///
@@ -829,6 +877,7 @@ impl Simplified {
         let unpacked = || Output {
             html: self.scanned.html().to_string(),
             applied: self.applied.clone(),
+            skipped: self.skipped.clone(),
             warnings: self.warnings.clone(),
         };
         if mode == Mode::Safe {
@@ -849,6 +898,7 @@ impl Simplified {
         Output {
             html: packed.html,
             applied,
+            skipped: self.skipped.clone(),
             warnings: self.warnings.clone(),
         }
     }
