@@ -171,7 +171,8 @@ function compareState(a, b, lossy, stats) {
   if (differing.length) {
     const [first] = differing;
     const lost = missingFrom(a.styles[first], b.styles[first]).slice(0, 3);
-    issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first]}: ${lost.join(" | ")}`);
+    const gained = missingFrom(b.styles[first], a.styles[first]).slice(0, 3);
+    issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first]}: lost ${JSON.stringify(lost)} gained ${JSON.stringify(gained)}`);
   }
   if (a.screenshot && b.screenshot) issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy, stats));
   return issues;
