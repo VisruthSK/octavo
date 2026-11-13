@@ -313,16 +313,13 @@
     "sha256": "f559bd6e83355ee5955c1c94e011571213825572f9a47f0a4f82869280a0ebac"
   },
   {
-    "id": "assets-opaque-png-becomes-lossless-webp",
+    "id": "assets-opaque-png-is-recompressed-as-png",
     "category": "images",
     "tier": "smoke",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/webp;base64,"
-      ],
-      "removes": [
         "data:image/png;base64,"
       ]
     },
