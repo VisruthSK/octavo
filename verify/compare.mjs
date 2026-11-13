@@ -117,7 +117,7 @@ export function differences(left, right, tolerance = engine.pixel) {
   return { count, rounded, different, max, box: [minX, minY, maxX, maxY], anyBox: [anyMinX, anyMinY, anyMaxX, anyMaxY], where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
 }
 
-function compareScreenshots(a, b, lossy, stats) {
+function compareImageBytes(a, b, lossy, stats) {
   if (a.equals(b)) return [];
   const left = PNG.sync.read(a);
   const right = PNG.sync.read(b);
@@ -131,6 +131,36 @@ function compareScreenshots(a, b, lossy, stats) {
   const { count, rounded, where } = differences(left, right);
   if (stats) stats.roundedPixels += rounded;
   return count ? [`screenshot: ${count} pixels differ by more than ${engine.pixel.channel}${where}`] : [];
+}
+
+const screenshotLimit = (screenshot) => screenshot?.kind === "limit";
+const limitDescription = (screenshot) => `${screenshot.width}x${screenshot.height} at ${screenshot.limit} pixels`;
+
+function compareScreenshots(a, b, lossy, stats) {
+  if (screenshotLimit(a) || screenshotLimit(b)) {
+    if (!screenshotLimit(a) || !screenshotLimit(b)) {
+      const limited = screenshotLimit(a) ? "original" : "optimized";
+      const screenshot = screenshotLimit(a) ? a : b;
+      return [`page too large for screenshots limit on ${limited}: ${limitDescription(screenshot)}`];
+    }
+    return a.width === b.width && a.height === b.height && a.limit === b.limit
+      ? []
+      : [`page too large for screenshots limit differs: original ${limitDescription(a)}, optimized ${limitDescription(b)}`];
+  }
+  if (a.kind !== "tiles" && b.kind !== "tiles") return compareImageBytes(a, b, lossy, stats);
+  if (a.kind !== "tiles" || b.kind !== "tiles") return ["screenshot tile coverage differs"];
+  if (a.width !== b.width || a.height !== b.height) return [`screenshot size ${a.width}x${a.height} vs ${b.width}x${b.height}`];
+  if (a.tiles.length !== b.tiles.length) return [`screenshot tile count ${a.tiles.length} vs ${b.tiles.length}`];
+  const issues = [];
+  for (const [index, left] of a.tiles.entries()) {
+    const right = b.tiles[index];
+    if (left.x !== right.x || left.y !== right.y || left.width !== right.width || left.height !== right.height) {
+      issues.push(`screenshot tile ${index} region differs: ${left.x},${left.y} ${left.width}x${left.height} vs ${right.x},${right.y} ${right.width}x${right.height}`);
+      continue;
+    }
+    issues.push(...compareImageBytes(left.png, right.png, lossy, stats).map((issue) => `tile at ${left.x},${left.y}: ${issue}`));
+  }
+  return issues;
 }
 
 function compareState(a, b, lossy, stats) {

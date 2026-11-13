@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { PNG } from "pngjs";
 import { compare, differences, missingFrom } from "./compare.mjs";
 import { canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 
@@ -138,6 +139,67 @@ test("a missing screenshot is an issue when either or both captures lack one", (
     );
     assert.ok(issues.some((issue) => issue.includes("screenshot missing")));
   }
+});
+
+test("matching screenshot limits pass and one-sided or different limits fail", () => {
+  const state = (screenshot) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [0, 0],
+    labels: [],
+    rects: [],
+    styles: [],
+    screenshot,
+  });
+  const compareScreenshots = (before, after) => compare(
+    { states: [state(before)], errors: [], requests: [] },
+    { states: [state(after)], errors: [], requests: [] },
+    false,
+  );
+  const limited = (height, limit = 20_000_000) => ({ kind: "limit", width: 1280, height, limit });
+  assert.deepEqual(compareScreenshots(limited(200_000), limited(200_000)), []);
+  assert.ok(compareScreenshots(limited(200_000), Buffer.from("not a screenshot"))[0].includes("page too large for screenshots limit"));
+  assert.ok(compareScreenshots(limited(200_000), limited(210_000))[0].includes("page too large for screenshots limit differs"));
+});
+
+test("large screenshots compare every tile", () => {
+  const state = (screenshot) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [0, 0],
+    labels: [],
+    rects: [],
+    styles: [],
+    screenshot,
+  });
+  const pixel = (color) => {
+    const image = new PNG({ width: 1, height: 1 });
+    image.data = Buffer.from([color, 0, 0, 255]);
+    return PNG.sync.write(image);
+  };
+  const tiles = (color) => ({
+    kind: "tiles",
+    width: 1,
+    height: 1,
+    tiles: [{ x: 0, y: 0, width: 1, height: 1, png: pixel(color) }],
+  });
+  const check = (before, after) => compare(
+    { states: [state(before)], errors: [], requests: [] },
+    { states: [state(after)], errors: [], requests: [] },
+    false,
+  );
+  assert.deepEqual(check(tiles(0), tiles(0)), []);
+  assert.ok(check(tiles(0), tiles(200)).some((issue) => issue.includes("tile at 0,0: screenshot")));
 });
 
 test("an unreachable marker differing from a reachable state fails comparison", () => {

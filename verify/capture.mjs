@@ -391,7 +391,10 @@ export async function hasInteractions(browser, file) {
 }
 
 const PATIENCE = 4;
-const CAPTURE_TIMEOUT_MS = 100_000;
+const CAPTURE_TIMEOUT_MS = 110_000;
+const SCREENSHOT_TIMEOUT_MS = 5_000;
+const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
+const MAX_SCREENSHOT_PIXELS = 20_000_000;
 
 export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture") {
   let timedOut = false;
@@ -407,6 +410,48 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
       await context.close().catch(() => {});
     },
   };
+}
+
+async function captureScreenshot(page, viewport) {
+  const pageSize = await page.evaluate(() => ({
+    width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
+    height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
+  }));
+  const width = Math.max(viewport.width, pageSize.width);
+  const height = Math.max(viewport.height, pageSize.height);
+  try {
+    return await page.screenshot({ fullPage: true, animations: "disabled", timeout: SCREENSHOT_TIMEOUT_MS });
+  } catch {}
+  if (width * height > MAX_SCREENSHOT_PIXELS) {
+    return { kind: "limit", width, height, limit: MAX_SCREENSHOT_PIXELS };
+  }
+  const tileWidth = Math.min(viewport.width, MAX_SCREENSHOT_TILE_HEIGHT);
+  const tileHeight = Math.min(viewport.height, MAX_SCREENSHOT_TILE_HEIGHT);
+  const positions = (size, step) => Array.from({ length: Math.ceil(size / step) }, (_, index) => index * step);
+  const originalScroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
+  const tiles = [];
+  try {
+    for (const y of positions(height, tileHeight)) {
+      for (const x of positions(width, tileWidth)) {
+        await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), [x, y]);
+        const [left, top] = await page.evaluate(() => [window.scrollX, window.scrollY]);
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const clipX = x - left;
+        const clipY = y - top;
+        const clipWidth = Math.min(tileWidth, width - x);
+        const clipHeight = Math.min(tileHeight, height - y);
+        const png = await page.screenshot({
+          clip: { x: clipX, y: clipY, width: clipWidth, height: clipHeight },
+          animations: "disabled",
+          timeout: SCREENSHOT_TIMEOUT_MS,
+        });
+        tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
+      }
+    }
+  } finally {
+    await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), originalScroll);
+  }
+  return { kind: "tiles", width, height, tiles };
 }
 
 export async function capture(
@@ -472,7 +517,7 @@ export async function capture(
     const record = async (label, extra = {}) => {
       phase = `screenshot ${label}`;
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
-      const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" }).catch(() => null);
+      const screenshot = await captureScreenshot(page, scenario.viewport).catch(() => null);
       phase = `image fingerprints ${label}`;
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       phase = `page observation ${label}`;
@@ -524,7 +569,16 @@ export async function capture(
       errors,
       requests,
       base,
-      checks: { ...forced.checks, screenshots: { taken: recorded.filter((state) => state.screenshot).length, total: recorded.length } },
+      checks: {
+        ...forced.checks,
+        screenshots: {
+          taken: recorded.filter((state) => state.screenshot).length,
+          total: recorded.length,
+          limits: recorded.flatMap(({ label, screenshot }) =>
+            screenshot?.kind === "limit" ? [{ label, width: screenshot.width, height: screenshot.height, limit: screenshot.limit }] : [],
+          ),
+        },
+      },
     }, forms);
   } catch (error) {
     if (deadline.timedOut()) throw new Error(`capture timed out during ${deadline.phase()} after ${timeoutMs} ms`);

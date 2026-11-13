@@ -171,6 +171,7 @@ const browserChecks = {
     optimized: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0 },
   },
   unreachableDetails: [],
+  screenshotLimits: [],
   degraded: [],
 };
 
@@ -220,6 +221,9 @@ if (browser) {
         for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) browserChecks.totals[state] += checks[state] ?? 0;
         for (const [side, captureChecks] of [["original", checks], ["optimized", optimizedChecks]]) {
           if (!captureChecks) continue;
+          for (const limit of captureChecks.screenshots?.limits ?? []) {
+            browserChecks.screenshotLimits.push({ id: entry.id, scenario, side, ...limit });
+          }
           for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) {
             browserChecks.unreachable[side][state] += captureChecks.unreachable?.[state] ?? 0;
           }
@@ -341,7 +345,12 @@ for (const entry of excludedRows) lines.push(`- ${entry.id}: ${entry.excluded}`)
 lines.push(``, `## Problems`, failures.length ? "" : "None.");
 for (const entry of failures) lines.push(`- ${entry.id} (${entry.level}): ${entry.problems.join("; ")}`);
 if (browser) {
-  const limits = engine.placeholderStyle ? [] : [`${engine.label}: computed style for ::placeholder is unavailable; screenshot pixel comparison remains active.`];
+  const limits = [
+    ...(engine.placeholderStyle ? [] : [`${engine.label}: computed style for ::placeholder is unavailable; screenshot pixel comparison remains active.`]),
+    ...browserChecks.screenshotLimits.map((entry) =>
+      `${entry.id} (${entry.scenario}, ${entry.side}, ${entry.label}): page too large for screenshots limit ${entry.limit} pixels at ${entry.height}px tall (${entry.width}px wide).`,
+    ),
+  ];
   lines.push(``, `## Limits`, limits.length ? "" : "None.", ...limits.map((limit) => `- ${limit}`));
 }
 const cachedRows = results.filter((entry) => entry.cached);
