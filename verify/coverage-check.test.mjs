@@ -17,19 +17,19 @@ const layout = ({ corpus, engines }) => {
 };
 
 test("every browser covering every document is accepted even with a different shard count", () => {
-  const { reports, engines } = layout({ corpus: [37, 37], engines: { firefox: [19, 18, 19, 18], webkit: [19, 18, 19, 18] } });
+  const { reports, engines } = layout({ corpus: [37, 37], engines: { alpha: [19, 18, 19, 18], bravo: [19, 18, 19, 18] } });
   assert.deepEqual(coverage(reports, engines).problems, []);
 });
 
 test("half the documents in a browser is reported", () => {
-  const { reports, engines } = layout({ corpus: [37, 37], engines: { firefox: [19, 18], webkit: [19, 18, 19, 18] } });
+  const { reports, engines } = layout({ corpus: [37, 37], engines: { alpha: [19, 18], bravo: [19, 18, 19, 18] } });
   const { problems } = coverage(reports, engines);
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /firefox verified 37 documents but the corpus has 74/);
+  assert.match(problems[0], /alpha verified 37 documents but the corpus has 74/);
 });
 
 test("a shard report without a document count is reported", () => {
-  const { reports, engines } = layout({ corpus: [10], engines: { firefox: [5, null] } });
+  const { reports, engines } = layout({ corpus: [10], engines: { alpha: [5, null] } });
   assert.ok(coverage(reports, engines).problems.some((problem) => problem.includes("have no document count")));
 });
 
