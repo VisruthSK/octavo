@@ -42,8 +42,13 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
     for (let index = 0; index < count; index++) {
       onPhase(`forcedStates element ${index} pointer hover`);
       const element = interactive.nth(index);
+      onPhase(`forcedStates element ${index} visibility`);
+      if (!(await element.isVisible().catch(() => false))) {
+        for (const state of STATES) states.push([`:${state} on interactive #${index}`, "hidden"]);
+        continue;
+      }
       onPhase(`forcedStates element ${index} scrollIntoView`);
-      await element.scrollIntoViewIfNeeded().catch(() => {});
+      await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
       onPhase(`forcedStates element ${index} boundingBox`);
       let box = await element.boundingBox().catch(() => null);
       if (!box || !box.width || !box.height) {
