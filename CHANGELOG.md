@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-13
+
 ### Changed
 
 - Fonts are re-encoded to WOFF2 with [`ttf2woff2`](https://crates.io/crates/ttf2woff2), a pure Rust encoder, instead of `woofwoof`, which wraps Google's C++ WOFF2 library. `Tuning::woff2_quality` still controls the Brotli quality of the output. The `glyf`/`loca` transformation is applied only when the font's `glyf` table is at most 131070 bytes, so the rebuilt short `loca` table cannot overflow when `glyf` exceeds what the short format can address.
