@@ -47,20 +47,20 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       }
       onPhase(`forcedStates element ${index} scrollIntoView`);
       await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+      checks.elements += 1;
       onPhase(`forcedStates element ${index} boundingBox`);
       let box = await element.boundingBox().catch(() => null);
       if (!box || !box.width || !box.height) {
-        for (const state of STATES) states.push([`:${state} on interactive #${index}`, "hidden"]);
+        for (const state of STATES) states.push([`:${state} on interactive #${index}`, "unavailable"]);
         continue;
       }
-      checks.elements += 1;
-      onPhase(`forcedStates element ${index} mouse move`);
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      onPhase(`forcedStates element ${index} locator hover`);
+      await element.hover({ timeout: 1000 }).catch(() => {});
       onPhase(`forcedStates element ${index} hover probe`);
       let seen = await probe(index);
       for (let attempt = 0; attempt < 3 && !seen.states.hover; attempt++) {
         onPhase(`forcedStates element ${index} hover retry ${attempt}`);
-        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await element.hover({ timeout: 1000 }).catch(() => {});
         await page.waitForTimeout(50);
         seen = await probe(index);
       }
@@ -79,7 +79,8 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       if (seen.states.focus) checks.focus += 1;
       if (seen.states.focusVisible) checks.focusVisible += 1;
       await page.evaluate(() => document.activeElement?.blur());
-      await restore();
+      onPhase(`forcedStates element ${index} active target`);
+      await element.hover({ timeout: 1000 }).catch(() => {});
       onPhase(`forcedStates element ${index} active`);
       await page.mouse.down();
       seen = await probe(index);

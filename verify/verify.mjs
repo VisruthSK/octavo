@@ -1,7 +1,7 @@
 import { cpus } from "node:os";
 import { capture, hasInteractions, scenariosFor } from "./capture.mjs";
 import { compare, signature } from "./compare.mjs";
-import { checksOf, engine, engineNotice, launch } from "./engines/index.mjs";
+import { checksOf, engine, engineNotice, incompleteChecks, launch } from "./engines/index.mjs";
 
 const wanted = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
 const isolated = engine.isolated;
@@ -38,9 +38,10 @@ class Slots {
 
 const slots = new Slots();
 let shared;
+const launchOptions = { args: ["--allow-file-access-from-files", "--disable-dev-shm-usage"] };
 const browser = () => {
   if (!shared) {
-    const launching = launch({ args: ["--allow-file-access-from-files", "--disable-dev-shm-usage"] }).then((open) => {
+    const launching = launch(launchOptions).then((open) => {
       open.on("disconnected", () => {
         if (shared === launching) shared = undefined;
       });
@@ -60,7 +61,7 @@ async function acquire() {
     idle.busy = true;
     return { open: idle.open, release: async () => { idle.busy = false; } };
   }
-  const open = await launch();
+  const open = await launch(launchOptions);
   const entry = { open, busy: true };
   pool.push(entry);
   return { open, release: async () => { entry.busy = false; } };
@@ -78,7 +79,7 @@ export async function closeBrowser() {
 export async function browserIdentity() {
   const held = await acquire();
   try {
-    return engine.identity(held.open);
+    return engine.identity(held.open, launchOptions);
   } finally {
     await held.release();
   }
@@ -131,7 +132,9 @@ async function take(file, scenario, lossy, options) {
 async function confirmed(original, file, scenario, before, after, lossy, interact, sweep, isDeadlineReached) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
-  if (!issues.length || issues.some((issue) => issue.includes("capture timed out"))) return { issues, rounded: stats.roundedPixels };
+  if (!issues.length || issues.some((issue) => issue.includes("capture timed out") || issue.includes("screenshot missing"))) {
+    return { issues, rounded: stats.roundedPixels };
+  }
   const kept = await slots.using(async () => {
     const pairs = [{ before, after }];
     for (let round = 0; round < RECAPTURES; round++) {
@@ -262,7 +265,8 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
           deadlineReached,
         );
         timing.compare += elapsed(startedCompare);
-        reports[plans.indexOf(plan)].push({ scenario: scenario.name, issues, rounded, checks: before.checks });
+        const incomplete = [...incompleteChecks(before.checks), ...incompleteChecks(after.checks)];
+        reports[plans.indexOf(plan)].push({ scenario: scenario.name, issues: [...issues, ...incomplete], rounded, checks: before.checks });
         if (issues.some((issue) => issue.includes("capture timed out") || issue.includes("verification deadline reached"))) {
           failRemainder(scenarioAt, issues.find((issue) => issue.includes("capture timed out") || issue.includes("verification deadline reached")));
           stopped = true;

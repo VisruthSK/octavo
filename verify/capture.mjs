@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
-import { canonicalFontFamily, canonicalStyle } from "./styles.mjs";
+import { canonicalFontFamily } from "./styles.mjs";
 
 export const SCENARIOS = {
   "desktop-light": { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light", pixels: true },
@@ -125,7 +125,7 @@ function observe({ lossy, probe, motion, linked, prints = [] }) {
     let text = "";
     for (const name of style) {
       if (name.startsWith("--")) continue;
-      if (["width", "height", "inline-size", "block-size"].includes(name)) continue;
+      if (["width", "height"].includes(name)) continue;
       const position = name.startsWith("background-position");
       if (noImage && position) continue;
       if (!legacyBox && /^-[a-z]+-box-/.test(name)) continue;
@@ -477,8 +477,6 @@ export async function capture(
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       phase = `page observation ${label}`;
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints });
-      observation.styles = observation.styles.map((style, index) => canonicalStyle(style, observation.writingModes[index]));
-      delete observation.writingModes;
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...extra });
     };

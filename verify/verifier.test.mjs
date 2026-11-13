@@ -67,6 +67,18 @@ test("every forced state is applied on every engine", async () => {
   }
 });
 
+test("a visible control whose state cannot be applied fails the scenario", async () => {
+  const disabled = page("button:active{color:red}", '<button disabled>Unavailable</button>');
+  const report = await verify(write("disabled-original", disabled), write("disabled-optimized", disabled), { only: ["desktop-light"] });
+  assert.ok(report[0].issues.some((issue) => issue.includes("check incomplete:")));
+});
+
+test("active state is checked on a target below the initial viewport", async () => {
+  const scrolled = page("button:active{color:red}", '<div style="height:1400px"></div><button>Press</button>');
+  const report = await verify(write("scrolled-original", scrolled), write("scrolled-optimized", scrolled), { only: ["desktop-light"] });
+  assert.equal(report[0].checks.active, report[0].checks.elements);
+});
+
 const breakages = [
   ["a dropped keyframes rule", (css) => css.replace("@keyframes slide{from{margin-left:0}to{margin-left:100px}}", ""), "motion"],
   ["a changed animation duration", (css) => css.replace("2s infinite", "3s infinite"), "motion"],

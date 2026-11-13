@@ -92,20 +92,52 @@ test("loaded font-family serialization normalizes only syntactic quotes and keep
   assert.notEqual(canonicalFontFamily('"Arial"'), canonicalFontFamily("arial"));
 });
 
-test("horizontal inline size matches width only at the same resolved value", () => {
-  assert.deepEqual(missingFrom(canonicalStyle("inline-size:33.333332%"), canonicalStyle("width:33.333332%")), []);
-  assert.deepEqual(missingFrom(canonicalStyle("inline-size:33.333332%"), canonicalStyle("width:34%")), ["width:33.333332%"]);
-  assert.deepEqual(missingFrom("width:33.333332%", canonicalStyle(undefined)), ["width:33.333332%"]);
+test("logical sizes are removed only when an equal physical size is present", () => {
+  assert.deepEqual(canonicalStyle("width:33.333332%;inline-size:33.333332%"), "width:33.333332%");
   assert.deepEqual(
-    missingFrom(canonicalStyle("width:33.333332%;inline-size:33.333328%"), canonicalStyle("width:33.333332%")),
+    missingFrom(canonicalStyle("width:33.333332%;inline-size:34%"), "width:33.333332%"),
+    ["inline-size:34%"],
+  );
+  assert.deepEqual(missingFrom(canonicalStyle("inline-size:33.333332%"), "width:33.333332%"), ["inline-size:33.333332%"]);
+});
+
+test("vertical logical sizes retain their property when a physical size is missing or differs", () => {
+  const inline = canonicalStyle("inline-size:40px", "vertical-rl");
+  assert.equal(inline, "inline-size:40px");
+  assert.deepEqual(missingFrom(inline, canonicalStyle("height:40px", "vertical-rl")), ["inline-size:40px"]);
+  assert.deepEqual(
+    missingFrom(canonicalStyle("height:40px;inline-size:41px", "vertical-rl"), "height:40px"),
+    ["inline-size:41px"],
+  );
+  assert.deepEqual(
+    missingFrom(canonicalStyle("height:40px;inline-size:40px", "vertical-rl"), "height:40px"),
     [],
   );
 });
 
-test("vertical inline size resolves to height and remains distinct from width", () => {
-  const inline = canonicalStyle("inline-size:40px", "vertical-rl");
-  assert.deepEqual(missingFrom(inline, canonicalStyle("height:40px", "vertical-rl")), []);
-  assert.deepEqual(missingFrom(inline, canonicalStyle("width:40px", "vertical-rl")), ["height:40px"]);
+test("a missing screenshot is an issue when either or both captures lack one", () => {
+  const state = (screenshot) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [0, 0],
+    labels: [],
+    rects: [],
+    styles: [],
+    screenshot,
+  });
+  for (const [before, after] of [[null, null], [Buffer.from("png"), null], [null, Buffer.from("png")]]) {
+    const issues = compare(
+      { states: [state(before)], errors: [], requests: [] },
+      { states: [state(after)], errors: [], requests: [] },
+      false,
+    );
+    assert.ok(issues.some((issue) => issue.includes("screenshot missing")));
+  }
 });
 
 test("quotes elsewhere in a declaration still matter", () => {

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import * as chromium from "./chromium.mjs";
 import * as firefox from "./firefox.mjs";
 import * as webkit from "./webkit.mjs";
-import { checksOf, engineName, engineNames, engineNotice } from "./index.mjs";
+import { checksOf, engineName, engineNames, engineNotice, incompleteChecks } from "./index.mjs";
 
 const engines = { chromium, firefox, webkit };
 const shape = {
@@ -88,6 +88,16 @@ test("a check that could not be applied is reported", () => {
   assert.deepEqual(checksOf({ elements: 4, hover: 3, focus: 4, focusVisible: 4, active: 4 }), ["hover on 1 of 4 elements"]);
   assert.deepEqual(checksOf({ elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0, screenshots: { taken: 3, total: 4 } }), ["screenshot on 1 of 4 states"]);
   assert.deepEqual(checksOf(null), []);
+  assert.deepEqual(
+    incompleteChecks({ elements: 1, hover: 1, focus: 0, focusVisible: 0, active: 0, screenshots: { taken: 0, total: 1 } }),
+    ["check incomplete: focus on 1 of 1 elements", "check incomplete: focusVisible on 1 of 1 elements", "check incomplete: active on 1 of 1 elements", "check incomplete: screenshot on 1 of 1 states"],
+  );
+});
+
+test("browser identity changes with launch arguments and channel", () => {
+  const browser = { version: () => "test" };
+  assert.notEqual(chromium.identity(browser, { args: ["--first"] }), chromium.identity(browser, { args: ["--second"] }));
+  assert.notEqual(chromium.identity(browser, { channel: "stable" }), chromium.identity(browser, { channel: "beta" }));
 });
 
 test("webkit error comparison keeps the error kind and ignores the source snippet", () => {

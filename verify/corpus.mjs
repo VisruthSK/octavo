@@ -218,7 +218,11 @@ if (browser) {
           await revalidateVerdict(
             plan.key,
             true,
-            async () => report.every(({ scenario, issues }) => (plan.level !== "packed" || scenario !== "no-js") && !issues.length),
+            async () => report.every(({ scenario, issues }) =>
+              plan.level === "packed" && scenario === "no-js"
+                ? !issues.some((issue) => issue.startsWith("check incomplete:") || issue.includes("screenshot missing"))
+                : !issues.length,
+            ),
           );
         } catch (error) {
           entry.problems.push(error.message);
@@ -227,8 +231,10 @@ if (browser) {
       entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
       const issues = [];
       for (const { scenario, issues: found } of report) {
-        if (entry.level === "packed" && scenario === "no-js") continue;
-        for (const issue of found) issues.push(`${engineTag}${scenario}: ${issue}`);
+        for (const issue of found) {
+          if (entry.level === "packed" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
+          issues.push(`${engineTag}${scenario}: ${issue}`);
+        }
       }
       entry.problems.push(...issues);
       if (!issues.length && verdictCache) {

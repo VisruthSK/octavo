@@ -25,18 +25,23 @@ export const canonicalStyle = (style = "", writingMode = "horizontal-tb") => {
     const name = declaration.slice(0, colon);
     const pseudo = ["::before", "::after", "::marker", "::placeholder"].find((prefix) => name.startsWith(prefix)) ?? "";
     const property = name.slice(pseudo.length);
-    const physical = property === "inline-size" ? (horizontal ? "width" : "height") :
-      property === "block-size" ? (horizontal ? "height" : "width") : property;
-    if (["width", "height"].includes(physical)) {
-      const key = `${pseudo}${physical}`;
-      const isPhysical = property === physical;
-      const existing = sizes.get(key);
-      if (!existing || isPhysical || !existing.isPhysical) {
-        sizes.set(key, { declaration: `${key}${declaration.slice(colon)}`, isPhysical });
-      }
+    if (["width", "height", "inline-size", "block-size"].includes(property)) {
+      const physical = property === "inline-size" ? (horizontal ? "width" : "height") :
+        property === "block-size" ? (horizontal ? "height" : "width") : property;
+      const key = `${pseudo}|${physical}`;
+      const values = sizes.get(key) ?? [];
+      values.push({ property, declaration, value: declaration.slice(colon + 1) });
+      sizes.set(key, values);
     } else {
-      declarations.push(`${pseudo}${physical}${declaration.slice(colon)}`);
+      declarations.push(declaration);
     }
   }
-  return [...declarations, ...[...sizes.values()].map(({ declaration }) => declaration)].join(";");
+  for (const [key, values] of sizes) {
+    const physical = key.split("|")[1];
+    const physicalValue = values.find(({ property }) => property === physical)?.value;
+    const logical = values.filter(({ property }) => property === "inline-size" || property === "block-size");
+    const equivalent = physicalValue !== undefined && logical.length > 0 && logical.every(({ value }) => value === physicalValue);
+    declarations.push(...values.filter(({ property }) => !equivalent || property === physical).map(({ declaration }) => declaration));
+  }
+  return declarations.join(";");
 };

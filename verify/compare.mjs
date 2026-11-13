@@ -179,7 +179,12 @@ function compareState(a, b, lossy, stats) {
     const gained = missingFrom(after, before).slice(0, 3);
     issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first] ?? ""}: lost ${JSON.stringify(lost)} gained ${JSON.stringify(gained)}`);
   }
-  if (a.screenshot && b.screenshot) issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy, stats));
+  if (!a.screenshot || !b.screenshot) {
+    const missing = [!a.screenshot && "original", !b.screenshot && "optimized"].filter(Boolean);
+    issues.push(`screenshot missing in ${missing.join(" and ")} capture`);
+  } else {
+    issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy, stats));
+  }
   return issues;
 }
 

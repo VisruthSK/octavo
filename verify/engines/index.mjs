@@ -29,3 +29,5 @@ export const checksOf = (checks) => {
   if (shots && shots.taken < shots.total) missing.push(`screenshot on ${shots.total - shots.taken} of ${shots.total} states`);
   return missing;
 };
+
+export const incompleteChecks = (checks) => checksOf(checks).map((text) => `check incomplete: ${text}`);

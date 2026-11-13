@@ -1,5 +1,5 @@
 import { chromium as launcher } from "playwright-core";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { canonicalStyle } from "../styles.mjs";
 
@@ -38,7 +38,11 @@ export const noise = { pixels: 275589552, differing: 0, max: 0 };
 
 export const launch = (options = {}) => launcher.launch({ executablePath: executable(), ...options });
 
-export const identity = (browser) => `${label} ${browser.version()}`;
+export const identity = (browser, { args = [], channel = "" } = {}) => {
+  const path = executable() ?? launcher.executablePath();
+  const stamp = existsSync(path) ? `${statSync(path).size}-${statSync(path).mtimeMs}` : "missing";
+  return `${label} ${browser.version()} ${path} ${stamp} channel=${channel} args=${JSON.stringify(args)}`;
+};
 export const settle = (page, settlePage, options) => settlePage(page, options);
 export const normalizeError = (message) => message;
 
