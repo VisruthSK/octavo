@@ -119,7 +119,9 @@ test("scripts and packed scenarios catch loader restoration breakages", async ()
   }
 });
 
-for (const [name, change, expected] of breakages) {
+const caughtByDedicatedTests = new Set(["a changed text node", "a hundredth-pixel layout change"]);
+
+for (const [name, change, expected] of breakages.filter(([name]) => !caughtByDedicatedTests.has(name))) {
   test(`${name} is caught in ${expected}`, async () => {
     const failing = await scenariosFailing(page(base), page(change(base)));
     assert.ok(failing.includes(expected), `${failing}`);
