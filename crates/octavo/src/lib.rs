@@ -116,7 +116,11 @@ impl FromStr for Mode {
 #[derive(Clone, Debug, Default)]
 pub struct Options {
     /// Re-encode embedded PNG and JPEG images when that makes them smaller.
-    /// `None` keeps them as they are, recompressed losslessly.
+    /// `None` keeps them as they are, recompressed losslessly. In site mode
+    /// the same setting re-encodes the image files the pages share, once per
+    /// image, at the largest width any page draws it at; an image whose size
+    /// cannot be determined on every page, an image referenced outside
+    /// `<img>` tags and a PNG with partial transparency stay lossless.
     pub images: Option<ImageEncoding>,
     /// Subset embedded text fonts to the characters in the document plus
     /// the Latin letters, digits and punctuation, keeping every layout

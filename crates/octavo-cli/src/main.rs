@@ -340,11 +340,6 @@ fn main() -> ExitCode {
     let result = if input.is_dir() {
         if audit_only {
             Err("--audit works on one file, not a directory".to_string())
-        } else if lossy_images.is_some() {
-            Err(
-                "--lossy-images does not apply to a directory, because files keep their names"
-                    .to_string(),
-            )
         } else {
             run_site(&input, output, &options, in_place)
         }
@@ -526,6 +521,7 @@ fn site_kind_name(kind: SiteKind) -> &'static str {
         SiteKind::Script => "scripts",
         SiteKind::Font => "fonts",
         SiteKind::Image => "images",
+        SiteKind::Page => "pages",
     }
 }
 

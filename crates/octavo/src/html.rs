@@ -135,6 +135,7 @@ impl AttrName {
 pub(crate) struct Attribute {
     pub(crate) name: AttrName,
     pub(crate) value: String,
+    pub(crate) value_span: Range<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -396,6 +397,7 @@ fn parse_attrs(src: &str, mut i: usize, collect: bool) -> (Vec<Attribute>, usize
                     i += 1;
                 }
                 let mut value = "";
+                let mut value_span = i..i;
                 if b.get(i) == Some(&b'=') {
                     i += 1;
                     while i < b.len() && b[i].is_ascii_whitespace() {
@@ -408,6 +410,7 @@ fn parse_attrs(src: &str, mut i: usize, collect: bool) -> (Vec<Attribute>, usize
                             .position(|c| *c == q)
                             .map_or(b.len(), |p| i + 1 + p);
                         value = &src[i + 1..end];
+                        value_span = i + 1..end;
                         i = end + 1;
                     } else {
                         let s = i;
@@ -415,12 +418,14 @@ fn parse_attrs(src: &str, mut i: usize, collect: bool) -> (Vec<Attribute>, usize
                             i += 1;
                         }
                         value = &src[s..i];
+                        value_span = s..i;
                     }
                 }
                 if collect {
                     attrs.push(Attribute {
                         name: AttrName::parse(name),
                         value: value.to_string(),
+                        value_span,
                     });
                 }
             }
