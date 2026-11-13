@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -18,6 +18,7 @@ const flag = (name, fallback) => {
   const at = process.argv.indexOf(`--${name}`);
   return at < 0 ? fallback : (process.argv[at + 1] ?? fallback);
 };
+const revalidatePercent = Number(flag("revalidate", process.env.CI ? "5" : "0"));
 const tier = flag("tier", "smoke");
 const levels = flag("levels", tier === "full" ? "safe,scripts,packed" : "safe,packed").split(",");
 const filter = new RegExp(flag("filter", "."));
@@ -61,6 +62,7 @@ const pool = async (items, limit, work) => {
 };
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const scenarioHash = sha256(Buffer.concat(readdirSync(join(root, "corpus")).filter((name) => name.endsWith(".mjs")).sort().flatMap((name) => [Buffer.from(name), readFileSync(join(root, "corpus", name))])));
 
 const naive = (html) => html.replace(/<!--[\s\S]*?-->/g, "").replace(/>\s+</g, "><").replace(/\s{2,}/g, " ");
 const brotli = (text) => brotliCompressSync(Buffer.from(text)).length;
@@ -88,9 +90,9 @@ const check = (row, expect, result, output, input) => {
   return problems;
 };
 
-await run(["--version"]);
+const binaryVersion = (await run(["--version"])).stdout.trim();
 const upstreamRows = upstream
-  ? readRendered().map((entry) => ({ ...entry, browser: true, path: renderedPath(entry.id) }))
+  ? readRendered().map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }))
   : [];
 const [shardPosition, shardCount] = flag("shard", "").split("/").map(Number);
 const ownHandWritten = (_, index) => !shardCount || index % shardCount === shardPosition - 1;
@@ -137,8 +139,9 @@ const timing = { original: 0, optimized: 0, compare: 0, cached: 0 };
 const browserCache = { hits: 0, misses: 0 };
 let browserName = "";
 if (browser) {
-  const { browserIdentity, closeBrowser, pages, verifyLevels } = await import("./verify.mjs");
-  const { readVerdict, verdictKey, verifierHash, writeVerdict } = await import("./verdicts.mjs");
+  const { closeBrowser, pages, verifyLevels } = await import("./verify.mjs");
+  const { browserIdentity } = await import("./browser.mjs");
+  const { readVerdict, revalidateVerdict, shouldRevalidate, verdictKey, verifierHash, writeVerdict } = await import("./verdicts.mjs");
   const verifier = verifierHash();
   const identity = await browserIdentity();
   const documents = [...Map.groupBy(results.filter((entry) => entry.browser), (entry) => entry.input).values()];
@@ -149,12 +152,17 @@ if (browser) {
     const plans = [];
     for (const entry of entries) {
       const optimized = sha256(readFileSync(entry.output));
-      const key = verdictKey({ original: originalBytes, optimized, level: entry.level, verifier, browser: identity });
+      const key = verdictKey({ original: originalBytes, optimized, level: entry.level, verifier, browser: identity, scenarios: scenarioHash, version: binaryVersion });
       const started = process.hrtime.bigint();
       const verdict = verdictCache ? readVerdict(key) : null;
       timing.cached += Number(process.hrtime.bigint() - started) / 1e6;
       if (verdict) {
-        entry.cached = true;
+        if (!shouldRevalidate(key, revalidatePercent)) {
+          entry.cached = true;
+          cache.hits += 1;
+          continue;
+        }
+        plans.push({ level: entry.level, path: entry.output, key, optimized, revalidate: true });
         cache.hits += 1;
         continue;
       }
@@ -169,6 +177,7 @@ if (browser) {
     for (const [at, plan] of plans.entries()) {
       const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
       const report = measured.reports[at];
+      if (plan.revalidate) await revalidateVerdict(plan.key, true, async () => report.every(({ issues }) => !issues.length));
       entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
       const issues = [];
       for (const { scenario, issues: found } of report) {

@@ -1,5 +1,5 @@
 import { cpus } from "node:os";
-import { browserIdentity, launch } from "./browser.mjs";
+import { launch } from "./browser.mjs";
 import { capture, hasInteractions, scenariosFor } from "./capture.mjs";
 import { compare, signature } from "./compare.mjs";
 
@@ -69,6 +69,7 @@ export async function closeBrowser() {
 const crashed = (error) => ({ crashed: error.message.slice(0, 200), states: [] });
 
 const RECAPTURES = 3;
+const COMPARISON_TIMEOUT_MS = 120_000;
 
 const withoutSweep = (result) => ({
   ...result,
@@ -110,6 +111,8 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
   return { issues: kept, rounded: stats.roundedPixels };
 }
 
+const elapsed = (started) => Number(process.hrtime.bigint() - started) / 1e6;
+
 const unionOf = (plans) => {
   const union = new Map();
   for (const plan of plans) {
@@ -121,17 +124,33 @@ const unionOf = (plans) => {
   return [...union.values()];
 };
 
-const elapsed = (started) => Number(process.hrtime.bigint() - started) / 1e6;
+const orderOf = (plans) => unionOf(plans).map((scenario) => scenario.name);
 
 export async function verifyLevels(original, entries, { lossy = false } = {}) {
   const plans = entries.map((entry) => ({ ...entry, set: scenariosFor(entry.level) }));
   const groups = [...Map.groupBy(plans, (plan) => plan.key ?? plan.path).values()];
   const reports = plans.map(() => []);
-  const order = unionOf(plans).map((scenario) => scenario.name);
   const timing = { original: 0, optimized: 0, compare: 0 };
   const interact = await slots.using(() => resilient((open) => hasInteractions(open, original)).catch(() => true));
   const run = (file, scenario) =>
-    slots.using(() => resilient((open) => capture(open, file, scenario, lossy, { interact })).catch(crashed));
+    slots.using(async () => {
+      let timer;
+      try {
+        return await Promise.race([
+          resilient((open) => capture(open, file, scenario, lossy, { interact })),
+          new Promise((_, reject) => {
+            timer = setTimeout(async () => {
+              await closeBrowser();
+              reject(new Error(`comparison timed out after ${COMPARISON_TIMEOUT_MS} ms`));
+            }, COMPARISON_TIMEOUT_MS);
+          }),
+        ]);
+      } catch (error) {
+        return crashed(error);
+      } finally {
+        clearTimeout(timer);
+      }
+    });
   for (const scenario of unionOf(plans)) {
     const startedOriginal = process.hrtime.bigint();
     const before = await run(original, scenario);
@@ -161,6 +180,7 @@ export async function verifyLevels(original, entries, { lossy = false } = {}) {
       }
     }
   }
+  const order = orderOf(plans);
   for (const report of reports) {
     report.sort((left, right) => order.indexOf(left.scenario) - order.indexOf(right.scenario));
   }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readVerdict, verdictKey, verifierHash, writeVerdict } from "./verdicts.mjs";
+import { readVerdict, revalidateVerdict, shouldRevalidate, verdictKey, verifierHash, writeVerdict } from "./verdicts.mjs";
 
 const folder = mkdtempSync(join(tmpdir(), "octavo-verdicts-"));
 
@@ -41,4 +41,18 @@ test("the verifier hash covers the verifier sources", () => {
   const hash = verifierHash();
   assert.match(hash, /^[0-9a-f]{64}$/);
   assert.equal(hash, verifierHash());
+});
+
+test("revalidation selection is deterministic from the key", () => {
+  const selected = Array.from({ length: 100 }, (_, at) => `${at.toString(16).padStart(8, "0")}${"a".repeat(56)}`).filter((name) => shouldRevalidate(name, 5));
+  assert.equal(selected.length, 5);
+  assert.deepEqual(selected, selected.slice());
+  assert.equal(shouldRevalidate("00000000", 0), false);
+});
+
+test("a cached verdict mismatch deletes the stale entry and fails", async () => {
+  const name = key();
+  writeVerdict(name, { level: "safe" }, folder);
+  await assert.rejects(revalidateVerdict(name, true, async () => false, folder), /disagrees/);
+  assert.equal(readVerdict(name, folder), null);
 });

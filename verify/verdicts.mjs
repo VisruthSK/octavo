@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -21,8 +21,13 @@ export const verifierHash = () => {
   return hash.digest("hex");
 };
 
-export const verdictKey = ({ original, optimized, level, verifier, browser }) =>
-  sha256([original, optimized, level, verifier, browser].join("\n"));
+export const verdictKey = ({ original, optimized, level, verifier, browser, scenarios, version }) =>
+  sha256([original, optimized, level, verifier, browser, scenarios, version].join("\n"));
+
+export const shouldRevalidate = (key, percent) => {
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new RangeError("revalidate must be between 0 and 100");
+  return Number.parseInt(key.slice(0, 8), 16) % 100 < percent;
+};
 
 export const readVerdict = (key, folder = directory) => {
   const file = join(folder, `${key}.json`);
@@ -38,6 +43,15 @@ export const readVerdict = (key, folder = directory) => {
 export const writeVerdict = (key, verdict, folder = directory) => {
   mkdirSync(folder, { recursive: true });
   writeFileSync(join(folder, `${key}.json`), `${JSON.stringify({ key, ...verdict }, null, 2)}\n`);
+};
+
+export const revalidateVerdict = async (key, cached, verify, folder = directory) => {
+  const fresh = await verify();
+  if (fresh !== cached) {
+    unlinkSync(join(folder, `${key}.json`));
+    throw new Error(`cached browser verdict disagrees for ${key}: cached ${cached}, fresh ${fresh}`);
+  }
+  return fresh;
 };
 
 export const readIdentity = (folder = directory) => {
