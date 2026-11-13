@@ -43,8 +43,8 @@ const write = (name, html) => {
   return file;
 };
 
-const scenariosFailing = async (original, changed) =>
-  (await verify(write("original", original), write("changed", changed)))
+const scenariosFailing = async (original, changed, only) =>
+  (await verify(write("original", original), write("changed", changed), { only }))
     .filter(({ issues }) => issues.length)
     .map(({ scenario }) => scenario);
 
@@ -76,29 +76,37 @@ const reducedExclusions = {
   "a dropped print rule": ["print", "the reduced sets omit print media"],
 };
 
-test("reduced scenario sets preserve every safe-set proof outside explicit exclusions", async () => {
-  for (const [name, change] of breakages) {
-    let original = page(base);
-    let optimized = page(change(base));
-    if (name === "a changed text node") optimized = page(base, "<h1>Title!</h1><ul><li>one</li><li>two</li></ul><a class=\"link\" href=\"#x\">link</a><input placeholder=\"name\"><div class=\"box\"></div>");
-    if (name === "a hundredth-pixel layout change") {
-      original = page(`${base}.t{width:100px}`, "<div class=\"t\">x</div>");
-      optimized = page(`${base}.t{width:100.02px}`, "<div class=\"t\">x</div>");
-    }
-    const safe = await scenariosFailing(original, optimized);
-    if (reducedExclusions[name]) {
-      const [scenario, reason] = reducedExclusions[name];
-      assert.ok(safe.includes(scenario), `${name} was not caught by its listed exclusion: ${reason}`);
-      continue;
-    }
-    assert.ok(safe.length, `${name} is not caught by safe`);
-    for (const level of ["scripts", "packed"]) {
-      const found = (await verify(write("original", original), write("changed", optimized), { level }))
-        .filter(({ issues }) => issues.length)
-        .map(({ scenario }) => scenario);
-      assert.ok(found.length, `${name} escaped ${level}`);
-    }
+const failingScenarios = (report) => report.filter(({ issues }) => issues.length).map(({ scenario }) => scenario);
+
+const reducedCase = ([name, change]) => {
+  const original = page(base);
+  if (name === "a changed text node") {
+    return [name, original, page(base, "<h1>Title!</h1><ul><li>one</li><li>two</li></ul><a class=\"link\" href=\"#x\">link</a><input placeholder=\"name\"><div class=\"box\"></div>")];
   }
+  if (name === "a hundredth-pixel layout change") {
+    return [name, page(`${base}.t{width:100px}`, "<div class=\"t\">x</div>"), page(`${base}.t{width:100.02px}`, "<div class=\"t\">x</div>")];
+  }
+  return [name, original, page(change(base))];
+};
+
+test("reduced scenario sets preserve every safe-set proof outside explicit exclusions", async () => {
+  const problems = await Promise.all(
+    breakages.map(reducedCase).map(async ([name, original, optimized], at) => {
+      const originalFile = write(`reduced-${at}-original`, original);
+      const changedFile = write(`reduced-${at}-changed`, optimized);
+      if (reducedExclusions[name]) {
+        const [scenario, reason] = reducedExclusions[name];
+        const safe = failingScenarios(await verify(originalFile, changedFile, { only: [scenario] }));
+        return safe.includes(scenario) ? [] : [`${name} was not caught by its listed exclusion: ${reason}`];
+      }
+      const missed = [];
+      for (const level of ["scripts", "packed"]) {
+        if (!failingScenarios(await verify(originalFile, changedFile, { level })).length) missed.push(`${name} escaped ${level}`);
+      }
+      return missed;
+    }),
+  );
+  assert.deepEqual(problems.flat(), []);
 });
 
 const loaderBreakages = [
@@ -110,26 +118,30 @@ const loaderBreakages = [
 
 test("scripts and packed scenarios catch loader restoration breakages", async () => {
   const shell = (script) => page("body{margin:8px}", `<h1 id="target">initial</h1><script>window.target=document.getElementById('target');window.order=[];${script}</script>`);
-  for (const [name, expected, changed] of loaderBreakages) {
-    for (const level of ["scripts", "packed"]) {
-      const found = (await verify(write("original", shell(expected)), write("changed", shell(changed)), { level }))
-        .filter(({ issues }) => issues.length);
-      assert.ok(found.length, `${name} escaped ${level}`);
-    }
-  }
+  const escaped = await Promise.all(
+    loaderBreakages.flatMap(([name, expected, changed], at) =>
+      ["scripts", "packed"].map(async (level) => {
+        const originalFile = write(`loader-${at}-${level}-original`, shell(expected));
+        const changedFile = write(`loader-${at}-${level}-changed`, shell(changed));
+        const found = failingScenarios(await verify(originalFile, changedFile, { level }));
+        return found.length ? [] : [`${name} escaped ${level}`];
+      }),
+    ),
+  );
+  assert.deepEqual(escaped.flat(), []);
 });
 
 const caughtByDedicatedTests = new Set(["a changed text node", "a hundredth-pixel layout change"]);
 
 for (const [name, change, expected] of breakages.filter(([name]) => !caughtByDedicatedTests.has(name))) {
   test(`${name} is caught in ${expected}`, async () => {
-    const failing = await scenariosFailing(page(base), page(change(base)));
+    const failing = await scenariosFailing(page(base), page(change(base)), [expected]);
     assert.ok(failing.includes(expected), `${failing}`);
   });
 }
 
 test("a changed text node is caught", async () => {
-  const failing = await scenariosFailing(page(base), page(base, "<h1>Title!</h1>"));
+  const failing = await scenariosFailing(page(base), page(base, "<h1>Title!</h1>"), ["desktop-light"]);
   assert.ok(failing.includes("desktop-light"), `${failing}`);
 });
 
