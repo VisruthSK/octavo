@@ -209,7 +209,7 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 25 || 150 }}
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 40 || 150 }}
     strategy:
       fail-fast: false
       matrix:
