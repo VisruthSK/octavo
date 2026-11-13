@@ -18,8 +18,8 @@ const flag = (name, fallback) => {
   const at = process.argv.indexOf(`--${name}`);
   return at < 0 ? fallback : (process.argv[at + 1] ?? fallback);
 };
-const revalidatePercent = Number(flag("revalidate", process.env.CI ? "5" : "0"));
 const tier = flag("tier", "smoke");
+const revalidatePercent = Number(flag("revalidate", process.env.CI && tier === "full" ? "5" : "0"));
 const levels = flag("levels", tier === "full" ? "safe,scripts,packed" : "safe,packed").split(",");
 const filter = new RegExp(flag("filter", "."));
 const cores = cpus().length;
@@ -177,7 +177,11 @@ if (browser) {
     for (const [at, plan] of plans.entries()) {
       const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
       const report = measured.reports[at];
-      if (plan.revalidate) await revalidateVerdict(plan.key, true, async () => report.every(({ issues }) => !issues.length));
+      if (plan.revalidate) await revalidateVerdict(
+        plan.key,
+        true,
+        async () => report.every(({ scenario, issues }) => (plan.level !== "packed" || scenario !== "no-js") && !issues.length),
+      );
       entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
       const issues = [];
       for (const { scenario, issues: found } of report) {

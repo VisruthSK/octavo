@@ -71,6 +71,23 @@ const crashed = (error) => ({ crashed: error.message.slice(0, 200), states: [] }
 const RECAPTURES = 3;
 const COMPARISON_TIMEOUT_MS = 120_000;
 
+export async function withTimeout(task, milliseconds, onTimeout) {
+  let timer;
+  try {
+    return await Promise.race([
+      task(),
+      new Promise((_, reject) => {
+        timer = setTimeout(async () => {
+          await onTimeout();
+          reject(new Error(`comparison timed out after ${milliseconds} ms`));
+        }, milliseconds);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const withoutSweep = (result) => ({
   ...result,
   states: result.base?.states ?? result.states.slice(0, 1),
@@ -134,21 +151,14 @@ export async function verifyLevels(original, entries, { lossy = false } = {}) {
   const interact = await slots.using(() => resilient((open) => hasInteractions(open, original)).catch(() => true));
   const run = (file, scenario) =>
     slots.using(async () => {
-      let timer;
       try {
-        return await Promise.race([
-          resilient((open) => capture(open, file, scenario, lossy, { interact })),
-          new Promise((_, reject) => {
-            timer = setTimeout(async () => {
-              await closeBrowser();
-              reject(new Error(`comparison timed out after ${COMPARISON_TIMEOUT_MS} ms`));
-            }, COMPARISON_TIMEOUT_MS);
-          }),
-        ]);
+        return await withTimeout(
+          () => resilient((open) => capture(open, file, scenario, lossy, { interact })),
+          COMPARISON_TIMEOUT_MS,
+          closeBrowser,
+        );
       } catch (error) {
         return crashed(error);
-      } finally {
-        clearTimeout(timer);
       }
     });
   for (const scenario of unionOf(plans)) {
@@ -187,11 +197,11 @@ export async function verifyLevels(original, entries, { lossy = false } = {}) {
   return { reports, timing };
 }
 
-export async function verify(original, optimized, { lossy = false } = {}) {
+export async function verify(original, optimized, { lossy = false, level = "safe" } = {}) {
   const files = [optimized].flat();
   const { reports } = await verifyLevels(
     original,
-    files.map((path) => ({ level: "safe", path })),
+    files.map((path) => ({ level, path })),
     { lossy },
   );
   return Array.isArray(optimized) ? reports : reports[0];
