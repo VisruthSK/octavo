@@ -555,20 +555,28 @@ fn subsetted(sfnt: &[u8], chars: &HashSet<char>, experiment: Option<&str>) -> Op
     name_ids.insert(NameId::from(14));
     let mut name_languages = IntSet::empty();
     name_languages.insert(0x0409);
+    let has = |token: &str| {
+        experiment.is_some_and(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .any(|part| part == token || part == "all")
+        })
+    };
     let mut flags = skera::SubsetFlags::SUBSET_FLAGS_DEFAULT;
-    if matches!(experiment, Some("os2" | "all")) {
+    if has("os2") {
         flags |= skera::SubsetFlags::SUBSET_FLAGS_NO_PRUNE_UNICODE_RANGES;
     }
-    if matches!(experiment, Some("gids" | "all")) {
+    if has("gids") {
         flags |= skera::SubsetFlags::SUBSET_FLAGS_RETAIN_GIDS;
     }
-    if matches!(experiment, Some("loca" | "all")) {
+    if has("loca") {
         flags |= skera::SubsetFlags::SUBSET_FLAGS_IFTB_REQUIREMENTS;
     }
-    if matches!(experiment, Some("post" | "all")) {
+    if has("post") {
         flags |= skera::SubsetFlags::SUBSET_FLAGS_GLYPH_NAMES;
     }
-    if matches!(experiment, Some("names" | "all")) {
+    if has("names") {
         name_ids = IntSet::all();
         name_languages = IntSet::all();
     }
@@ -583,7 +591,7 @@ fn subsetted(sfnt: &[u8], chars: &HashSet<char>, experiment: Option<&str>) -> Op
         &name_ids,
         &name_languages,
     );
-    if matches!(experiment, Some("cmap" | "all")) {
+    if has("cmap") {
         let copied = [b"gasp", b"fpgm", b"prep", b"VDMX", b"DSIG", b"cmap"]
             .map(SfntTag::new)
             .into_iter()
