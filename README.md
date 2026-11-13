@@ -1,11 +1,12 @@
 # Octavo
 
-Octavo makes Quarto HTML files smaller. Give it a document rendered with `embed-resources: true` and it writes one self-contained file that opens offline and renders the same. A plain article shrinks 25 times (1.2 MB to 48 KB). Across Quarto's own 465 test documents the median shrinks 12.8 times. Documents whose weight is mostly images shrink about 2 times, because the images are most of the file.
+Octavo makes Quarto HTML files smaller. Give it a rendered page and it writes one self-contained file that opens offline and renders the same. The page can come from `embed-resources: true` or from an ordinary render that links `site_libs` and `<name>_files`, which Octavo embeds first. A plain article shrinks 25 times (1.2 MB to 48 KB). Across Quarto's own 465 test documents the median shrinks 12.8 times. Documents whose weight is mostly images shrink about 2 times, because the images are most of the file.
 
 ```sh
 octavo report.html                          # writes report.min.html
 octavo deck.html small.html --lossy-images  # AVIF, much smaller, not pixel-exact
 octavo report.html --maximum                # slowest, smallest output. Not reccomended.
+octavo report.html --resource-path assets   # also look for linked files in assets
 octavo --audit report.html                  # what each step would save
 ```
 
@@ -132,7 +133,7 @@ flowchart TD
 | `js` | Minifies scripts and turns data-URI module scripts into inline modules | The script does not parse, or is already minified |
 | `css` | Deletes rules that need a class, id or tag found nowhere in the markup or any script, then minifies. Custom property values are kept verbatim | A rule the parser rejects, or whose `calc()` arithmetic would lose precision, is kept as written and the rest of the sheet is still optimized |
 | `fonts` | Keeps the one source browsers use (the last `src`, preferring WOFF2, then WOFF, then TrueType and OpenType), converts it to WOFF2, drops legacy EOT and SVG copies, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. Text fonts stay whole unless you pass `--subset-fonts` | The family name is written with escapes |
-| `images` | Recompresses embedded PNGs losslessly. With `--lossy-images`, re-encodes PNG and JPEG as AVIF or WebP and shrinks anything wider than 3840 px | Lossless recompression skips images over 40 megapixels |
+| `images` | Recompresses embedded PNGs losslessly, and converts an 8-bit PNG to lossless WebP when that is smaller. With `--lossy-images`, re-encodes PNG and JPEG as AVIF or WebP and shrinks anything wider than 3840 px | PNG recompression skips images over 40 megapixels. WebP conversion skips PNGs that carry colour, gamma or animation data, and images that need more than `--image-memory` |
 | `pack` | Gathers scripts, styles, stylesheet links, inline SVG, images and data blocks into one compressed blob, restored in place by a synchronous loader. The blob uses DEFLATE or Brotli, whichever gives the smaller page | A Content-Security-Policy meta tag. Modules and import maps are never packed |
 
 ### What Octavo knows about Quarto
@@ -181,6 +182,19 @@ The level decides what the output depends on. The effort decides how hard the co
 
 On a 288 KB font, WOFF2 quality 9 takes 26 ms and quality 11 takes 293 ms for 9 percent more bytes.
 
+### Lossless WebP
+
+An 8-bit PNG is re-encoded as lossless WebP when the result is smaller than the best PNG Octavo can write. The decoded pixels are identical, including the colour hidden under transparent pixels. A PNG stays a PNG when it is 16-bit, has an ICC profile, gamma, chromaticity, cICP, EXIF or animation chunk (WebP would drop or reinterpret that data), or has any partly transparent pixel (browsers premultiply those differently for WebP, which shifts their colour by a few levels). Fully opaque and fully transparent pixels convert. `--keep-png` turns the conversion off.
+
+The encoder needs about 20 bytes of memory per pixel. `--image-memory <MIB>` caps the memory used at once across all images (default 2560). An image that needs more than the cap stays a PNG, and the others wait for memory, so a lower cap costs time and a higher one costs memory.
+
+| Document | PNG only | Lossless WebP | `--lossy-images` (AVIF) |
+|---|---|---|---|
+| eCOTS 2026 deck, `packed` | 3.20 MiB | 2.56 MiB | 1.51 MiB |
+| CSURC 2026 deck, `packed` | 6.93 MiB | 4.43 MiB | |
+
+Lossy AVIF is about 40% smaller than lossless WebP on the eCOTS deck, but it changes pixels. Lossless WebP does not.
+
 ### Fonts
 
 Fonts converted whole are remembered in your user cache directory (`~/.cache/octavo` on Linux, `~/Library/Caches/octavo` on macOS, `%LOCALAPPDATA%\octavo` on Windows), in a `fonts` subfolder with one file per distinct font, named by a hash of its bytes and quality. Documents from the same theme embed the same fonts, so later runs skip the slowest step. Subsetted fonts are never stored. `--cache-dir <directory>` chooses another place and `--no-cache` turns the cache off.
@@ -191,20 +205,36 @@ Text fonts stay whole by default. `--subset-fonts` cuts them to the characters t
 
 Bundled libraries carry license banners, and the MIT, BSD and Apache licenses require them to travel with copies. Octavo keeps them by default, which costs 400 bytes to 2 KB per document. Subsetting a font discards the copyright and license fields in its name table, so Octavo copies those fields (copyright line, license description, license URL) into a comment beside the font's `@font-face`, which the SIL Open Font License allows. `--strip-licenses` removes all of these notices for people who ship them another way.
 
+### Pages that link files
+
+A page does not need `embed-resources: true`. When it links files, Octavo reads them and embeds them before it optimizes, so the output is always one self-contained file. For each link it looks, in order:
+
+1. Relative to the page, or to the stylesheet that names the file.
+2. In each `--resource-path <DIR>`, in the order given.
+3. In the page's directory and its parent directories, which finds root-relative links such as `/site_libs/bootstrap/bootstrap.min.css`.
+4. For a path that contains `site_libs` or a `<name>_files` directory, in that directory beside the page or beside any parent.
+
+Files linked from the web (a Google Fonts stylesheet, a remote image) are downloaded and embedded, up to 64 MiB and 30 seconds each. Scripts from the web stay as links, as in Quarto, because a script such as MathJax loads more code relative to its own address. `--no-fetch` skips the download and leaves those links as written, so the page keeps needing the network.
+
+Embedding follows what Quarto does. A script that runs in place (no `defer`, `async` or `type="module"`) becomes inline text. An `@import` without a media condition is replaced by the stylesheet it names. Relative `import` specifiers inside a module script become data URLs. Everything else becomes a base64 data URL. Stylesheet links, icons, images and the `url()` values inside stylesheets are handled the same way, to a depth of 8.
+
+The library has the same step as `embed_resources`. It takes a `Resources` implementation that finds the files, so the library does no file or network access of its own, and returns the new HTML, a count of embedded files and the references it could not find. `is_self_contained` reports whether a document links local files.
+
 ### What Octavo refuses
 
 Octavo stops with an error when the input is not what it expects:
 
 - A file with no `<html>` element is not an HTML document.
-- A document that links to local files (`site_libs/bootstrap.min.css`, `figure.png`) was not rendered with `embed-resources: true`. The error lists the files.
+- A page that still links to a local file after embedding (`site_libs/bootstrap.min.css`, `figure.png`), because Octavo could not find it. The error lists the files. Use `--resource-path <DIR>` to name another directory to search.
 
-Resources loaded from the network (a CDN script, a web font) do not stop the run. They are reported as warnings, because the page cannot work offline.
+A web file that cannot be downloaded does not stop the run. It is reported as a warning and the link stays, so the page needs the network for that file. With `--no-fetch`, every web link stays and is reported the same way.
 
 ## Limits
 
 - `packed` rebuilds stylesheets with JavaScript while the page is parsed, so it needs JavaScript.
 - The Brotli decoder runs through `new Function`, and `packed` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` header that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, allow `unsafe-eval` for the packed pages or use `--level scripts`, which never needs it.
 - Modules, import maps and elements whose attributes contain character references are never packed.
+- Downloads trust Mozilla's root certificates. A web file that needs a login cannot be embedded.
 - `--subset-fonts` can change how some hinted fonts are drawn on Linux, as described under [Fonts](#fonts).
 - Octavo rounds CSS numbers to six significant digits and the verifier compares them at that precision.
 
@@ -221,6 +251,8 @@ Resources loaded from the network (a CDN script, a web font) do not stop the run
 | Decode PNG and JPEG | [`image`](https://crates.io/crates/image) |
 | Encode lossy AVIF | [`ravif`](https://crates.io/crates/ravif), built on rav1e |
 | Encode lossy WebP | [`gamut-webp`](https://crates.io/crates/gamut-webp) |
+| Encode lossless WebP | [libwebp](https://chromium.googlesource.com/webm/libwebp), through [`webp`](https://crates.io/crates/webp) |
+| Download linked web files | [`ureq`](https://crates.io/crates/ureq), with rustls |
 | Resize images | [`fast_image_resize`](https://crates.io/crates/fast_image_resize) |
 | Deflate the packed blob | [`libdeflater`](https://crates.io/crates/libdeflater), level 12 |
 | Brotli for the packed blob | [`brotli`](https://crates.io/crates/brotli) |
