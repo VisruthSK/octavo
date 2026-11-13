@@ -144,7 +144,7 @@ const unionOf = (plans) => {
 const orderOf = (plans) => unionOf(plans).map((scenario) => scenario.name);
 
 export async function verifyLevels(original, entries, { lossy = false } = {}) {
-  const plans = entries.map((entry) => ({ ...entry, set: scenariosFor(entry.level) }));
+  const plans = entries.map((entry) => ({ ...entry, set: scenariosFor(entry.level).filter(({ name }) => !entry.only || entry.only.includes(name)) }));
   const groups = [...Map.groupBy(plans, (plan) => plan.key ?? plan.path).values()];
   const reports = plans.map(() => []);
   const timing = { original: 0, optimized: 0, compare: 0 };
@@ -197,11 +197,11 @@ export async function verifyLevels(original, entries, { lossy = false } = {}) {
   return { reports, timing };
 }
 
-export async function verify(original, optimized, { lossy = false, level = "safe" } = {}) {
+export async function verify(original, optimized, { lossy = false, level = "safe", only } = {}) {
   const files = [optimized].flat();
   const { reports } = await verifyLevels(
     original,
-    files.map((path) => ({ level, path })),
+    files.map((path) => ({ level, path, only })),
     { lossy },
   );
   return Array.isArray(optimized) ? reports : reports[0];
