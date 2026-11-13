@@ -61,8 +61,8 @@ const TIMERS = Symbol.for("octavo.timers");
 
 export function trackTimers() {
   const from = 50;
-  const to = 1000;
-  const max = 8;
+  const to = 6000;
+  const max = 32;
   const state = { pending: new Map() };
   globalThis[Symbol.for("octavo.timers")] = state;
   const native = window.setTimeout;
@@ -454,7 +454,7 @@ export async function capture(
     page.on("requestfailed", finished);
     const wait = async (name, options = {}) => {
       phase = `settle ${name}`;
-      await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: LIMIT * pace, network });
+      await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: (options.limit ?? LIMIT) * pace, network });
     };
     phase = "goto";
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
@@ -505,7 +505,12 @@ export async function capture(
         }).catch(() => "unknown");
         phase = `interaction sweep step ${index} slide ${slideNumber}`;
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
-        await wait(`interaction sweep step ${index} slide ${slideNumber}`, { quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : QUIET });
+        const cursorDelay = slideDeck && index === HOVER
+          ? await page.evaluate(() => window.Reveal?.getConfig?.().hideCursorTime ?? 0).catch(() => 0)
+          : 0;
+        const quiet = slideDeck ? (index === NAVIGATION ? 1200 : Math.max(400, cursorDelay + QUIET)) : QUIET;
+        const limit = slideDeck && index === HOVER ? Math.max(LIMIT, cursorDelay + quiet + 500) : LIMIT;
+        await wait(`interaction sweep step ${index} slide ${slideNumber}`, { quiet, limit });
         const digest = await digestOf(page, forms, linked);
         if (digest === previous && !ALWAYS_OBSERVED.has(index)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });
