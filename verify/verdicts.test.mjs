@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readVerdict, revalidateVerdict, shouldRevalidate, verdictKey, verifierHash, writeVerdict } from "./verdicts.mjs";
@@ -45,6 +45,19 @@ test("the verifier hash covers the verifier sources", () => {
   const hash = verifierHash();
   assert.match(hash, /^[0-9a-f]{64}$/);
   assert.equal(hash, verifierHash());
+});
+
+test("the verifier hash follows engine sources and ignores tests", () => {
+  const sources = mkdtempSync(join(tmpdir(), "verifier-"));
+  mkdirSync(join(sources, "engines"));
+  writeFileSync(join(sources, "package-lock.json"), "{}");
+  writeFileSync(join(sources, "capture.mjs"), "one");
+  writeFileSync(join(sources, "engines", "webkit.mjs"), "one");
+  const before = verifierHash(sources);
+  writeFileSync(join(sources, "capture.test.mjs"), "changed");
+  assert.equal(verifierHash(sources), before);
+  writeFileSync(join(sources, "engines", "webkit.mjs"), "two");
+  assert.notEqual(verifierHash(sources), before);
 });
 
 test("revalidation selection is deterministic from the key", () => {

@@ -112,6 +112,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ needs.plan.outputs.tier }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --locked --release
       - uses: actions/upload-artifact@v7
         with:
@@ -164,9 +165,9 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: corpus/.cache/verdicts
-          key: verdicts-${{ hashFiles('verify/*.mjs', 'verify/package-lock.json') }}-${{ github.sha }}
+          key: verdicts-${{ matrix.shard }}-${{ strategy.job-total }}-${{ github.sha }}
           restore-keys: |
-            verdicts-${{ hashFiles('verify/*.mjs', 'verify/package-lock.json') }}-
+            verdicts-${{ matrix.shard }}-${{ strategy.job-total }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}"
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 25 || 100 }}
@@ -175,7 +176,7 @@ jobs:
         continue-on-error: true
         with:
           path: corpus/.cache/verdicts
-          key: verdicts-${{ hashFiles('verify/*.mjs', 'verify/package-lock.json') }}-${{ github.sha }}
+          key: verdicts-${{ matrix.shard }}-${{ strategy.job-total }}-${{ github.sha }}
       - name: Diagnose one document
         if: always() && inputs.diagnose != ''
         run: |
