@@ -4,6 +4,23 @@ use crate::{
     html::{AttrName, Element, Rel, Tag},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
+use cssparser::{ParseError, Parser, ParserInput, Token};
+use oxc::{
+    allocator::Allocator,
+    ast::ast::{
+        ExportAllDeclaration, ExportFromDeclaration, Expression, ImportDeclaration,
+        ImportExpression, StringLiteral,
+    },
+    ast_visit::{
+        Visit as OxcVisit,
+        walk::{
+            walk_export_all_declaration, walk_export_from_declaration, walk_import_declaration,
+            walk_import_expression,
+        },
+    },
+    parser::Parser as OxcParser,
+    span::SourceType,
+};
 use std::{collections::HashSet, ops::Range};
 
 const DEPTH_LIMIT: usize = 8;
@@ -51,9 +68,11 @@ pub struct Embedded {
 ///
 /// Scripts, images, stylesheets and icons become `data:` URLs, which keeps
 /// every other attribute of the tag, such as `async` or `media`. Inside an
-/// embedded stylesheet, the `url()` and `@import` references that it makes
-/// are embedded too, relative to the stylesheet. Links to the network and
-/// `data:` URLs are left as they are.
+/// embedded stylesheet, the `url()` references are embedded too, and `@import`
+/// rules that carry nothing are inlined in place; an `@import` with a media
+/// list, `supports()` condition or layer, or one that appears after another
+/// rule, is kept with its reference rewritten as a data URL. Links to the
+/// network and `data:` URLs are left as they are.
 ///
 /// ```
 /// use octavo::{embed_resources, Loaded, Resources};
@@ -181,6 +200,15 @@ pub fn embed_resources(src: &str, resources: &mut dyn Resources) -> Embedded {
     }
 }
 
+struct ScanCtx<'a> {
+    from: &'a str,
+    depth: usize,
+    level: usize,
+    rules_started: bool,
+    urls: Vec<Range<usize>>,
+    replacements: Vec<(Range<usize>, String)>,
+}
+
 struct State<'a> {
     resources: &'a mut dyn Resources,
     active: HashSet<String>,
@@ -286,9 +314,17 @@ impl State<'_> {
     }
 
     fn module_imports(&mut self, code: &str, from: &str, depth: usize) -> Option<String> {
+        let allocator = Allocator::default();
+        let parsed = OxcParser::new(&allocator, code, SourceType::mjs()).parse();
+        if !parsed.diagnostics.is_empty() {
+            return None;
+        }
+        let mut specifiers = ModuleSpecifiers::new(code);
+        OxcVisit::visit_program(&mut specifiers, &parsed.program);
+        specifiers.spans.sort_by_key(|span| span.start);
         let mut out = String::with_capacity(code.len());
         let mut at = 0;
-        for span in import_specifiers(code) {
+        for span in specifiers.spans {
             if let Some(uri) = self.uri(&code[span.clone()], from, depth) {
                 out.push_str(&code[at..span.start]);
                 out.push_str(&uri);
@@ -302,64 +338,170 @@ impl State<'_> {
         Some(out)
     }
 
-    fn flatten(&mut self, reference: &str, from: &str, depth: usize) -> Option<String> {
-        let reference = reference.trim();
+    fn css(&mut self, css: &str, from: &str, depth: usize) -> Option<String> {
+        let mut ctx = ScanCtx {
+            from,
+            depth,
+            level: 0,
+            rules_started: false,
+            urls: Vec::new(),
+            replacements: Vec::new(),
+        };
+        let mut input = ParserInput::new(css);
+        let mut parser = Parser::new(&mut input);
+        self.walk(css, &mut parser, &mut ctx);
+        for span in ctx.urls {
+            if span.start >= span.end {
+                continue;
+            }
+            if css[span.clone()].starts_with('#') {
+                continue;
+            }
+            if let Some(uri) = self.uri(&css[span.clone()], from, depth) {
+                ctx.replacements.push((span, uri));
+            }
+        }
+        if ctx.replacements.is_empty() {
+            return None;
+        }
+        let mut replacements = ctx.replacements;
+        replacements.sort_by_key(|(span, _)| span.start);
+        let mut out = String::with_capacity(css.len() + 256);
+        let mut at = 0;
+        for (span, text) in replacements {
+            if span.start < at {
+                continue;
+            }
+            out.push_str(&css[at..span.start]);
+            out.push_str(&text);
+            at = span.end;
+        }
+        out.push_str(&css[at..]);
+        Some(out)
+    }
+
+    fn splice_import(&mut self, reference: &str, from: &str, depth: usize) -> Option<String> {
         let url = Url::parse(reference)?;
         if url.origin() == Origin::Remote || depth > DEPTH_LIMIT {
             return None;
         }
         let Some(loaded) = self.resources.load(reference, from) else {
-            self.missing.push(reference.to_string());
+            if url.origin() == Origin::Local {
+                self.missing.push(reference.to_string());
+            }
             return None;
         };
         if !self.active.insert(loaded.id.clone()) {
             return None;
         }
         self.resource_bytes += loaded.bytes.len() as u64;
-        let text = String::from_utf8(loaded.bytes).ok();
-        let flat = text.map(|text| self.css(&text, &loaded.id, depth + 1).unwrap_or(text));
+        let processed = String::from_utf8(loaded.bytes).ok().map(|text| {
+            let id = loaded.id.clone();
+            strip_charset(self.css(&text, &id, depth + 1).unwrap_or(text))
+        });
         self.active.remove(&loaded.id);
-        if flat.is_some() {
-            self.embedded += 1;
-        }
-        flat
+        let flat = processed?;
+        self.embedded += 1;
+        Some(flat)
     }
 
-    fn css(&mut self, css: &str, from: &str, depth: usize) -> Option<String> {
-        let imports = plain_imports(css);
-        let mut replacements: Vec<(Range<usize>, String)> = Vec::new();
-        for (statement, reference) in &imports {
-            if let Some(flat) = self.flatten(&css[reference.clone()], from, depth) {
-                replacements.push((statement.clone(), flat));
-            }
-        }
-        for span in reference_spans(css) {
-            let inside = imports
-                .iter()
-                .any(|(statement, _)| statement.start <= span.start && span.end <= statement.end);
-            if inside {
+    fn walk<'i, 't>(&mut self, css: &'i str, parser: &mut Parser<'i, 't>, ctx: &mut ScanCtx<'_>) {
+        loop {
+            let start = parser.position().byte_index();
+            let token = match parser.next_including_whitespace_and_comments() {
+                Ok(token) => token.clone(),
+                Err(_) => break,
+            };
+            if token.is_parse_error() {
                 continue;
             }
-            if let Some(uri) = self.uri(&css[span.clone()], from, depth) {
-                replacements.push((span, uri));
+            let end = parser.position().byte_index();
+            match token {
+                Token::WhiteSpace(_) | Token::Comment(_) | Token::CDO | Token::CDC => {}
+                Token::AtKeyword(ref kw) => {
+                    if ctx.level == 0 {
+                        if !ctx.rules_started
+                            && (kw.eq_ignore_ascii_case("charset")
+                                || kw.eq_ignore_ascii_case("namespace"))
+                        {
+                            skip_to_semicolon(parser);
+                        } else if !ctx.rules_started && kw.eq_ignore_ascii_case("import") {
+                            match scan_import(parser, css, start) {
+                                Ok(ImportRule::Plain {
+                                    statement,
+                                    reference,
+                                }) => {
+                                    if let Some(flat) =
+                                        self.splice_import(&css[reference], ctx.from, ctx.depth)
+                                    {
+                                        ctx.replacements.push((statement, flat));
+                                    }
+                                }
+                                Ok(ImportRule::Conditional { reference }) => {
+                                    ctx.urls.push(reference);
+                                }
+                                Ok(ImportRule::Empty) | Err(()) => {}
+                            }
+                        } else {
+                            ctx.rules_started = true;
+                        }
+                    }
+                }
+                Token::CurlyBracketBlock
+                | Token::SquareBracketBlock
+                | Token::ParenthesisBlock
+                | Token::Function(_) => {
+                    if ctx.level == 0 {
+                        ctx.rules_started = true;
+                    }
+                    ctx.level += 1;
+                    let url = matches!(&token, Token::Function(f) if f.eq_ignore_ascii_case("url"));
+                    let _ = parser.parse_nested_block(|sub| {
+                        if url {
+                            self.walk_url_argument(css, sub, ctx);
+                        } else {
+                            self.walk(css, sub, ctx);
+                        }
+                        Ok::<(), ParseError<'_, ()>>(())
+                    });
+                    ctx.level -= 1;
+                }
+                Token::UnquotedUrl(_) => ctx.urls.push(unquoted_url_inner(css, start, end)),
+                Token::QuotedString(_) => {}
+                _ => {
+                    if ctx.level == 0 {
+                        ctx.rules_started = true;
+                    }
+                }
             }
         }
-        if replacements.is_empty() {
-            return None;
-        }
-        replacements.sort_by_key(|(range, _)| range.start);
-        let mut out = String::with_capacity(css.len());
-        let mut at = 0;
-        for (range, text) in replacements {
-            if range.start < at {
-                continue;
+    }
+
+    fn walk_url_argument<'i, 't>(
+        &mut self,
+        css: &'i str,
+        sub: &mut Parser<'i, 't>,
+        ctx: &mut ScanCtx<'_>,
+    ) {
+        loop {
+            let start = sub.position().byte_index();
+            let token = match sub.next_including_whitespace_and_comments() {
+                Ok(token) => token.clone(),
+                Err(_) => return,
+            };
+            if token.is_parse_error() {
+                return;
             }
-            out.push_str(&css[at..range.start]);
-            out.push_str(&text);
-            at = range.end;
+            let end = sub.position().byte_index();
+            match token {
+                Token::WhiteSpace(_) | Token::Comment(_) => {}
+                Token::QuotedString(_) => {
+                    ctx.urls.push(trim_range(css, start + 1, end - 1));
+                    return;
+                }
+                _ => return,
+            }
         }
-        out.push_str(&css[at..]);
-        Some(out)
     }
 }
 
@@ -398,52 +540,220 @@ fn mime_of(reference: &str) -> &'static str {
     }
 }
 
-fn plain_imports(css: &str) -> Vec<(Range<usize>, Range<usize>)> {
+fn trim_range(css: &str, mut start: usize, mut end: usize) -> Range<usize> {
     let bytes = css.as_bytes();
-    let lower = css.to_ascii_lowercase();
-    let mut found = Vec::new();
-    let mut from = 0;
-    while let Some(offset) = lower[from..].find("@import") {
-        let statement = from + offset;
-        let mut at = statement + "@import".len();
-        from = at;
-        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
-            at += 1;
-        }
-        let reference = if lower[at..].starts_with("url(") {
-            let open = at + "url(".len();
-            let Some(close) = css[open..].find(')') else {
-                continue;
-            };
-            at = open + close + 1;
-            let inner = &css[open..open + close];
-            let trimmed = inner.trim();
-            let lead = inner.len() - inner.trim_start().len();
-            let quoted = trimmed.len() >= 2
-                && matches!(trimmed.as_bytes()[0], b'"' | b'\'')
-                && trimmed.as_bytes()[0] == trimmed.as_bytes()[trimmed.len() - 1];
-            let (skip, cut) = if quoted { (1, 1) } else { (0, 0) };
-            open + lead + skip..open + lead + trimmed.len() - cut
-        } else if matches!(bytes.get(at), Some(b'"' | b'\'')) {
-            let quote = bytes[at];
-            let open = at + 1;
-            let Some(close) = bytes[open..].iter().position(|byte| *byte == quote) else {
-                continue;
-            };
-            at = open + close + 1;
-            open..open + close
-        } else {
-            continue;
-        };
-        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
-            at += 1;
-        }
-        if bytes.get(at) == Some(&b';') {
-            found.push((statement..at + 1, reference));
-            from = at + 1;
+    while start < end && bytes[start].is_ascii_whitespace() {
+        start += 1;
+    }
+    while end > start && bytes[end - 1].is_ascii_whitespace() {
+        end -= 1;
+    }
+    start..end
+}
+
+fn unquoted_url_inner(css: &str, start: usize, end: usize) -> Range<usize> {
+    trim_range(css, start + 4, end - 1)
+}
+
+fn skip_to_semicolon(parser: &mut Parser<'_, '_>) {
+    loop {
+        match parser.next_including_whitespace_and_comments() {
+            Ok(Token::Semicolon) => return,
+            Ok(_) => {}
+            Err(_) => return,
         }
     }
-    found
+}
+
+fn strip_charset(text: String) -> String {
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    loop {
+        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        if text[at..].starts_with("/*") {
+            match text[at + 2..].find("*/") {
+                Some(end) => {
+                    at = at + 2 + end + 2;
+                    continue;
+                }
+                None => return text,
+            }
+        }
+        break;
+    }
+    let prefix = text
+        .get(at..at + 8)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if prefix != "@charset" {
+        return text;
+    }
+    match text[at..].find(';') {
+        Some(offset) => {
+            let end = at + offset + 1;
+            let mut out = String::with_capacity(text.len());
+            out.push_str(&text[..at]);
+            out.push_str(&text[end..]);
+            out
+        }
+        None => text,
+    }
+}
+
+enum ImportRule {
+    Plain {
+        statement: Range<usize>,
+        reference: Range<usize>,
+    },
+    Conditional {
+        reference: Range<usize>,
+    },
+    Empty,
+}
+
+fn scan_import(
+    parser: &mut Parser<'_, '_>,
+    css: &str,
+    rule_start: usize,
+) -> Result<ImportRule, ()> {
+    let mut reference: Option<Range<usize>> = None;
+    let mut conditional = false;
+    loop {
+        let start = parser.position().byte_index();
+        let token = match parser.next_including_whitespace_and_comments() {
+            Ok(token) => token.clone(),
+            Err(_) => return Err(()),
+        };
+        if token.is_parse_error() {
+            return Err(());
+        }
+        let end = parser.position().byte_index();
+        match token {
+            Token::WhiteSpace(_) | Token::Comment(_) => {}
+            Token::Semicolon => {
+                return Ok(match reference {
+                    Some(reference) => {
+                        if conditional {
+                            ImportRule::Conditional { reference }
+                        } else {
+                            ImportRule::Plain {
+                                statement: rule_start..end,
+                                reference,
+                            }
+                        }
+                    }
+                    None => ImportRule::Empty,
+                });
+            }
+            Token::UnquotedUrl(_) => {
+                if reference.is_none() {
+                    reference = Some(unquoted_url_inner(css, start, end));
+                } else {
+                    conditional = true;
+                }
+            }
+            Token::Function(ref f) => {
+                if f.eq_ignore_ascii_case("url") && reference.is_none() {
+                    let _ = parser.parse_nested_block(|sub| {
+                        loop {
+                            let inner_start = sub.position().byte_index();
+                            let Ok(inner) = sub.next_including_whitespace_and_comments() else {
+                                return Ok::<(), ParseError<'_, ()>>(());
+                            };
+                            if inner.is_parse_error() {
+                                return Ok::<(), ParseError<'_, ()>>(());
+                            }
+                            let inner = inner.clone();
+                            let inner_end = sub.position().byte_index();
+                            match inner {
+                                Token::WhiteSpace(_) | Token::Comment(_) => {}
+                                Token::QuotedString(_) => {
+                                    reference =
+                                        Some(trim_range(css, inner_start + 1, inner_end - 1));
+                                    return Ok::<(), ParseError<'_, ()>>(());
+                                }
+                                Token::UnquotedUrl(_) => {
+                                    reference =
+                                        Some(trim_range(css, inner_start + 4, inner_end - 1));
+                                    return Ok::<(), ParseError<'_, ()>>(());
+                                }
+                                _ => return Ok::<(), ParseError<'_, ()>>(()),
+                            }
+                        }
+                    });
+                    if reference.is_none() {
+                        conditional = true;
+                    }
+                } else {
+                    let _ = parser.parse_nested_block(|_| Ok::<(), ParseError<'_, ()>>(()));
+                    conditional = true;
+                }
+            }
+            Token::QuotedString(_) => {
+                if reference.is_none() {
+                    reference = Some(trim_range(css, start + 1, end - 1));
+                } else {
+                    conditional = true;
+                }
+            }
+            Token::CurlyBracketBlock => {
+                let _ = parser.parse_nested_block(|_| Ok::<(), ParseError<'_, ()>>(()));
+                conditional = true;
+            }
+            _ => {
+                conditional = true;
+            }
+        }
+    }
+}
+
+struct ModuleSpecifiers<'c> {
+    code: &'c str,
+    spans: Vec<Range<usize>>,
+}
+
+impl<'c> ModuleSpecifiers<'c> {
+    fn new(code: &'c str) -> Self {
+        ModuleSpecifiers {
+            code,
+            spans: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, literal: &StringLiteral) {
+        let span = literal.span;
+        let inner = span.start as usize + 1..span.end as usize - 1;
+        let value = &self.code[inner.clone()];
+        if value.starts_with("./") || value.starts_with("../") || value.starts_with('/') {
+            self.spans.push(inner);
+        }
+    }
+}
+
+impl<'a, 'c> OxcVisit<'a> for ModuleSpecifiers<'c> {
+    fn visit_import_declaration(&mut self, declaration: &ImportDeclaration<'a>) {
+        self.push(&declaration.source);
+        walk_import_declaration(self, declaration);
+    }
+
+    fn visit_export_all_declaration(&mut self, declaration: &ExportAllDeclaration<'a>) {
+        self.push(&declaration.source);
+        walk_export_all_declaration(self, declaration);
+    }
+
+    fn visit_export_from_declaration(&mut self, declaration: &ExportFromDeclaration<'a>) {
+        self.push(&declaration.source);
+        walk_export_from_declaration(self, declaration);
+    }
+
+    fn visit_import_expression(&mut self, expression: &ImportExpression<'a>) {
+        if let Expression::StringLiteral(source) = &expression.source {
+            self.push(source);
+        }
+        walk_import_expression(self, expression);
+    }
 }
 
 enum Script {
@@ -478,311 +788,522 @@ fn runs_in_place(tag: &Tag) -> bool {
         })
 }
 
-fn import_specifiers(code: &str) -> Vec<Range<usize>> {
-    let bytes = code.as_bytes();
-    let is_word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'$';
-    let mut found = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        let keyword = ["import", "export"].into_iter().find(|word| {
-            bytes[at..].starts_with(word.as_bytes())
-                && (at == 0 || !is_word(bytes[at - 1]))
-                && !bytes
-                    .get(at + word.len())
-                    .is_some_and(|byte| is_word(*byte))
-        });
-        let Some(keyword) = keyword else {
-            at += 1;
-            continue;
-        };
-        let mut cursor = at + keyword.len();
-        at = cursor;
-        let mut last_word = None;
-        let mut dynamic = false;
-        while let Some(&byte) = bytes.get(cursor) {
-            if byte == b'"' || byte == b'\'' {
-                let allowed = dynamic || last_word.is_none_or(|word| word == "from");
-                let open = cursor + 1;
-                let Some(length) = bytes[open..].iter().position(|next| *next == byte) else {
-                    break;
-                };
-                let specifier = &code[open..open + length];
-                if allowed
-                    && (specifier.starts_with("./")
-                        || specifier.starts_with("../")
-                        || specifier.starts_with('/'))
-                {
-                    found.push(open..open + length);
-                }
-                at = open + length;
-                break;
-            }
-            if byte == b'(' && keyword == "import" && cursor == at {
-                dynamic = true;
-                cursor += 1;
-                while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
-                    cursor += 1;
-                }
-                continue;
-            }
-            if byte.is_ascii_whitespace() || matches!(byte, b',' | b'{' | b'}' | b'*') {
-                cursor += 1;
-                continue;
-            }
-            if is_word(byte) {
-                let start = cursor;
-                while bytes.get(cursor).is_some_and(|next| is_word(*next)) {
-                    cursor += 1;
-                }
-                last_word = Some(&code[start..cursor]);
-                continue;
-            }
-            break;
-        }
-    }
-    found
-}
-
-fn reference_spans(css_text: &str) -> Vec<Range<usize>> {
-    let bytes = css_text.as_bytes();
-    let mut spans = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        let rest = &bytes[at..];
-        if rest.starts_with(b"/*") {
-            at += rest
-                .windows(2)
-                .position(|pair| pair == b"*/")
-                .map_or(rest.len(), |end| end + 2);
-        } else if rest.len() >= 4 && rest[..4].eq_ignore_ascii_case(b"url(") {
-            let (span, next) = delimited(bytes, at + 4, b')');
-            spans.extend(span);
-            at = next;
-        } else if rest.len() >= 7 && rest[..7].eq_ignore_ascii_case(b"@import") {
-            let mut start = at + 7;
-            while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
-                start += 1;
-            }
-            if matches!(bytes.get(start), Some(b'"' | b'\'')) {
-                let (span, next) = delimited(bytes, start, b')');
-                spans.extend(span);
-                at = next;
-            } else {
-                at += 7;
-            }
-        } else {
-            at += 1;
-        }
-    }
-    spans
-}
-
-fn delimited(bytes: &[u8], from: usize, closer: u8) -> (Option<Range<usize>>, usize) {
-    let mut start = from;
-    while bytes.get(start).is_some_and(u8::is_ascii_whitespace) {
-        start += 1;
-    }
-    let (start, end_marker) = match bytes.get(start) {
-        Some(&quote @ (b'"' | b'\'')) => (start + 1, quote),
-        _ => (start, closer),
-    };
-    let Some(length) = bytes[start..].iter().position(|&byte| byte == end_marker) else {
-        return (None, bytes.len());
-    };
-    let mut end = start + length;
-    while end > start && bytes[end - 1].is_ascii_whitespace() {
-        end -= 1;
-    }
-    (Some(start..end), start + length + 1)
-}
-
 #[cfg(test)]
-mod scanner_tests {
+mod behaviour_tests {
     use super::*;
+    use std::collections::HashMap;
 
-    fn slices(source: &str, ranges: impl IntoIterator<Item = Range<usize>>) -> Vec<&str> {
-        ranges.into_iter().map(|range| &source[range]).collect()
+    struct Files(HashMap<String, Vec<u8>>);
+
+    impl Files {
+        fn new(files: &[(&str, &[u8])]) -> Files {
+            Files(
+                files
+                    .iter()
+                    .map(|(name, bytes)| ((*name).to_string(), bytes.to_vec()))
+                    .collect(),
+            )
+        }
+    }
+
+    impl Resources for Files {
+        fn load(&mut self, reference: &str, from: &str) -> Option<Loaded> {
+            let end = reference.find(['?', '#']).unwrap_or(reference.len());
+            let mut parts: Vec<&str> = from.split('/').filter(|part| !part.is_empty()).collect();
+            parts.pop();
+            for piece in reference[..end].split('/') {
+                match piece {
+                    "" | "." => {}
+                    ".." => {
+                        parts.pop();
+                    }
+                    other => parts.push(other),
+                }
+            }
+            let id = parts.join("/");
+            self.0.get(id.as_str()).map(|bytes| Loaded {
+                bytes: bytes.clone(),
+                id,
+                content_type: None,
+            })
+        }
+    }
+
+    fn linked_stylesheet(files: &mut Files, href: &str) -> Embedded {
+        let src = format!(
+            r#"<!DOCTYPE html><html><head><link rel="stylesheet" href="{href}"></head><body></body></html>"#
+        );
+        embed_resources(&src, files)
+    }
+
+    fn linked_module(files: &mut Files, href: &str) -> Embedded {
+        let src = format!(
+            r#"<!DOCTYPE html><html><head><script type="module" src="{href}"></script></head><body></body></html>"#
+        );
+        embed_resources(&src, files)
+    }
+
+    fn page_with_style(css: &str) -> String {
+        format!("<!DOCTYPE html><html><head><style>{css}</style></head><body></body></html>")
+    }
+
+    fn decoded(html: &str, prefix: &str) -> String {
+        let start = html.find(prefix).expect("a data URL") + prefix.len();
+        let end = start + html[start..].find('"').unwrap();
+        String::from_utf8(STANDARD.decode(&html[start..end]).unwrap()).unwrap()
+    }
+
+    fn decoded_css(html: &str) -> String {
+        decoded(html, r#"href="data:text/css;base64,"#)
+    }
+
+    fn decoded_module(html: &str) -> String {
+        decoded(html, r#"src="data:application/javascript;base64,"#)
     }
 
     #[test]
-    fn plain_import_with_quoted_reference() {
-        let css = "@import 'a.css';";
-        let found = plain_imports(css);
-        let statements = slices(css, found.iter().map(|(statement, _)| statement.clone()));
-        let references = slices(css, found.into_iter().map(|(_, reference)| reference));
-        assert_eq!(statements, ["@import 'a.css';"]);
-        assert_eq!(references, ["a.css"]);
+    fn an_import_with_a_quoted_reference_is_inlined() {
+        let mut files = Files::new(&[
+            ("theme.css", b"@import 'a.css'; .x { color: red; }"),
+            ("a.css", b".a { color: blue; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(!css.contains("@import"), "{css}");
+        assert!(css.contains(".a { color: blue; }"), "{css}");
+        assert!(css.contains(".x { color: red; }"), "{css}");
+        assert_eq!(embedded.embedded, 2);
     }
 
     #[test]
-    fn plain_import_with_unquoted_url() {
-        let css = "@import url(a.css);";
-        let found = plain_imports(css);
-        let references = slices(css, found.into_iter().map(|(_, reference)| reference));
-        assert_eq!(references, ["a.css"]);
+    fn an_import_with_an_unquoted_url_is_inlined() {
+        let mut files = Files::new(&[
+            ("theme.css", b"@import url(a.css); .x { color: red; }"),
+            ("a.css", b".a { color: blue; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(!css.contains("@import"), "{css}");
+        assert!(css.contains(".a { color: blue; }"), "{css}");
     }
 
     #[test]
-    fn plain_import_with_quoted_url_and_spaces() {
-        let css = "@import url( \"a.css\" );";
-        let found = plain_imports(css);
-        let references = slices(css, found.into_iter().map(|(_, reference)| reference));
-        assert_eq!(references, ["a.css"]);
+    fn an_import_with_a_quoted_url_and_spaces_is_inlined() {
+        let mut files = Files::new(&[
+            ("theme.css", b"@import url( \"a.css\" ); .x { color: red; }"),
+            ("a.css", b".a { color: blue; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(!css.contains("@import"), "{css}");
+        assert!(css.contains(".a { color: blue; }"), "{css}");
     }
 
     #[test]
-    fn plain_import_with_uppercase_keyword() {
-        let css = "@IMPORT url('a.css');";
-        let found = plain_imports(css);
-        let statements = slices(css, found.iter().map(|(statement, _)| statement.clone()));
-        let references = slices(css, found.into_iter().map(|(_, reference)| reference));
-        assert_eq!(statements, ["@IMPORT url('a.css');"]);
-        assert_eq!(references, ["a.css"]);
+    fn an_import_with_an_uppercase_keyword_is_inlined() {
+        let mut files = Files::new(&[
+            ("theme.css", b"@IMPORT url('a.css'); .x { color: red; }"),
+            ("a.css", b".a { color: blue; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(
+            !css.contains("@import") && !css.contains("@IMPORT"),
+            "{css}"
+        );
+        assert!(css.contains(".a { color: blue; }"), "{css}");
     }
 
     #[test]
-    fn multiple_plain_imports_keep_source_order() {
-        let css = "@import 'a.css'; @import 'b.css';";
-        let found = plain_imports(css);
-        let statements = slices(css, found.iter().map(|(statement, _)| statement.clone()));
-        let references = slices(css, found.into_iter().map(|(_, reference)| reference));
-        assert_eq!(statements, ["@import 'a.css';", "@import 'b.css';"]);
-        assert_eq!(references, ["a.css", "b.css"]);
-    }
-
-    #[test]
-    fn url_import_with_media_query_is_not_plain() {
-        let css = "@import url(a.css) print;";
-        assert_eq!(
-            slices(
-                css,
-                plain_imports(css)
-                    .into_iter()
-                    .map(|(_, reference)| reference)
+    fn multiple_imports_inline_in_source_order() {
+        let mut files = Files::new(&[
+            (
+                "theme.css",
+                b"@import 'a.css'; @import 'b.css'; .x { color: red; }",
             ),
-            Vec::<&str>::new()
+            ("a.css", b".aaa { color: a; }"),
+            ("b.css", b".bbb { color: b; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        let a = css.find(".aaa").expect("a.css inline");
+        let b = css.find(".bbb").expect("b.css inline");
+        let x = css.find(".x").expect("the rule after the imports");
+        assert!(a < b && b < x, "{css}");
+        assert!(!css.contains("@import"), "{css}");
+        assert_eq!(embedded.embedded, 3);
+    }
+
+    #[test]
+    fn an_import_with_a_media_query_stays_an_import() {
+        let mut files = Files::new(&[
+            ("theme.css", b"@import url(print.css) print;"),
+            ("print.css", b".p { color: red; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(!css.contains("@media print"), "{css}");
+        assert!(
+            css.contains("@import") && css.contains("data:text/css;base64,"),
+            "{css}"
         );
     }
 
     #[test]
-    fn quoted_import_with_media_query_is_not_plain() {
-        let css = "@import 'a.css' screen;";
-        assert_eq!(
-            slices(
-                css,
-                plain_imports(css)
-                    .into_iter()
-                    .map(|(_, reference)| reference)
-            ),
-            Vec::<&str>::new()
+    fn an_import_with_a_quoted_reference_and_media_list_stays_an_import() {
+        let mut files = Files::new(&[
+            ("theme.css", b"@import 'screen.css' screen;"),
+            ("screen.css", b".s { color: red; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(!css.contains("@media screen"), "{css}");
+        assert!(
+            css.contains("@import") && css.contains("data:text/css;base64,"),
+            "{css}"
         );
     }
 
     #[test]
-    fn plain_import_without_semicolon_is_not_plain() {
-        let css = "@import url(a.css)";
-        assert_eq!(
-            slices(
-                css,
-                plain_imports(css)
-                    .into_iter()
-                    .map(|(_, reference)| reference)
+    fn an_import_without_a_semicolon_is_left_as_written() {
+        let src = page_with_style("@import url(a.css)");
+        let mut files = Files::new(&[("a.css", b".a { color: blue; }")]);
+        let embedded = embed_resources(&src, &mut files);
+        assert_eq!(embedded.embedded, 0);
+        assert!(embedded.missing.is_empty());
+        assert_eq!(embedded.html, src);
+    }
+
+    #[test]
+    fn a_bare_at_import_keyword_is_left_as_written() {
+        let src = page_with_style("@import");
+        let mut files = Files::new(&[]);
+        let embedded = embed_resources(&src, &mut files);
+        assert_eq!(embedded.embedded, 0);
+        assert_eq!(embedded.html, src);
+    }
+
+    #[test]
+    fn an_unterminated_url_import_is_left_as_written() {
+        let src = page_with_style("@import url(a.css");
+        let mut files = Files::new(&[("a.css", b".a { color: blue; }")]);
+        let embedded = embed_resources(&src, &mut files);
+        assert_eq!(embedded.embedded, 0);
+        assert_eq!(embedded.html, src);
+    }
+
+    #[test]
+    fn a_url_inside_a_comment_is_not_embedded() {
+        let src =
+            page_with_style("/* url(nope/missing.png) */ .x { background: url(img/dot.png) }");
+        let mut files = Files::new(&[("img/dot.png", b"pixels")]);
+        let embedded = embed_resources(&src, &mut files);
+        assert_eq!(embedded.missing, Vec::<String>::new());
+        assert!(embedded.html.contains("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn a_charset_rule_is_kept() {
+        let mut files = Files::new(&[
+            (
+                "style.css",
+                b"@charset \"utf-8\";\n.icon::before { content: \"\\00a9\"; background: url(\"icon.png\"); }",
             ),
-            Vec::<&str>::new()
+            ("icon.png", b"png bytes"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "style.css");
+        let css = decoded_css(&embedded.html);
+        assert!(css.contains("@charset \"utf-8\";"), "{css}");
+        assert!(css.contains("data:image/png;base64,"), "{css}");
+    }
+
+    #[test]
+    fn a_malformed_rule_is_kept() {
+        let mut files = Files::new(&[
+            (
+                "style.css",
+                b".broken { *zoom: 1; }\n.valid { background: url(\"a.png\"); }",
+            ),
+            ("a.png", b"png bytes"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "style.css");
+        let css = decoded_css(&embedded.html);
+        assert!(css.contains("*zoom: 1;"), "{css}");
+        assert!(css.contains("data:image/png;base64,"), "{css}");
+    }
+
+    #[test]
+    fn a_url_in_a_custom_property_is_embedded() {
+        let src = page_with_style(
+            ":root { --hero-image: url(\"img/hero.jpg\"); } .hero { background: var(--hero-image); }",
+        );
+        let mut files = Files::new(&[("img/hero.jpg", b"jpeg bytes")]);
+        let embedded = embed_resources(&src, &mut files);
+        assert!(
+            embedded.html.contains("data:image/jpeg;base64,"),
+            "{}",
+            embedded.html
+        );
+        assert!(!embedded.html.contains("img/hero.jpg"));
+    }
+
+    #[test]
+    fn a_url_in_image_set_is_embedded() {
+        let src = page_with_style(
+            ".bg { background-image: image-set(url(\"img/a.png\") 1x, url(\"img/b.png\") 2x); }",
+        );
+        let mut files = Files::new(&[("img/a.png", b"a"), ("img/b.png", b"b")]);
+        let embedded = embed_resources(&src, &mut files);
+        assert_eq!(
+            embedded.html.matches("data:image/png;base64,").count(),
+            2,
+            "{}",
+            embedded.html
+        );
+        assert!(!embedded.html.contains("img/a.png"));
+        assert!(!embedded.html.contains("img/b.png"));
+    }
+
+    #[test]
+    fn an_import_after_rules_is_left_as_written() {
+        let mut files = Files::new(&[
+            (
+                "theme.css",
+                b".a { color: red; }\n@import url(b.css);\n.b { background: url(c.png); }",
+            ),
+            ("b.css", b".b-inline { color: blue; }"),
+            ("c.png", b"png bytes"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(!css.contains(".b-inline {"), "{css}");
+        assert!(css.contains("@import url(data:text/css;base64,"), "{css}");
+        assert!(css.contains("data:image/png;base64,"), "{css}");
+        assert_eq!(embedded.embedded, 3);
+    }
+
+    #[test]
+    fn an_import_with_a_layer_stays_an_import() {
+        let mut files = Files::new(&[
+            (
+                "theme.css",
+                b"@import url(sub.css) layer(utilities) screen;",
+            ),
+            ("sub.css", b".s { color: red; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(css.contains("@import url(data:text/css;base64,"), "{css}");
+        assert!(css.contains("layer(utilities)"), "{css}");
+        assert!(css.contains("screen"), "{css}");
+        assert!(!css.contains("@layer"), "{css}");
+    }
+
+    #[test]
+    fn vendor_prefixes_and_comments_are_kept() {
+        let src = page_with_style(
+            "/* keep me */ .box { -webkit-transition: color 1s; margin-top: 20px; margin: 10px; background: url(\"img/dot.png\"); }",
+        );
+        let mut files = Files::new(&[("img/dot.png", b"pixels")]);
+        let embedded = embed_resources(&src, &mut files);
+        assert!(
+            embedded.html.contains("-webkit-transition"),
+            "{}",
+            embedded.html
+        );
+        assert!(embedded.html.contains("/* keep me */"), "{}", embedded.html);
+        let margin_top = embedded.html.find("margin-top").expect("margin-top");
+        let margin = embedded.html.find("margin: 10px").expect("margin");
+        assert!(margin_top < margin, "{}", embedded.html);
+        assert!(embedded.html.contains("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn a_cyclic_import_terminates_and_keeps_the_import() {
+        let mut files = Files::new(&[
+            ("a.css", b"@import url(b.css); .x { color: red; }"),
+            ("b.css", b"@import url(a.css); .y { color: blue; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "a.css");
+        let css = decoded_css(&embedded.html);
+        assert!(css.contains(".y { color: blue; }"), "{css}");
+        assert!(css.contains("@import url(a.css);"), "{css}");
+    }
+
+    #[test]
+    fn an_inlined_stylesheet_drops_its_own_charset_and_keeps_the_importing_one() {
+        let mut files = Files::new(&[
+            (
+                "theme.css",
+                b"@charset \"utf-8\";\n@import 'face.css';\n.theme { color: red; }",
+            ),
+            (
+                "face.css",
+                b"@charset \"utf-8\";\n@font-face { font-family: F; src: url(f.woff2); }",
+            ),
+            ("f.woff2", b"font bytes"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert_eq!(css.matches("@charset").count(), 1, "{css}");
+        assert!(css.contains("@font-face"), "{css}");
+        assert!(css.contains("data:font/woff2;base64,"), "{css}");
+    }
+
+    #[test]
+    fn a_string_containing_the_word_import_is_not_treated_as_an_import() {
+        let src = page_with_style(".x::before { content: \"@import url(nope.css);\" }");
+        let mut files = Files::new(&[]);
+        let embedded = embed_resources(&src, &mut files);
+        assert_eq!(embedded.missing, Vec::<String>::new());
+        assert!(embedded.html.contains("@import url(nope.css);"));
+    }
+
+    #[test]
+    fn an_import_from_a_relative_specifier_is_rewritten() {
+        let mut files = Files::new(&[
+            ("main.js", b"import x from './a.js'; console.log(x);"),
+            ("a.js", b"export default 1;"),
+        ]);
+        let embedded = linked_module(&mut files, "main.js");
+        let module = decoded_module(&embedded.html);
+        assert!(!module.contains("./a.js"), "{module}");
+        assert_eq!(
+            module
+                .matches("data:application/javascript;base64,")
+                .count(),
+            1
         );
     }
 
     #[test]
-    fn bare_at_import_keyword_is_not_plain() {
-        let css = "@import";
-        assert_eq!(
-            slices(
-                css,
-                plain_imports(css)
-                    .into_iter()
-                    .map(|(_, reference)| reference)
+    fn a_side_effect_import_specifier_is_rewritten() {
+        let mut files = Files::new(&[
+            ("main.js", b"import './side.js';"),
+            ("side.js", b"console.log(1);"),
+        ]);
+        let embedded = linked_module(&mut files, "main.js");
+        let module = decoded_module(&embedded.html);
+        assert!(!module.contains("./side.js"), "{module}");
+    }
+
+    #[test]
+    fn a_reexport_from_a_parent_specifier_is_rewritten() {
+        let mut files = Files::new(&[
+            ("js/main.js", b"export * from \"../b.js\";"),
+            ("b.js", b"export const b = 2;"),
+        ]);
+        let embedded = linked_module(&mut files, "js/main.js");
+        let module = decoded_module(&embedded.html);
+        assert!(!module.contains("../b.js"), "{module}");
+    }
+
+    #[test]
+    fn an_absolute_path_specifier_is_rewritten() {
+        let mut files = Files::new(&[
+            (
+                "main.js",
+                b"import { a, b } from '/abs/c.js'; console.log(a, b);",
             ),
-            Vec::<&str>::new()
-        );
+            ("abs/c.js", b"export const a = 1, b = 2;"),
+        ]);
+        let embedded = linked_module(&mut files, "main.js");
+        let module = decoded_module(&embedded.html);
+        assert!(!module.contains("/abs/c.js"), "{module}");
     }
 
     #[test]
-    fn unterminated_url_import_is_not_plain() {
-        let css = "@import url(a.css";
-        assert_eq!(
-            slices(
-                css,
-                plain_imports(css)
-                    .into_iter()
-                    .map(|(_, reference)| reference)
+    fn a_dynamic_import_specifier_is_rewritten() {
+        let mut files = Files::new(&[
+            (
+                "main.js",
+                b"const m = await import('./d.js'); console.log(m);",
             ),
-            Vec::<&str>::new()
+            ("d.js", b"export default 1;"),
+        ]);
+        let embedded = linked_module(&mut files, "main.js");
+        let module = decoded_module(&embedded.html);
+        assert!(!module.contains("./d.js"), "{module}");
+    }
+
+    #[test]
+    fn a_bare_specifier_is_left_as_written() {
+        let mut files = Files::new(&[("main.js", b"import x from 'bare'; console.log(x);")]);
+        let embedded = linked_module(&mut files, "main.js");
+        let module = decoded_module(&embedded.html);
+        assert!(module.contains("from 'bare'"), "{module}");
+    }
+
+    #[test]
+    fn a_remote_url_specifier_is_left_as_written() {
+        let mut files = Files::new(&[(
+            "main.js",
+            b"import x from \"https://cdn.test/x.js\"; console.log(x);",
+        )]);
+        let embedded = linked_module(&mut files, "main.js");
+        let module = decoded_module(&embedded.html);
+        assert!(module.contains("https://cdn.test/x.js"), "{module}");
+    }
+
+    #[test]
+    fn an_export_without_a_from_clause_is_left_as_written() {
+        let mut files = Files::new(&[("main.js", b"export const a = 1;")]);
+        let embedded = linked_module(&mut files, "main.js");
+        assert_eq!(embedded.embedded, 1);
+    }
+
+    #[test]
+    fn a_keyword_inside_a_larger_word_is_not_treated_as_an_import() {
+        let mut files = Files::new(&[("main.js", b"const important = 1; reimport('./e.js');")]);
+        let embedded = linked_module(&mut files, "main.js");
+        let module = decoded_module(&embedded.html);
+        assert!(module.contains("reimport('./e.js')"), "{module}");
+    }
+    #[test]
+    fn an_unterminated_string_is_left_as_written() {
+        let mut files = Files::new(&[("main.js", b"import x from './unterminated")]);
+        let embedded = linked_module(&mut files, "main.js");
+        assert_eq!(embedded.embedded, 1);
+        assert!(embedded.missing.is_empty());
+        assert!(
+            embedded
+                .html
+                .contains("data:application/javascript;base64,")
         );
-    }
-
-    #[test]
-    fn import_from_relative_specifier_is_returned() {
-        let code = "import x from './a.js';";
-        assert_eq!(slices(code, import_specifiers(code)), ["./a.js"]);
-    }
-
-    #[test]
-    fn side_effect_import_specifier_is_returned() {
-        let code = "import './side.js';";
-        assert_eq!(slices(code, import_specifiers(code)), ["./side.js"]);
-    }
-
-    #[test]
-    fn reexport_parent_specifier_is_returned() {
-        let code = "export * from \"../b.js\";";
-        assert_eq!(slices(code, import_specifiers(code)), ["../b.js"]);
-    }
-
-    #[test]
-    fn absolute_path_specifier_is_returned() {
-        let code = "import { a, b } from '/abs/c.js';";
-        assert_eq!(slices(code, import_specifiers(code)), ["/abs/c.js"]);
-    }
-
-    #[test]
-    fn dynamic_import_specifier_is_returned() {
-        let code = "const m = await import('./d.js');";
-        assert_eq!(slices(code, import_specifiers(code)), ["./d.js"]);
-    }
-
-    #[test]
-    fn bare_specifier_is_not_returned() {
-        let code = "import x from 'bare';";
-        assert_eq!(slices(code, import_specifiers(code)), Vec::<&str>::new());
-    }
-
-    #[test]
-    fn remote_url_specifier_is_not_returned() {
-        let code = "import x from \"https://cdn.test/x.js\";";
-        assert_eq!(slices(code, import_specifiers(code)), Vec::<&str>::new());
-    }
-
-    #[test]
-    fn export_without_from_yields_no_specifier() {
-        let code = "export const a = 1;";
-        assert_eq!(slices(code, import_specifiers(code)), Vec::<&str>::new());
-    }
-
-    #[test]
-    fn keyword_inside_larger_word_is_not_returned() {
-        let code = "const important = 1; reimport('./e.js');";
-        assert_eq!(slices(code, import_specifiers(code)), Vec::<&str>::new());
-    }
-
-    #[test]
-    fn unterminated_string_is_not_returned() {
-        let code = "import x from './unterminated";
-        assert_eq!(slices(code, import_specifiers(code)), Vec::<&str>::new());
+        let module = decoded_module(&embedded.html);
+        assert!(module.contains("./unterminated"), "{module}");
     }
 
     #[test]
     fn multiple_import_specifiers_keep_source_order() {
-        let code = "import a from './a.js'; import b from '../b.js';";
-        assert_eq!(slices(code, import_specifiers(code)), ["./a.js", "../b.js"]);
+        let mut files = Files::new(&[
+            (
+                "js/main.js",
+                b"import a from './a.js'; import b from '../b.js'; console.log(a, b);",
+            ),
+            ("js/a.js", b"export const a = 1;"),
+            ("b.js", b"export const b = 2;"),
+        ]);
+        let embedded = linked_module(&mut files, "js/main.js");
+        let module = decoded_module(&embedded.html);
+        let mut data = module.split("data:application/javascript;base64,");
+        let _ = data.next();
+        let first = data.next().expect("a first embedded module");
+        let second = data.next().expect("a second embedded module");
+        let decode = |chunk: &str| {
+            let end = chunk.find(['\'', '"']).unwrap();
+            String::from_utf8(STANDARD.decode(&chunk[..end]).unwrap()).unwrap()
+        };
+        assert_eq!(decode(first), "export const a = 1;");
+        assert_eq!(decode(second), "export const b = 2;");
+    }
+
+    #[test]
+    fn a_comment_containing_an_import_is_not_treated_as_an_import() {
+        let mut files = Files::new(&[("main.js", b"// import x from './a.js';\nconsole.log(1);")]);
+        let embedded = linked_module(&mut files, "main.js");
+        let module = decoded_module(&embedded.html);
+        assert!(module.contains("// import x from './a.js';"), "{module}");
+        assert_eq!(embedded.embedded, 1);
     }
 }
