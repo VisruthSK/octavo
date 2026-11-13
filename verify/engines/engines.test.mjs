@@ -92,6 +92,10 @@ test("a check that could not be applied is reported", () => {
     incompleteChecks({ elements: 1, hover: 1, focus: 0, focusVisible: 0, active: 0, screenshots: { taken: 0, total: 1 } }),
     ["check incomplete: focus on 1 of 1 elements", "check incomplete: focusVisible on 1 of 1 elements", "check incomplete: active on 1 of 1 elements", "check incomplete: screenshot on 1 of 1 states"],
   );
+  assert.deepEqual(
+    checksOf({ elements: 1, hover: 0, focus: 1, focusVisible: 1, active: 1, expected: { hover: 0, focus: 1, focusVisible: 1, active: 1 } }),
+    [],
+  );
 });
 
 test("browser identity changes with launch arguments and channel", () => {

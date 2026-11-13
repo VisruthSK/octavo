@@ -266,7 +266,13 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
         );
         timing.compare += elapsed(startedCompare);
         const incomplete = [...incompleteChecks(before.checks), ...incompleteChecks(after.checks)];
-        reports[plans.indexOf(plan)].push({ scenario: scenario.name, issues: [...issues, ...incomplete], rounded, checks: before.checks });
+        reports[plans.indexOf(plan)].push({
+          scenario: scenario.name,
+          issues: [...issues, ...incomplete],
+          rounded,
+          checks: before.checks,
+          optimizedChecks: after.checks,
+        });
         if (issues.some((issue) => issue.includes("capture timed out") || issue.includes("verification deadline reached"))) {
           failRemainder(scenarioAt, issues.find((issue) => issue.includes("capture timed out") || issue.includes("verification deadline reached")));
           stopped = true;

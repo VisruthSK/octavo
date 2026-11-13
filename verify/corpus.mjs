@@ -163,7 +163,16 @@ const timing = { original: 0, optimized: 0, compare: 0, cached: 0 };
 const browserCache = { hits: 0, misses: 0 };
 let browserName = "";
 const engineTag = engine.tag;
-const browserChecks = { scenarios: new Set(), totals: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0 }, degraded: [] };
+const browserChecks = {
+  scenarios: new Set(),
+  totals: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0 },
+  unreachable: {
+    original: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0 },
+    optimized: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0 },
+  },
+  unreachableDetails: [],
+  degraded: [],
+};
 
 if (browser) {
   const { closeBrowser, pages, verifyLevels } = await import("./verify.mjs");
@@ -205,12 +214,21 @@ if (browser) {
     for (const [at, plan] of plans.entries()) {
       const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
       const report = measured.reports[at];
-      for (const { scenario, checks } of report) {
+      for (const { scenario, checks, optimizedChecks } of report) {
         if (!checks) continue;
         browserChecks.scenarios.add(scenario);
         for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) browserChecks.totals[state] += checks[state] ?? 0;
-        const missing = checksOf(checks);
-        if (missing.length) browserChecks.degraded.push({ id: entry.id, scenario, missing });
+        for (const [side, captureChecks] of [["original", checks], ["optimized", optimizedChecks]]) {
+          if (!captureChecks) continue;
+          for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) {
+            browserChecks.unreachable[side][state] += captureChecks.unreachable?.[state] ?? 0;
+          }
+          if (captureChecks.unreachable?.details.length) {
+            browserChecks.unreachableDetails.push({ id: entry.id, scenario, side, details: captureChecks.unreachable.details });
+          }
+          const missing = checksOf(captureChecks);
+          if (missing.length) browserChecks.degraded.push({ id: entry.id, scenario, side, missing });
+        }
       }
       const unfinished = report.some(({ issues }) => issues.some((issue) => issue.includes("verification deadline reached")));
       if (plan.revalidate && !unfinished) {
@@ -337,11 +355,15 @@ if (browser) {
     `## Browser checks`,
     ``,
     `Engine ${engineNotice()} compared the scenarios ${[...browserChecks.scenarios].join(", ")}.`,
-    `Forced hover, focus and active states were applied with real pointer and keyboard events in every scenario with scripts, and were left out in the motion scenario, where the animations run, and in the no-js scenario, where scripts are off.`,
+    `Forced hover, focus, focus-visible and active states were checked with real pointer and keyboard events in scenarios with scripts. Hidden and unreachable targets are recorded in the compared state.`,
     `Checked ${totals.elements} elements: hover applied to ${totals.hover}, focus to ${totals.focus}, focus visible to ${totals.focusVisible}, active to ${totals.active}.`,
     ``,
-    `Degraded checks: ${browserChecks.degraded.length ? browserChecks.degraded.length : "none"}.`,
-    ...browserChecks.degraded.map((entry) => `- ${entry.id} (${entry.scenario}): ${entry.missing.join(", ")}`),
+    `Incomplete checks: ${browserChecks.degraded.length ? browserChecks.degraded.length : "none"}.`,
+    ...browserChecks.degraded.map((entry) => `- ${entry.id} (${entry.scenario}, ${entry.side}): ${entry.missing.join(", ")}`),
+    `Unreachable elements: original ${browserChecks.unreachable.original.elements}, optimized ${browserChecks.unreachable.optimized.elements}.`,
+    `Unreachable states: original ${browserChecks.unreachable.original.hover} hover, ${browserChecks.unreachable.original.focus} focus, ${browserChecks.unreachable.original.focusVisible} focus-visible, ${browserChecks.unreachable.original.active} active; optimized ${browserChecks.unreachable.optimized.hover} hover, ${browserChecks.unreachable.optimized.focus} focus, ${browserChecks.unreachable.optimized.focusVisible} focus-visible, ${browserChecks.unreachable.optimized.active} active.`,
+    `Unreachable details: ${browserChecks.unreachableDetails.length ? browserChecks.unreachableDetails.length : "none"}.`,
+    ...browserChecks.unreachableDetails.map((entry) => `- ${entry.id} (${entry.scenario}, ${entry.side}): ${entry.details.join("; ")}`),
   );
 }
 

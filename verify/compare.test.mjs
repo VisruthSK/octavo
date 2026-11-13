@@ -140,6 +140,29 @@ test("a missing screenshot is an issue when either or both captures lack one", (
   }
 });
 
+test("an unreachable marker differing from a reachable state fails comparison", () => {
+  const state = (forced) => ({
+    title: "",
+    accessibility: "",
+    forced: [[":hover on interactive #0", forced]],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [0, 0],
+    labels: [],
+    rects: [],
+    styles: [],
+    screenshot: Buffer.from("same"),
+  });
+  const issues = compare(
+    { states: [state("unreachable")], errors: [], requests: [] },
+    { states: [state("color:red")], errors: [], requests: [] },
+    false,
+  );
+  assert.ok(issues.some((issue) => issue.includes("forced :hover")));
+});
+
 test("quotes elsewhere in a declaration still matter", () => {
   assert.deepEqual(missingFrom('content:"a"', "content:a"), ['content:"a"']);
 });

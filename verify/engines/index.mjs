@@ -23,7 +23,11 @@ export const checksOf = (checks) => {
   const missing = [];
   for (const state of ["hover", "focus", "focusVisible", "active"]) {
     const applied = checks[state] ?? 0;
-    if (applied < checks.elements) missing.push(`${state} on ${checks.elements - applied} of ${checks.elements} elements`);
+    const expected = checks.expected?.[state] ?? checks.elements;
+    if (applied < expected) {
+      const details = checks.details?.[state] ?? [];
+      missing.push(`${state} on ${expected - applied} of ${expected} elements${details.length ? `: ${details.join("; ")}` : ""}`);
+    }
   }
   const shots = checks.screenshots;
   if (shots && shots.taken < shots.total) missing.push(`screenshot on ${shots.total - shots.taken} of ${shots.total} states`);

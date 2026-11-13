@@ -18,9 +18,61 @@ const UNGUARD = () => {
   delete window.octavoGuard;
 };
 
-const STATES = ["hover", "focus", "active"];
+const STATES = ["hover", "focus", "focus-visible", "active"];
+const CHECKS = ["hover", "focus", "focusVisible", "active"];
 
-const emptyChecks = (elements) => ({ elements, hover: 0, focus: 0, focusVisible: 0, active: 0 });
+const emptyChecks = (elements) => ({
+  elements,
+  hover: 0,
+  focus: 0,
+  focusVisible: 0,
+  active: 0,
+  expected: { hover: 0, focus: 0, focusVisible: 0, active: 0 },
+  details: { hover: [], focus: [], focusVisible: [], active: [] },
+  unreachable: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0, details: [] },
+});
+
+async function reasonFor(element, state) {
+  return element.evaluate((target, state) => {
+    const style = getComputedStyle(target);
+    if (target.closest("[inert]")) return "inside inert subtree";
+    if (style.visibility === "hidden") return "visibility hidden";
+    if ((state === "focus" || state === "focusVisible") && (target.matches(":disabled") || target.tabIndex < 0)) {
+      return "not focusable";
+    }
+    if (state !== "hover" && state !== "active") return "";
+    if (style.pointerEvents === "none") return "pointer-events none";
+    const rect = target.getBoundingClientRect();
+    for (let ancestor = target.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      const parentStyle = getComputedStyle(ancestor);
+      const parentRect = ancestor.getBoundingClientRect();
+      const left = parentRect.left + ancestor.clientLeft;
+      const top = parentRect.top + ancestor.clientTop;
+      const right = left + ancestor.clientWidth;
+      const bottom = top + ancestor.clientHeight;
+      const clipsX = ["hidden", "clip", "scroll", "auto"].includes(parentStyle.overflowX);
+      const clipsY = ["hidden", "clip", "scroll", "auto"].includes(parentStyle.overflowY);
+      if ((clipsX && (rect.right <= left || rect.left >= right)) || (clipsY && (rect.bottom <= top || rect.top >= bottom))) {
+        return `clipped by ${ancestor.tagName.toLowerCase()}${ancestor.id ? `#${ancestor.id}` : ""}`;
+      }
+    }
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    if (hit && hit !== target && !target.contains(hit)) return `covered by ${hit.tagName.toLowerCase()}${hit.id ? `#${hit.id}` : ""}`;
+    return "";
+  }, state);
+}
+
+function noteFailure(checks, state, detail) {
+  checks.details[state].push(detail);
+}
+
+function noteUnreachable(checks, state, detail, unreachableStates) {
+  checks.expected[state] -= 1;
+  checks.unreachable[state] += 1;
+  checks.unreachable.details.push(`${state} ${detail}`);
+  unreachableStates.add(state);
+  if (unreachableStates.size === 1) checks.unreachable.elements += 1;
+}
 
 export async function focus(page, element) {
   await page.keyboard.press("Shift");
@@ -48,10 +100,15 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       onPhase(`forcedStates element ${index} scrollIntoView`);
       await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
       checks.elements += 1;
+      for (const state of CHECKS) checks.expected[state] += 1;
+      const info = await element.evaluate((target) => `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""}`);
+      const detail = (state, reason) => `${info}, selector "${selector}", index ${index}: ${reason || "state did not apply although the target was reachable"}`;
+      const unreachableStates = new Set();
       onPhase(`forcedStates element ${index} boundingBox`);
       let box = await element.boundingBox().catch(() => null);
       if (!box || !box.width || !box.height) {
         for (const state of STATES) states.push([`:${state} on interactive #${index}`, "unavailable"]);
+        for (const state of CHECKS) noteFailure(checks, state, detail(state, "visible element has no usable bounding box"));
         continue;
       }
       onPhase(`forcedStates element ${index} locator hover`);
@@ -64,8 +121,24 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         await page.waitForTimeout(50);
         seen = await probe(index);
       }
-      states.push([`:hover on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-      if (seen.states.hover) checks.hover += 1;
+      if (!seen.states.hover) {
+        await element.evaluate((target) => target.scrollIntoView({ block: "center", inline: "center", behavior: "instant" })).catch(() => {});
+        await element.hover({ timeout: 1000 }).catch(() => {});
+        seen = await probe(index);
+      }
+      if (seen.states.hover) {
+        checks.hover += 1;
+        states.push([`:hover on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
+      } else {
+        const reason = await reasonFor(element, "hover");
+        if (reason) {
+          states.push([`:hover on interactive #${index}`, "unreachable"]);
+          noteUnreachable(checks, "hover", detail("hover", reason), unreachableStates);
+        } else {
+          states.push([`:hover on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
+          noteFailure(checks, "hover", detail("hover", ""));
+        }
+      }
       await page.evaluate(() => document.activeElement?.blur());
       onPhase(`forcedStates element ${index} focus`);
       await focus(page, element);
@@ -75,17 +148,53 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         await page.waitForTimeout(50);
         seen = await probe(index);
       }
-      states.push([`:focus on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-      if (seen.states.focus) checks.focus += 1;
-      if (seen.states.focusVisible) checks.focusVisible += 1;
+      const focusedStyle = canonicalStyle(seen.style, seen.writingMode);
+      if (seen.states.focus) {
+        checks.focus += 1;
+        states.push([`:focus on interactive #${index}`, focusedStyle]);
+      } else {
+        const reason = await reasonFor(element, "focus");
+        if (reason) {
+          states.push([`:focus on interactive #${index}`, "unreachable"]);
+          noteUnreachable(checks, "focus", detail("focus", reason), unreachableStates);
+        } else {
+          states.push([`:focus on interactive #${index}`, focusedStyle]);
+          noteFailure(checks, "focus", detail("focus", ""));
+        }
+      }
+      if (seen.states.focusVisible) {
+        checks.focusVisible += 1;
+        states.push([`:focus-visible on interactive #${index}`, focusedStyle]);
+      } else {
+        const reason = await reasonFor(element, "focusVisible");
+        if (reason) {
+          states.push([`:focus-visible on interactive #${index}`, "unreachable"]);
+          noteUnreachable(checks, "focusVisible", detail("focus-visible", reason), unreachableStates);
+        } else {
+          states.push([`:focus-visible on interactive #${index}`, focusedStyle]);
+          noteFailure(checks, "focusVisible", detail("focus-visible", ""));
+        }
+      }
       await page.evaluate(() => document.activeElement?.blur());
       onPhase(`forcedStates element ${index} active target`);
       await element.hover({ timeout: 1000 }).catch(() => {});
       onPhase(`forcedStates element ${index} active`);
       await page.mouse.down();
       seen = await probe(index);
-      states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-      if (seen.states.active) checks.active += 1;
+      if (seen.states.active) {
+        checks.active += 1;
+        states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
+      } else {
+        const reason = await reasonFor(element, "active");
+        if (reason) {
+          states.push([`:active on interactive #${index}`, "unreachable"]);
+          noteUnreachable(checks, "active", detail("active", reason), unreachableStates);
+        } else {
+          states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
+          noteFailure(checks, "active", detail("active", ""));
+        }
+      }
+      if (unreachableStates.size) checks.elements -= 1;
       await page.mouse.up();
       await restore();
     }
