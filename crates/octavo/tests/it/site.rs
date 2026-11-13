@@ -1,5 +1,6 @@
 use image::{ColorType, ImageEncoder, codecs::png};
 use octavo::{Options, SiteError, SiteFileKind, SiteKind, optimize_directory, plan_directory};
+use skrifa::{FontRef, MetadataProvider};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -147,6 +148,266 @@ fn leftovers(output: &Path) -> Vec<PathBuf> {
 
 fn page(head: &str, body: &str) -> String {
     format!("<!DOCTYPE html><html><head><title>t</title>{head}</head><body>{body}</body></html>")
+}
+
+/// A TrueType font whose cmap maps `chars`, in order, to glyphs after
+/// `.notdef`. Every glyph is empty; only the character map matters here.
+fn font_with(chars: &[char]) -> Vec<u8> {
+    let mut sorted: Vec<char> = chars.to_vec();
+    sorted.sort();
+    sorted.dedup();
+    let glyphs = sorted.len() + 1;
+    let head = {
+        let mut table = Vec::new();
+        table.extend(0x0001_0000u32.to_be_bytes());
+        table.extend(0x0001_0000u32.to_be_bytes());
+        table.extend(0u32.to_be_bytes());
+        table.extend(0x5F0F3CF5u32.to_be_bytes());
+        table.extend(0u16.to_be_bytes());
+        table.extend(1000u16.to_be_bytes());
+        table.extend([0u8; 16]);
+        for value in [0i16, 0, 1000, 1000] {
+            table.extend(value.to_be_bytes());
+        }
+        table.extend(0u16.to_be_bytes());
+        table.extend(8u16.to_be_bytes());
+        table.extend(2i16.to_be_bytes());
+        table.extend(0i16.to_be_bytes());
+        table.extend(0i16.to_be_bytes());
+        table
+    };
+    let hhea = {
+        let mut table = Vec::new();
+        table.extend(0x0001_0000u32.to_be_bytes());
+        for value in [800i16, -200, 0] {
+            table.extend(value.to_be_bytes());
+        }
+        table.extend(1000u16.to_be_bytes());
+        for value in [0i16, 0, 1000] {
+            table.extend(value.to_be_bytes());
+        }
+        table.extend(1i16.to_be_bytes());
+        table.extend(0i16.to_be_bytes());
+        table.extend([0u8; 10]);
+        table.extend(0i16.to_be_bytes());
+        table.extend((glyphs as u16).to_be_bytes());
+        table
+    };
+    let mut hmtx = Vec::new();
+    for _ in 0..glyphs {
+        hmtx.extend(1000u16.to_be_bytes());
+        hmtx.extend(0i16.to_be_bytes());
+    }
+    let mut maxp = vec![0u8; 32];
+    maxp[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    maxp[4..6].copy_from_slice(&(glyphs as u16).to_be_bytes());
+    let mut glyf = Vec::new();
+    for _ in 0..glyphs {
+        glyf.extend([0u8; 12]);
+    }
+    let mut loca = Vec::new();
+    for index in 0..=glyphs {
+        loca.extend(((index * 6) as u16).to_be_bytes());
+    }
+    let mut segments: Vec<(u32, u16)> = sorted
+        .iter()
+        .enumerate()
+        .map(|(index, c)| (u32::from(*c), index as u16 + 1))
+        .collect();
+    segments.push((0xFFFF, 0));
+    let count = segments.len();
+    let mut subtable = Vec::new();
+    subtable.extend(4u16.to_be_bytes());
+    subtable.extend(((16 + 8 * count) as u16).to_be_bytes());
+    subtable.extend(0u16.to_be_bytes());
+    subtable.extend(((2 * count) as u16).to_be_bytes());
+    let mut span = 1usize;
+    while span * 2 <= count {
+        span *= 2;
+    }
+    subtable.extend(((2 * span) as u16).to_be_bytes());
+    subtable.extend((span.trailing_zeros() as u16).to_be_bytes());
+    subtable.extend(((2 * count - 2 * span) as u16).to_be_bytes());
+    for (code, _) in &segments {
+        subtable.extend((*code as u16).to_be_bytes());
+    }
+    subtable.extend(0u16.to_be_bytes());
+    for (code, _) in &segments {
+        subtable.extend((*code as u16).to_be_bytes());
+    }
+    for (code, glyph) in &segments {
+        subtable.extend(glyph.wrapping_sub(*code as u16).to_be_bytes());
+    }
+    for _ in &segments {
+        subtable.extend(0u16.to_be_bytes());
+    }
+    let mut cmap = Vec::new();
+    cmap.extend(0u16.to_be_bytes());
+    cmap.extend(2u16.to_be_bytes());
+    for (platform, encoding) in [(0u16, 3u16), (3, 1)] {
+        cmap.extend(platform.to_be_bytes());
+        cmap.extend(encoding.to_be_bytes());
+        cmap.extend((4 + 16u32).to_be_bytes());
+    }
+    cmap.extend(&subtable);
+    let text: Vec<u8> = "Octavo Test"
+        .encode_utf16()
+        .flat_map(|unit| unit.to_be_bytes())
+        .collect();
+    let mut name = Vec::new();
+    name.extend(0u16.to_be_bytes());
+    name.extend(4u16.to_be_bytes());
+    name.extend(((6 + 4 * 12) as u16).to_be_bytes());
+    for (index, id) in [1u16, 2, 4, 6].into_iter().enumerate() {
+        name.extend(3u16.to_be_bytes());
+        name.extend(1u16.to_be_bytes());
+        name.extend(0x0409u16.to_be_bytes());
+        name.extend(id.to_be_bytes());
+        name.extend((text.len() as u16).to_be_bytes());
+        name.extend(((index * text.len()) as u16).to_be_bytes());
+    }
+    name.extend(&text);
+    let mut post = vec![0u8; 32];
+    post[0..4].copy_from_slice(&0x0003_0000u32.to_be_bytes());
+    let mut os2 = vec![0u8; 96];
+    os2[0..2].copy_from_slice(&4u16.to_be_bytes());
+    os2[4..6].copy_from_slice(&400u16.to_be_bytes());
+    let mut tables: Vec<(&[u8; 4], Vec<u8>)> = vec![
+        (b"OS/2", os2),
+        (b"cmap", cmap),
+        (b"glyf", glyf),
+        (b"head", head),
+        (b"hhea", hhea),
+        (b"hmtx", hmtx),
+        (b"loca", loca),
+        (b"maxp", maxp),
+        (b"name", name),
+        (b"post", post),
+    ];
+    tables.sort_unstable();
+    let count = tables.len();
+    let mut span = 1usize;
+    while span * 2 <= count {
+        span *= 2;
+    }
+    let mut font = Vec::new();
+    font.extend(0x0001_0000u32.to_be_bytes());
+    font.extend((count as u16).to_be_bytes());
+    font.extend(((span * 16) as u16).to_be_bytes());
+    font.extend((span.trailing_zeros() as u16).to_be_bytes());
+    font.extend(((count * 16 - span * 16) as u16).to_be_bytes());
+    let mut body = Vec::new();
+    let directory = 12 + 16 * count;
+    for (tag, table) in &tables {
+        font.extend_from_slice(*tag);
+        font.extend(0u32.to_be_bytes());
+        font.extend(((directory + body.len()) as u32).to_be_bytes());
+        font.extend((table.len() as u32).to_be_bytes());
+        body.extend(table);
+        while body.len() % 4 != 0 {
+            body.push(0);
+        }
+    }
+    font.extend(body);
+    font
+}
+
+fn maps(font: &[u8], c: char) -> bool {
+    let sfnt = wuff::decompress_woff2(font).expect("valid woff2");
+    FontRef::new(&sfnt)
+        .expect("valid sfnt")
+        .charmap()
+        .map(u32::from(c))
+        .is_some()
+}
+
+fn font_site(site: &Scratch) {
+    site.write(
+        "style.css",
+        "@font-face { font-family: 'Octavo Test'; src: url(fonts/t.ttf) format('truetype'); }\nbody { font-family: 'Octavo Test'; }\n",
+    );
+    site.write("fonts/t.ttf", font_with(&['A', 'Ω']));
+    site.write(
+        "index.html",
+        page(r#"<link rel="stylesheet" href="style.css">"#, "<p>x</p>"),
+    );
+}
+
+fn subset_options() -> Options {
+    Options {
+        subset_text_fonts: true,
+        ..Options::default()
+    }
+}
+
+fn publish(site: &Scratch, options: &Options) -> Scratch {
+    let out = Scratch::new();
+    plan_directory(site.path(), options)
+        .unwrap()
+        .write(out.path())
+        .unwrap();
+    out
+}
+
+#[test]
+fn a_subset_keeps_the_text_that_only_search_json_shows() {
+    let site = Scratch::new();
+    font_site(&site);
+    site.write("search.json", r#"{ "entries": [] }"#);
+    let options = subset_options();
+    let without = publish(&site, &options);
+    site.write("search.json", r#"{ "entries": [ { "title": "Ω" } ] }"#);
+    let with = publish(&site, &options);
+    let whole = publish(&site, &Options::default());
+    let plain = whole.bytes("fonts/t.woff2");
+    let kept = without.bytes("fonts/t.woff2");
+    let found = with.bytes("fonts/t.woff2");
+    assert!(kept.len() < plain.len(), "the font was not subsetted");
+    assert!(maps(&kept, 'A') && !maps(&kept, 'Ω'), "{kept:?}");
+    assert!(maps(&found, 'A') && maps(&found, 'Ω'), "{found:?}");
+    assert!(found.len() > kept.len());
+}
+
+#[test]
+fn an_unreadable_json_file_keeps_text_fonts_whole() {
+    let site = Scratch::new();
+    font_site(&site);
+    site.write("search.json", r#"{ "entries": [ { "title": "Ω" } ] }"#);
+    fs::write(site.path().join("bad.json"), [0xFF, 0xFE]).unwrap();
+    let whole = publish(&site, &Options::default());
+    let subset = publish(&site, &subset_options());
+    assert_eq!(subset.bytes("fonts/t.woff2"), whole.bytes("fonts/t.woff2"));
+    let plan = plan_directory(site.path(), &subset_options()).unwrap();
+    assert!(
+        plan.report()
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("bad.json"))
+    );
+}
+
+#[test]
+fn an_unreadable_script_keeps_text_fonts_whole() {
+    let site = Scratch::new();
+    font_site(&site);
+    site.write(
+        "index.html",
+        page(
+            r#"<link rel="stylesheet" href="style.css"><script src="app.js"></script>"#,
+            "<p>x</p>",
+        ),
+    );
+    fs::write(site.path().join("app.js"), [0xFF, 0xFE]).unwrap();
+    let whole = publish(&site, &Options::default());
+    let subset = publish(&site, &subset_options());
+    assert_eq!(subset.bytes("fonts/t.woff2"), whole.bytes("fonts/t.woff2"));
+    let plan = plan_directory(site.path(), &subset_options()).unwrap();
+    assert!(
+        plan.report()
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("app.js"))
+    );
 }
 
 fn run(site: &Scratch) -> (Scratch, octavo::SiteReport) {
