@@ -39,6 +39,7 @@ const base = [
   "input::placeholder{color:rgb(0,128,0)}",
   "@media (prefers-reduced-motion:reduce){h1{letter-spacing:2px}}",
 ].join("");
+const changedPlaceholderColor = engine.placeholderStyle ? "rgb(0,128,1)" : "rgb(200,0,0)";
 
 const write = (name, html) => {
   const file = join(directory, `${name}.html`);
@@ -84,7 +85,7 @@ const breakages = [
   ["a dropped dark rule", (css) => css.replace("@media (prefers-color-scheme:dark){body{background:rgb(0,0,0);color:rgb(255,255,255)}}", ""), "desktop-dark"],
   ["a dropped print rule", (css) => css.replace("@media print{.box{display:none}}", ""), "print"],
   ["a changed marker colour", (css) => css.replace("li::marker{color:rgb(255,0,0)}", "li::marker{color:rgb(255,0,1)}"), "desktop-light"],
-  ["a changed placeholder colour", (css) => css.replace("input::placeholder{color:rgb(0,128,0)}", "input::placeholder{color:rgb(0,128,1)}"), "desktop-light"],
+  ["a changed placeholder colour", (css) => css.replace("input::placeholder{color:rgb(0,128,0)}", `input::placeholder{color:${changedPlaceholderColor}}`), "desktop-light"],
   ["a dropped reduced-motion rule", (css) => css.replace("@media (prefers-reduced-motion:reduce){h1{letter-spacing:2px}}", ""), "desktop-light"],
   ["a one-unit colour change", (css) => css.replace("rgb(10,20,30)", "rgb(10,20,31)"), "desktop-light"],
   ["a changed text node", (css) => css, "desktop-light"],

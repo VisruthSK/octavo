@@ -16,6 +16,7 @@ const shape = {
   tag: "string",
   isolated: "boolean",
   contextOptions: "object",
+  placeholderStyle: "boolean",
   pixel: "object",
   noise: "object",
   launch: "function",
@@ -53,6 +54,12 @@ test("chromium is the default engine", () => {
 test("firefox and webkit are selected by name", () => {
   assert.equal(engineName({ OCTAVO_BROWSER: "firefox" }), "firefox");
   assert.equal(engineName({ OCTAVO_BROWSER: "webkit" }), "webkit");
+});
+
+test("placeholder computed-style support is declared per engine", () => {
+  assert.equal(chromium.placeholderStyle, true);
+  assert.equal(firefox.placeholderStyle, true);
+  assert.equal(webkit.placeholderStyle, false);
 });
 
 test("an unknown engine is refused with its name", () => {

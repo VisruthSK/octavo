@@ -340,6 +340,10 @@ lines.push(``, `## Excluded (upstream render was not self-contained)`, excludedR
 for (const entry of excludedRows) lines.push(`- ${entry.id}: ${entry.excluded}`);
 lines.push(``, `## Problems`, failures.length ? "" : "None.");
 for (const entry of failures) lines.push(`- ${entry.id} (${entry.level}): ${entry.problems.join("; ")}`);
+if (browser) {
+  const limits = engine.placeholderStyle ? [] : [`${engine.label}: computed style for ::placeholder is unavailable; screenshot pixel comparison remains active.`];
+  lines.push(``, `## Limits`, limits.length ? "" : "None.", ...limits.map((limit) => `- ${limit}`));
+}
 const cachedRows = results.filter((entry) => entry.cached);
 lines.push(``, `## Cached verdicts`, cachedRows.length ? "" : "None.");
 for (const entry of cachedRows) lines.push(`- ${entry.id} (${entry.level}): cached`);

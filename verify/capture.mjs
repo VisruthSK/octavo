@@ -115,7 +115,7 @@ async function fingerprints({ lossy, linked }) {
   return Promise.all(embedded.map((value) => fingerprint(value).catch(() => value)));
 }
 
-function observe({ lossy, probe, motion, linked, prints = [] }) {
+function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true }) {
   const describe = (element, pseudo) => {
     const style = getComputedStyle(element, pseudo);
     if (pseudo && style.content === "none") return "";
@@ -194,7 +194,7 @@ function observe({ lossy, probe, motion, linked, prints = [] }) {
     "::before",
     "::after",
     ...(getComputedStyle(element).display === "list-item" ? ["::marker"] : []),
-    ...(element.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
+    ...(placeholderStyle && element.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
   ];
   return {
     animations,
@@ -476,7 +476,7 @@ export async function capture(
       phase = `image fingerprints ${label}`;
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       phase = `page observation ${label}`;
-      const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints });
+      const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...extra });
     };

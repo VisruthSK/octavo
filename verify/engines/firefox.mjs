@@ -8,6 +8,7 @@ export const label = "Firefox";
 export const tag = `[${name}] `;
 export const isolated = true;
 export const contextOptions = {};
+export const placeholderStyle = true;
 export const pixel = { channel: 1, faint: 8, budget: 12 };
 export const noise = { pixels: 10383312, differing: 0, max: 0 };
 
