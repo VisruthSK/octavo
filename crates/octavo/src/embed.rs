@@ -171,7 +171,7 @@ pub fn embed_resources(src: &str, resources: &mut dyn Resources) -> Embedded {
             }
             Element::Style => {
                 if let Some(body) = &tag.body
-                    && let Some(css) = state.css(&src[body.clone()], "", 0)
+                    && let Some(css) = state.css(&src[body.clone()], "", 0, "")
                 {
                     edits.push((body.clone(), css));
                 }
@@ -205,8 +205,10 @@ struct ScanCtx<'a> {
     depth: usize,
     level: usize,
     rules_started: bool,
+    prelude_end: usize,
     urls: Vec<Range<usize>>,
     replacements: Vec<(Range<usize>, String)>,
+    hoists: Vec<Range<usize>>,
 }
 
 struct State<'a> {
@@ -286,7 +288,7 @@ impl State<'_> {
         let bytes = if mime == "text/css" {
             match String::from_utf8(loaded.bytes) {
                 Ok(text) => self
-                    .css(&text, &loaded.id, depth + 1)
+                    .css(&text, &loaded.id, depth + 1, "")
                     .unwrap_or(text)
                     .into_bytes(),
                 Err(error) => error.into_bytes(),
@@ -338,14 +340,16 @@ impl State<'_> {
         Some(out)
     }
 
-    fn css(&mut self, css: &str, from: &str, depth: usize) -> Option<String> {
+    fn css(&mut self, css: &str, from: &str, depth: usize, rebase: &str) -> Option<String> {
         let mut ctx = ScanCtx {
             from,
             depth,
             level: 0,
             rules_started: false,
+            prelude_end: 0,
             urls: Vec::new(),
             replacements: Vec::new(),
+            hoists: Vec::new(),
         };
         let mut input = ParserInput::new(css);
         let mut parser = Parser::new(&mut input);
@@ -359,25 +363,20 @@ impl State<'_> {
             }
             if let Some(uri) = self.uri(&css[span.clone()], from, depth) {
                 ctx.replacements.push((span, uri));
+            } else if !rebase.is_empty() && is_relative(&css[span.clone()]) {
+                ctx.replacements
+                    .push((span.clone(), format!("{rebase}{}", &css[span])));
             }
         }
-        if ctx.replacements.is_empty() {
+        if ctx.replacements.is_empty() && ctx.hoists.is_empty() {
             return None;
         }
-        let mut replacements = ctx.replacements;
-        replacements.sort_by_key(|(span, _)| span.start);
-        let mut out = String::with_capacity(css.len() + 256);
-        let mut at = 0;
-        for (span, text) in replacements {
-            if span.start < at {
-                continue;
-            }
-            out.push_str(&css[at..span.start]);
-            out.push_str(&text);
-            at = span.end;
-        }
-        out.push_str(&css[at..]);
-        Some(out)
+        Some(render(
+            css,
+            ctx.replacements,
+            std::mem::take(&mut ctx.hoists),
+            ctx.prelude_end,
+        ))
     }
 
     fn splice_import(&mut self, reference: &str, from: &str, depth: usize) -> Option<String> {
@@ -392,12 +391,13 @@ impl State<'_> {
             return None;
         };
         if !self.active.insert(loaded.id.clone()) {
-            return None;
+            return Some(String::new());
         }
         self.resource_bytes += loaded.bytes.len() as u64;
+        let rebase = rebase_prefix(from, &loaded.id);
         let processed = String::from_utf8(loaded.bytes).ok().map(|text| {
             let id = loaded.id.clone();
-            strip_charset(self.css(&text, &id, depth + 1).unwrap_or(text))
+            strip_charset(self.css(&text, &id, depth + 1, &rebase).unwrap_or(text))
         });
         self.active.remove(&loaded.id);
         let flat = processed?;
@@ -425,20 +425,37 @@ impl State<'_> {
                                 || kw.eq_ignore_ascii_case("namespace"))
                         {
                             skip_to_semicolon(parser);
-                        } else if !ctx.rules_started && kw.eq_ignore_ascii_case("import") {
+                            ctx.prelude_end = parser.position().byte_index();
+                        } else if !ctx.rules_started && kw.eq_ignore_ascii_case("layer") {
+                            self.walk_layer(css, parser, ctx);
+                        } else if kw.eq_ignore_ascii_case("import") {
                             match scan_import(parser, css, start) {
                                 Ok(ImportRule::Plain {
                                     statement,
                                     reference,
                                 }) => {
-                                    if let Some(flat) =
-                                        self.splice_import(&css[reference], ctx.from, ctx.depth)
-                                    {
-                                        ctx.replacements.push((statement, flat));
+                                    if !ctx.rules_started {
+                                        match self.splice_import(
+                                            &css[reference],
+                                            ctx.from,
+                                            ctx.depth,
+                                        ) {
+                                            Some(flat) => {
+                                                ctx.replacements.push((statement, flat));
+                                            }
+                                            None => ctx.hoists.push(statement),
+                                        }
+                                    } else {
+                                        ctx.urls.push(reference);
+                                        ctx.hoists.push(statement);
                                     }
                                 }
-                                Ok(ImportRule::Conditional { reference }) => {
+                                Ok(ImportRule::Conditional {
+                                    statement,
+                                    reference,
+                                }) => {
                                     ctx.urls.push(reference);
+                                    ctx.hoists.push(statement);
                                 }
                                 Ok(ImportRule::Empty) | Err(()) => {}
                             }
@@ -466,7 +483,11 @@ impl State<'_> {
                     });
                     ctx.level -= 1;
                 }
-                Token::UnquotedUrl(_) => ctx.urls.push(unquoted_url_inner(css, start, end)),
+                Token::UnquotedUrl(_) => {
+                    if let Some(inner) = unquoted_url_inner(css, start, end) {
+                        ctx.urls.push(inner);
+                    }
+                }
                 Token::QuotedString(_) => {}
                 _ => {
                     if ctx.level == 0 {
@@ -496,11 +517,54 @@ impl State<'_> {
             match token {
                 Token::WhiteSpace(_) | Token::Comment(_) => {}
                 Token::QuotedString(_) => {
-                    ctx.urls.push(trim_range(css, start + 1, end - 1));
+                    let bytes = css.as_bytes();
+                    if end > start + 1 && bytes[end - 1] == bytes[start] {
+                        ctx.urls.push(trim_range(css, start + 1, end - 1));
+                    }
                     return;
                 }
                 _ => return,
             }
+        }
+    }
+
+    fn walk_layer<'i, 't>(
+        &mut self,
+        css: &'i str,
+        parser: &mut Parser<'i, 't>,
+        ctx: &mut ScanCtx<'_>,
+    ) {
+        let mut block = false;
+        loop {
+            let Ok(token) = parser.next_including_whitespace_and_comments() else {
+                break;
+            };
+            let token = token.clone();
+            if token.is_parse_error() {
+                break;
+            }
+            match token {
+                Token::Semicolon => break,
+                Token::CurlyBracketBlock
+                | Token::SquareBracketBlock
+                | Token::ParenthesisBlock
+                | Token::Function(_) => {
+                    block = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        if block {
+            ctx.rules_started = true;
+            ctx.level += 1;
+            let _ = parser.parse_nested_block(|sub| {
+                self.walk(css, sub, ctx);
+                Ok::<(), ParseError<'_, ()>>(())
+            });
+            ctx.level -= 1;
+        } else {
+            ctx.prelude_end = parser.position().byte_index();
         }
     }
 }
@@ -551,8 +615,113 @@ fn trim_range(css: &str, mut start: usize, mut end: usize) -> Range<usize> {
     start..end
 }
 
-fn unquoted_url_inner(css: &str, start: usize, end: usize) -> Range<usize> {
-    trim_range(css, start + 4, end - 1)
+fn unquoted_url_inner(css: &str, start: usize, end: usize) -> Option<Range<usize>> {
+    let end = end.min(css.len());
+    let cut = usize::from(end > start + 4 && css.as_bytes()[end - 1] == b')');
+    if cut == 0 {
+        return None;
+    }
+    Some(trim_range(css, start + 4, end - 1))
+}
+
+fn render(
+    css: &str,
+    mut replacements: Vec<(Range<usize>, String)>,
+    mut hoists: Vec<Range<usize>>,
+    prelude_end: usize,
+) -> String {
+    replacements.sort_by_key(|(span, _)| span.start);
+    hoists.sort_by_key(|span| span.start);
+    let hoisted: Vec<String> = hoists
+        .iter()
+        .map(|range| splice_text(css, range, &replacements))
+        .collect();
+    let mut out = String::with_capacity(css.len() + 256);
+    let mut at = 0;
+    let mut next_replacement = 0;
+    let mut next_hoist = 0;
+    let mut inserted = hoists.is_empty();
+    while at < css.len() || !inserted {
+        while next_replacement < replacements.len() && replacements[next_replacement].0.start < at {
+            next_replacement += 1;
+        }
+        while next_hoist < hoists.len() && hoists[next_hoist].end <= at {
+            next_hoist += 1;
+        }
+        let mut stop = css.len();
+        if !inserted && prelude_end >= at {
+            stop = stop.min(prelude_end);
+        }
+        if next_hoist < hoists.len() && hoists[next_hoist].start >= at {
+            stop = stop.min(hoists[next_hoist].start);
+        }
+        if next_replacement < replacements.len() && replacements[next_replacement].0.start >= at {
+            stop = stop.min(replacements[next_replacement].0.start);
+        }
+        out.push_str(&css[at..stop]);
+        at = stop;
+        if !inserted && at == prelude_end {
+            for text in &hoisted {
+                out.push_str(text);
+            }
+            inserted = true;
+        } else if next_hoist < hoists.len() && hoists[next_hoist].start == at {
+            at = hoists[next_hoist].end;
+            next_hoist += 1;
+        } else if next_replacement < replacements.len()
+            && replacements[next_replacement].0.start == at
+        {
+            let (span, text) = &replacements[next_replacement];
+            out.push_str(text);
+            at = span.end;
+            next_replacement += 1;
+        }
+    }
+    out
+}
+
+fn splice_text(css: &str, range: &Range<usize>, replacements: &[(Range<usize>, String)]) -> String {
+    let mut out = String::new();
+    let mut at = range.start;
+    for (span, text) in replacements {
+        if span.start < at || span.end > range.end {
+            continue;
+        }
+        out.push_str(&css[at..span.start]);
+        out.push_str(text);
+        at = span.end;
+    }
+    out.push_str(&css[at..range.end]);
+    out
+}
+
+fn is_relative(reference: &str) -> bool {
+    !reference.starts_with('/')
+        && reference
+            .find(':')
+            .is_none_or(|at| reference[..at].contains('/'))
+}
+
+fn rebase_prefix(from: &str, id: &str) -> String {
+    fn directory(path: &str) -> Vec<&str> {
+        match path.rsplit_once('/') {
+            Some((dir, _)) => dir.split('/').filter(|part| !part.is_empty()).collect(),
+            None => Vec::new(),
+        }
+    }
+    let from_dir = directory(from);
+    let to_dir = directory(id);
+    let shared = from_dir
+        .iter()
+        .zip(&to_dir)
+        .take_while(|(from_part, to_part)| from_part == to_part)
+        .count();
+    let mut prefix = "../".repeat(from_dir.len() - shared);
+    if shared < to_dir.len() {
+        prefix.push_str(&to_dir[shared..].join("/"));
+        prefix.push('/');
+    }
+    prefix
 }
 
 fn skip_to_semicolon(parser: &mut Parser<'_, '_>) {
@@ -608,6 +777,7 @@ enum ImportRule {
         reference: Range<usize>,
     },
     Conditional {
+        statement: Range<usize>,
         reference: Range<usize>,
     },
     Empty,
@@ -636,7 +806,10 @@ fn scan_import(
                 return Ok(match reference {
                     Some(reference) => {
                         if conditional {
-                            ImportRule::Conditional { reference }
+                            ImportRule::Conditional {
+                                statement: rule_start..end,
+                                reference,
+                            }
                         } else {
                             ImportRule::Plain {
                                 statement: rule_start..end,
@@ -649,7 +822,11 @@ fn scan_import(
             }
             Token::UnquotedUrl(_) => {
                 if reference.is_none() {
-                    reference = Some(unquoted_url_inner(css, start, end));
+                    if let Some(inner) = unquoted_url_inner(css, start, end) {
+                        reference = Some(inner);
+                    } else {
+                        conditional = true;
+                    }
                 } else {
                     conditional = true;
                 }
@@ -670,13 +847,21 @@ fn scan_import(
                             match inner {
                                 Token::WhiteSpace(_) | Token::Comment(_) => {}
                                 Token::QuotedString(_) => {
-                                    reference =
-                                        Some(trim_range(css, inner_start + 1, inner_end - 1));
+                                    let bytes = css.as_bytes();
+                                    if inner_end > inner_start + 1
+                                        && bytes[inner_end - 1] == bytes[inner_start]
+                                    {
+                                        reference =
+                                            Some(trim_range(css, inner_start + 1, inner_end - 1));
+                                    }
                                     return Ok::<(), ParseError<'_, ()>>(());
                                 }
                                 Token::UnquotedUrl(_) => {
-                                    reference =
-                                        Some(trim_range(css, inner_start + 4, inner_end - 1));
+                                    if let Some(inner) =
+                                        unquoted_url_inner(css, inner_start, inner_end)
+                                    {
+                                        reference = Some(inner);
+                                    }
                                     return Ok::<(), ParseError<'_, ()>>(());
                                 }
                                 _ => return Ok::<(), ParseError<'_, ()>>(()),
@@ -693,7 +878,12 @@ fn scan_import(
             }
             Token::QuotedString(_) => {
                 if reference.is_none() {
-                    reference = Some(trim_range(css, start + 1, end - 1));
+                    let bytes = css.as_bytes();
+                    if end > start + 1 && bytes[end - 1] == bytes[start] {
+                        reference = Some(trim_range(css, start + 1, end - 1));
+                    } else {
+                        conditional = true;
+                    }
                 } else {
                     conditional = true;
                 }
@@ -1119,15 +1309,115 @@ mod behaviour_tests {
     }
 
     #[test]
-    fn a_cyclic_import_terminates_and_keeps_the_import() {
+    fn a_cyclic_import_is_dropped() {
         let mut files = Files::new(&[
             ("a.css", b"@import url(b.css); .x { color: red; }"),
             ("b.css", b"@import url(a.css); .y { color: blue; }"),
         ]);
         let embedded = linked_stylesheet(&mut files, "a.css");
         let css = decoded_css(&embedded.html);
+        assert!(!css.contains("@import"), "{css}");
         assert!(css.contains(".y { color: blue; }"), "{css}");
-        assert!(css.contains("@import url(a.css);"), "{css}");
+        assert!(css.contains(".x { color: red; }"), "{css}");
+    }
+
+    #[test]
+    fn an_unterminated_unquoted_url_is_left_as_written() {
+        let src = page_with_style("body { background: url(img/café");
+        let embedded = embed_resources(&src, &mut Files::new(&[]));
+        assert_eq!(embedded.missing, Vec::<String>::new());
+        assert_eq!(embedded.html, src);
+    }
+
+    #[test]
+    fn an_unterminated_quoted_url_is_left_as_written() {
+        let src = page_with_style("body { background: url(\"img/café");
+        let embedded = embed_resources(&src, &mut Files::new(&[]));
+        assert_eq!(embedded.missing, Vec::<String>::new());
+        assert_eq!(embedded.html, src);
+    }
+
+    #[test]
+    fn an_import_after_an_inlined_sheet_stays_before_the_rules() {
+        let mut files = Files::new(&[
+            (
+                "theme.css",
+                b"@import 'a.css';\n@import url(https://fonts.example/f.css);\n.x { color: red; }",
+            ),
+            ("a.css", b".a { color: blue; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        let import = css.find("@import").expect("the kept import");
+        let inlined = css.find(".a {").expect("the inlined sheet");
+        let rule = css.find(".x {").expect("the rule");
+        assert!(import < inlined && inlined < rule, "{css}");
+        assert!(css.contains("https://fonts.example/f.css"), "{css}");
+        assert_eq!(embedded.embedded, 2);
+    }
+
+    #[test]
+    fn a_conditional_import_after_rules_is_hoisted_before_them() {
+        let mut files = Files::new(&[
+            (
+                "theme.css",
+                b".x { color: red; }\n@import url(p.css) print;",
+            ),
+            ("p.css", b".p { color: blue; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        let import = css.find("@import").expect("the kept import");
+        let rule = css.find(".x {").expect("the rule");
+        assert!(import < rule, "{css}");
+        assert!(css.contains("@import url(data:text/css;base64,"), "{css}");
+        assert!(css.contains("print"), "{css}");
+    }
+
+    #[test]
+    fn a_layer_statement_does_not_stop_imports_from_being_inlined() {
+        let mut files = Files::new(&[
+            (
+                "theme.css",
+                b"@layer reset, base;\n@import 'a.css';\n.x { color: red; }",
+            ),
+            ("a.css", b".a { color: blue; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(!css.contains("@import"), "{css}");
+        assert!(css.contains("@layer reset, base;"), "{css}");
+        assert!(css.contains(".a { color: blue; }"), "{css}");
+        assert_eq!(embedded.embedded, 2);
+    }
+
+    #[test]
+    fn a_quoted_import_after_rules_is_rewritten_to_a_data_url() {
+        let mut files = Files::new(&[
+            ("theme.css", b".x { color: red; }\n@import 'sub.css';"),
+            ("sub.css", b".s { color: blue; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(css.contains("@import 'data:text/css;base64,"), "{css}");
+        assert!(!css.contains("'sub.css'"), "{css}");
+        assert_eq!(embedded.embedded, 2);
+    }
+
+    #[test]
+    fn a_relative_url_in_an_inlined_sheet_is_rebased() {
+        let mut files = Files::new(&[
+            (
+                "main.css",
+                b"@import url(sub/theme.css);\n.m { color: red; }",
+            ),
+            ("sub/theme.css", b".h { background: url(hero.jpg); }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "main.css");
+        let css = decoded_css(&embedded.html);
+        assert!(css.contains("url(sub/hero.jpg)"), "{css}");
+        assert_eq!(embedded.missing, vec!["hero.jpg".to_string()]);
+        assert_eq!(embedded.embedded, 2);
     }
 
     #[test]
