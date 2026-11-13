@@ -1,5 +1,6 @@
 import { chromium as launcher } from "playwright-core";
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { executableFingerprint } from "./fingerprint.mjs";
 import { delimiter, join } from "node:path";
 import { canonicalStyle } from "../styles.mjs";
 
@@ -41,7 +42,7 @@ export const launch = (options = {}) => launcher.launch({ executablePath: execut
 
 export const identity = (browser, { args = [], channel = "" } = {}) => {
   const path = executable() ?? launcher.executablePath();
-  const stamp = existsSync(path) ? `${statSync(path).size}-${statSync(path).mtimeMs}` : "missing";
+  const stamp = executableFingerprint(path);
   return `${label} ${browser.version()} ${path} ${stamp} channel=${channel} args=${JSON.stringify(args)}`;
 };
 export const settle = (page, settlePage, options) => settlePage(page, options);
