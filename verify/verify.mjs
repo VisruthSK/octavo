@@ -184,6 +184,7 @@ const orderOf = (plans) => unionOf(plans).map((scenario) => scenario.name);
 export async function verifyLevels(original, entries, { lossy = false, deadlineReached = () => false, roots, linked = false } = {}) {
   const rootFor = (file) => (roots ? (file === original ? roots.original : roots.optimized) : undefined);
   const plans = entries.map((entry) => ({ ...entry, set: scenariosFor(entry.level).filter(({ name }) => !entry.only || entry.only.includes(name)) }));
+  const planIndex = new Map(plans.map((plan, index) => [plan, index]));
   const groups = [...Map.groupBy(plans, (plan) => plan.key ?? plan.path).values()];
   const reports = plans.map(() => []);
   const timing = { original: 0, optimized: 0, compare: 0 };
@@ -268,7 +269,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
           linked,
         );
         timing.compare += elapsed(startedCompare);
-        reports[plans.indexOf(plan)].push({
+        reports[planIndex.get(plan)].push({
           scenario: scenario.name,
           issues: withIncompleteCheckIssues(issues, before.checks, after.checks),
           rounded,
@@ -286,8 +287,9 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
     if (stopped) break;
   }
   const order = orderOf(plans);
+  const orderMap = new Map(order.map((name, index) => [name, index]));
   for (const report of reports) {
-    report.sort((left, right) => order.indexOf(left.scenario) - order.indexOf(right.scenario));
+    report.sort((left, right) => orderMap.get(left.scenario) - orderMap.get(right.scenario));
   }
   return { reports, timing };
 }
