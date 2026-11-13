@@ -42,6 +42,7 @@ async function reasonFor(element, state) {
     }
     if (state !== "hover" && state !== "active") return "";
     if (style.pointerEvents === "none") return "pointer-events none";
+    if (style.clipPath.includes("inset(50%") || style.clip.replaceAll(" ", "") === "rect(0px,0px,0px,0px)") return "clipped by CSS clip";
     const rect = target.getBoundingClientRect();
     for (let ancestor = target.parentElement; ancestor; ancestor = ancestor.parentElement) {
       const parentStyle = getComputedStyle(ancestor);
@@ -75,8 +76,12 @@ function noteUnreachable(checks, state, detail, unreachableStates) {
 }
 
 export async function focus(page, element) {
-  await page.keyboard.press("Shift");
-  await element.focus({ timeout: 1000 }).catch(() => {});
+  await page.evaluate(() => document.activeElement?.blur());
+  for (let attempt = 0; attempt < 60; attempt++) {
+    await page.keyboard.press("Tab");
+    if (await element.evaluate((target) => document.activeElement === target).catch(() => false)) return true;
+  }
+  return false;
 }
 
 export async function forcedStates(page, selector, observe, onPhase = () => {}) {
@@ -141,35 +146,27 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       }
       await page.evaluate(() => document.activeElement?.blur());
       onPhase(`forcedStates element ${index} focus`);
-      await focus(page, element);
-      seen = await probe(index);
-      for (let attempt = 0; attempt < 3 && !seen.states.focus; attempt++) {
-        await element.focus({ timeout: 1000 }).catch(() => {});
-        await page.waitForTimeout(50);
+      const focusReason = await reasonFor(element, "focus");
+      if (focusReason) {
+        states.push([`:focus on interactive #${index}`, "unreachable"]);
+        noteUnreachable(checks, "focus", detail("focus", focusReason), unreachableStates);
+        states.push([`:focus-visible on interactive #${index}`, "unreachable"]);
+        noteUnreachable(checks, "focusVisible", detail("focus-visible", focusReason), unreachableStates);
         seen = await probe(index);
-      }
-      const focusedStyle = canonicalStyle(seen.style, seen.writingMode);
-      if (seen.states.focus) {
-        checks.focus += 1;
-        states.push([`:focus on interactive #${index}`, focusedStyle]);
       } else {
-        const reason = await reasonFor(element, "focus");
-        if (reason) {
-          states.push([`:focus on interactive #${index}`, "unreachable"]);
-          noteUnreachable(checks, "focus", detail("focus", reason), unreachableStates);
+        await focus(page, element);
+        seen = await probe(index);
+        const focusedStyle = canonicalStyle(seen.style, seen.writingMode);
+        if (seen.states.focus) {
+          checks.focus += 1;
+          states.push([`:focus on interactive #${index}`, focusedStyle]);
         } else {
           states.push([`:focus on interactive #${index}`, focusedStyle]);
           noteFailure(checks, "focus", detail("focus", ""));
         }
-      }
-      if (seen.states.focusVisible) {
-        checks.focusVisible += 1;
-        states.push([`:focus-visible on interactive #${index}`, focusedStyle]);
-      } else {
-        const reason = await reasonFor(element, "focusVisible");
-        if (reason) {
-          states.push([`:focus-visible on interactive #${index}`, "unreachable"]);
-          noteUnreachable(checks, "focusVisible", detail("focus-visible", reason), unreachableStates);
+        if (seen.states.focusVisible) {
+          checks.focusVisible += 1;
+          states.push([`:focus-visible on interactive #${index}`, focusedStyle]);
         } else {
           states.push([`:focus-visible on interactive #${index}`, focusedStyle]);
           noteFailure(checks, "focusVisible", detail("focus-visible", ""));
