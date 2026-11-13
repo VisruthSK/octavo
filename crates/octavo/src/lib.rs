@@ -386,6 +386,10 @@ pub enum Transform {
     RecompressedPng,
     /// An image was re-encoded in a lossy format.
     ReencodedImage,
+    /// An hinted static text font was kept whole instead of subsetted,
+    /// because Chromium draws hinted static fonts differently on Linux
+    /// after subsetting.
+    FontKeptWhole,
     /// Resources were compressed into one blob.
     Packed,
 }
@@ -398,6 +402,7 @@ impl fmt::Display for Transform {
             Transform::PrunedStylesheet => "stylesheet-pruned",
             Transform::RecompressedPng => "png-recompressed",
             Transform::ReencodedImage => "image-reencoded",
+            Transform::FontKeptWhole => "font-kept-whole",
             Transform::Packed => "packed",
         })
     }
@@ -668,7 +673,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     } else {
         Licenses::Keep
     };
-    let (images, (removals, scripts, styles)) = rayon::join(
+    let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
         || {
             images::stage(
                 &doc,
@@ -686,7 +691,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             let removals = quarto::stage(&doc, &markup);
             let removed: Vec<Range<usize>> =
                 removals.iter().map(|edit| edit.span.clone()).collect();
-            let (scripts, styles) = rayon::join(
+            let (scripts, (styles, kept_whole)) = rayon::join(
                 || js::stage(&doc, &removed, licenses),
                 || {
                     let words = doc.words(markup, parts, &removed);
@@ -701,7 +706,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
                     )
                 },
             );
-            (removals, scripts, styles)
+            (removals, scripts, styles, kept_whole)
         },
     );
     let edits: Vec<Edit> = removals
@@ -711,7 +716,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         .chain(images)
         .collect();
     let edits = Edits::new(edits);
-    let applied = edits
+    let mut applied: Vec<Applied> = edits
         .kept()
         .iter()
         .map(|edit| Applied {
@@ -721,6 +726,12 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             after: edit.text.len(),
         })
         .collect();
+    applied.extend(kept_whole.into_iter().map(|(family, bytes)| Applied {
+        transform: Transform::FontKeptWhole,
+        target: Target::Resource(family),
+        before: bytes,
+        after: bytes,
+    }));
     let html = edits.apply(src);
     Ok(Simplified {
         scanned: html::Scanned::new(html),
