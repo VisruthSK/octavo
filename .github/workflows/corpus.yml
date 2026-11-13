@@ -270,6 +270,7 @@ jobs:
           done
           exit 1
         working-directory: verify
+      - run: node corpus/build.mjs --check
       - run: node --test "corpus/**/*.test.mjs"
       - uses: quarto-dev/quarto-actions/setup@v2
         with:
