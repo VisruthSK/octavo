@@ -42,7 +42,9 @@ const interactions = [
     for (const el of (await page.$$("[data-bs-toggle=collapse], summary")).slice(0, 6)) await el.click({ timeout: 2000 }).catch(() => {});
   },
   async (page) => {
-    for (const el of (await page.$$(".footnote-ref, a[role=doc-biblioref], a.quarto-xref")).slice(0, 3)) await el.hover({ timeout: 2000 }).catch(() => {});
+    const targets = (await page.$$(".footnote-ref, a[role=doc-biblioref], a.quarto-xref")).slice(0, 3);
+    for (const el of targets) await el.hover({ timeout: 2000 }).catch(() => {});
+    return targets.length > 0;
   },
   (page) => page.keyboard.press("ArrowRight"),
   (page) => page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)),
@@ -117,8 +119,8 @@ async function fingerprints({ lossy, linked }) {
 }
 
 function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true }) {
-  const describe = (element, pseudo) => {
-    const style = getComputedStyle(element, pseudo);
+  const describe = (element, pseudo, baseStyle) => {
+    const style = pseudo === null && baseStyle ? baseStyle : getComputedStyle(element, pseudo);
     if (pseudo && style.content === "none") return "";
     const noImage = style.backgroundImage === "none";
     const legacyBox = style.display.includes("box");
@@ -141,7 +143,7 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
     return text;
   };
   if (probe) {
-    const element = document.querySelectorAll(probe.selector)[probe.index];
+    const element = (window[Symbol.for("octavo.interactive")] ?? document.querySelectorAll(probe.selector))[probe.index];
     if (!element) return { style: "", states: {} };
     return {
       style: describe(element, null),
@@ -176,21 +178,24 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
     img.setAttribute(`pixels-${attribute}`, prints[at] ?? "skipped");
   }
   const elements = [...document.body.querySelectorAll("*:not(script):not(style):not(link):not(noscript)")];
-  const position = new Map(elements.map((element, at) => [element, at]));
   const animations = motion
-    ? document
-        .getAnimations()
-        .map((animation) => {
-          const timing = animation.effect?.getTiming?.() ?? {};
-          return [
-            position.get(animation.effect?.target) ?? -1,
-            animation.animationName ?? animation.transitionProperty ?? "",
-            animation.constructor.name,
-            JSON.stringify([timing.duration, timing.delay, timing.iterations, timing.direction, timing.easing, timing.fill]),
-            JSON.stringify(animation.effect?.getKeyframes?.() ?? []),
-          ].join("|");
-        })
-        .sort()
+    ? (() => {
+        const list = document.getAnimations();
+        if (!list.length) return [];
+        const position = new Map(elements.map((element, at) => [element, at]));
+        return list
+          .map((animation) => {
+            const timing = animation.effect?.getTiming?.() ?? {};
+            return [
+              position.get(animation.effect?.target) ?? -1,
+              animation.animationName ?? animation.transitionProperty ?? "",
+              animation.constructor.name,
+              JSON.stringify([timing.duration, timing.delay, timing.iterations, timing.direction, timing.easing, timing.fill]),
+              JSON.stringify(animation.effect?.getKeyframes?.() ?? []),
+            ].join("|");
+          })
+          .sort();
+      })()
     : [];
   if (motion) {
     for (const animation of document.getAnimations()) {
@@ -198,13 +203,6 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       animation.currentTime = 0;
     }
   }
-  const pseudosOf = (element) => [
-    null,
-    "::before",
-    "::after",
-    ...(getComputedStyle(element).display === "list-item" ? ["::marker"] : []),
-    ...(placeholderStyle && element.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
-  ];
   return {
     animations,
     title: document.title,
@@ -214,7 +212,17 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       const { x, y, width, height } = el.getBoundingClientRect();
       return [x, y, width, height].map((n) => Math.round(n * 100) / 100);
     }),
-    styles: elements.map((el) => pseudosOf(el).map((pseudo) => describe(el, pseudo)).join("")),
+    styles: elements.map((el) => {
+      const base = getComputedStyle(el);
+      const pseudos = [
+        null,
+        "::before",
+        "::after",
+        ...(base.display === "list-item" ? ["::marker"] : []),
+        ...(placeholderStyle && el.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
+      ];
+      return pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
+    }),
     writingModes: elements.map((el) => getComputedStyle(el).writingMode),
     fonts: [...document.fonts].filter((font) => font.status === "loaded").map((font) => font.family).sort(),
     sheets: document.styleSheets.length,
@@ -400,7 +408,7 @@ export async function hasInteractions(browser, file) {
 }
 
 const PATIENCE = 4;
-const CAPTURE_TIMEOUT_MS = 110_000;
+const CAPTURE_TIMEOUT_MS = 300_000;
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
 const MAX_SCREENSHOT_PIXELS = 20_000_000;
@@ -560,7 +568,7 @@ export async function capture(
           return index ? `${index.h}.${index.v}` : "none";
         }).catch(() => "unknown");
         phase = `interaction sweep step ${index} slide ${slideNumber}`;
-        await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
+        const acted = await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
         const cursorDelay = slideDeck && index === HOVER
           ? await page.evaluate(() => window.Reveal?.getConfig?.().hideCursorTime ?? 0).catch(() => 0)
           : 0;
@@ -568,7 +576,7 @@ export async function capture(
         const limit = slideDeck && index === HOVER ? Math.max(LIMIT, cursorDelay + quiet + 500) : LIMIT;
         await wait(`interaction sweep step ${index} slide ${slideNumber}`, { quiet, limit });
         const digest = await digestOf(page, forms, linked);
-        if (digest === previous && !ALWAYS_OBSERVED.has(index)) {
+        if (digest === previous && (!ALWAYS_OBSERVED.has(index) || acted === false)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });
           continue;
         }

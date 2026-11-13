@@ -58,6 +58,8 @@ jobs:
     outputs:
       tier: ${{ steps.plan.outputs.tier }}
       shards: ${{ steps.plan.outputs.shards }}
+      engine_shards: ${{ steps.plan.outputs.engine_shards }}
+      engine_count: ${{ steps.plan.outputs.engine_count }}
     steps:
       - id: plan
         env:
@@ -72,9 +74,12 @@ jobs:
           else
             tier=full
           fi
-          if [ "$tier" = full ]; then shards="$(node -e 'console.log(JSON.stringify(Array.from({length: 10}, (_, i) => i + 1)))')"; else shards='[1,2]'; fi
+          if [ "$tier" = full ]; then count=10; engine_count=10; else count=2; engine_count=4; fi
+          list() { node -e 'console.log(JSON.stringify(Array.from({length: Number(process.argv[1])}, (_, i) => i + 1)))' "$1"; }
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
-          echo "shards=$shards" >> "$GITHUB_OUTPUT"
+          echo "shards=$(list $count)" >> "$GITHUB_OUTPUT"
+          echo "engine_shards=$(list $engine_count)" >> "$GITHUB_OUTPUT"
+          echo "engine_count=$engine_count" >> "$GITHUB_OUTPUT"
 
   select:
     name: Select upstream documents
@@ -214,10 +219,10 @@ jobs:
       fail-fast: false
       matrix:
         browser: [firefox, webkit]
-        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+        shard: ${{ fromJSON(needs.plan.outputs.engine_shards) }}
     env:
       TIER: ${{ needs.plan.outputs.tier }}
-      SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+      SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
       OCTAVO_BROWSER: ${{ matrix.browser }}
     steps:
       - uses: actions/checkout@v7
@@ -247,7 +252,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: corpus/.cache
-          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
+          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}"
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
@@ -364,6 +369,8 @@ jobs:
           pattern: engines-report-*
           path: engines
       - run: node verify/merge-reports.mjs reports
+      - name: Every engine verified every document
+        run: node verify/coverage-check.mjs reports engines
       - name: Engine problems
         if: always()
         run: |

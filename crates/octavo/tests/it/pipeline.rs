@@ -278,3 +278,17 @@ fn the_check_sees_the_document_that_would_be_written() {
     });
     assert_eq!(seen.expect("checked"), simplified.pack(Mode::Packed).html);
 }
+
+#[test]
+fn applied_byte_deltas_sum_to_the_output_size_change() {
+    let src = include_str!("../../../../corpus/.cache/unused-rules-are-pruned.html");
+    for mode in [Mode::Safe, Mode::Scripts, Mode::Packed] {
+        let out = optimized(src, mode);
+        let delta: i64 = out
+            .applied
+            .iter()
+            .map(|step| step.after as i64 - step.before as i64)
+            .sum();
+        assert_eq!(delta, out.html.len() as i64 - src.len() as i64);
+    }
+}

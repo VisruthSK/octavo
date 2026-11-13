@@ -1,5 +1,6 @@
 import { chromium as launcher } from "playwright-core";
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { executableFingerprint } from "./fingerprint.mjs";
 import { delimiter, join } from "node:path";
 import { canonicalStyle } from "../styles.mjs";
 
@@ -41,7 +42,7 @@ export const launch = (options = {}) => launcher.launch({ executablePath: execut
 
 export const identity = (browser, { args = [], channel = "" } = {}) => {
   const path = executable() ?? launcher.executablePath();
-  const stamp = existsSync(path) ? `${statSync(path).size}-${statSync(path).mtimeMs}` : "missing";
+  const stamp = executableFingerprint(path);
   return `${label} ${browser.version()} ${path} ${stamp} channel=${channel} args=${JSON.stringify(args)}`;
 };
 export const settle = (page, settlePage, options) => settlePage(page, options);
@@ -53,6 +54,9 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
   await session.send("CSS.enable");
   const { root } = await session.send("DOM.getDocument", { depth: 0 });
   const { nodeIds } = await session.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector });
+  await page.evaluate((selector) => {
+    window[Symbol.for("octavo.interactive")] = document.querySelectorAll(selector);
+  }, selector);
   const states = [];
   const checks = { elements: Math.min(nodeIds.length, 40), hover: 0, focus: 0, focusVisible: 0, active: 0 };
   for (const [index, nodeId] of nodeIds.slice(0, 40).entries()) {
@@ -68,6 +72,9 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
     checks.active += 1;
     await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [] });
   }
+  await page.evaluate(() => {
+    delete window[Symbol.for("octavo.interactive")];
+  });
   await session.detach();
   return { states, checks };
 }

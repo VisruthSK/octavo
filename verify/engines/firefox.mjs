@@ -1,5 +1,5 @@
 import { firefox as launcher } from "playwright-core";
-import { existsSync, statSync } from "node:fs";
+import { executableFingerprint } from "./fingerprint.mjs";
 
 export { focus, forcedStates } from "./pointer.mjs";
 
@@ -16,7 +16,7 @@ export const launch = ({ args, ...options } = {}) => launcher.launch(options);
 
 export const identity = (browser, { channel = "" } = {}) => {
   const path = launcher.executablePath();
-  const stamp = existsSync(path) ? `${statSync(path).size}-${statSync(path).mtimeMs}` : "missing";
+  const stamp = executableFingerprint(path);
   return `${label} ${browser.version()} ${path} ${stamp} channel=${channel} args=[]`;
 };
 export const settle = (page, settlePage, options) => settlePage(page, options);
