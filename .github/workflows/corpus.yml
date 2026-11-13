@@ -169,7 +169,7 @@ jobs:
           restore-keys: |
             verdicts-${{ matrix.shard }}-${{ strategy.job-total }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}"
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 23 || 95 }}"
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 25 || 100 }}
       - uses: actions/cache/save@v6
         if: always()
@@ -201,6 +201,66 @@ jobs:
           path: out/corpus
           if-no-files-found: ignore
 
+  engines:
+    name: ${{ matrix.browser }} (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
+    needs: [plan, build]
+    if: needs.plan.outputs.tier != 'select'
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 25 || 150 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    env:
+      TIER: ${{ needs.plan.outputs.tier }}
+      SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+      OCTAVO_BROWSER: ${{ matrix.browser }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        with:
+          name: octavo-binary
+          path: target/release
+      - run: chmod +x target/release/octavo
+      - run: npm ci
+        working-directory: verify
+      - run: |
+          for attempt in 1 2 3 4; do
+            npx playwright-core install --with-deps chromium firefox webkit && exit 0
+            sleep $((attempt * 20))
+          done
+          exit 1
+        working-directory: verify
+      - name: Verify engine self-tests
+        if: matrix.shard == 1 && (github.event_name != 'workflow_dispatch' || inputs.filter == '.')
+        run: node --test verifier.test.mjs
+        env:
+          OCTAVO_PAGES: 1
+        working-directory: verify
+      - run: node corpus/build.mjs --check
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.11.9
+      - uses: actions/cache@v6
+        with:
+          path: corpus/.cache
+          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
+      - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 18 || 128 }}"
+        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 20 || 130 }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: engines-report-${{ matrix.browser }}-${{ matrix.shard }}
+          path: out/engines-*
+          if-no-files-found: ignore
+
   totals:
     name: Totals
     needs: [plan, corpus]
@@ -218,4 +278,16 @@ jobs:
         with:
           pattern: corpus-report-*
           path: reports
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: engines-report-*
+          path: engines
       - run: node verify/merge-reports.mjs reports
+      - name: Engine problems
+        if: always()
+        run: |
+          for report in engines/*/report.md; do
+            [ -f "$report" ] || continue
+            echo "### $(basename "$report")" >> "$GITHUB_STEP_SUMMARY"
+            sed -n '/^## Problems/,/^## Browser/p' "$report" >> "$GITHUB_STEP_SUMMARY"
+          done

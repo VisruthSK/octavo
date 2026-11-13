@@ -333,6 +333,13 @@ export default [
     build: () => pageWith(`<img alt="pixel" src="${dataUri("image/png", png({ width: 1, height: 1 }))}">`),
   },
   {
+    id: "assets-opaque-png-is-recompressed-as-png",
+    category: "images",
+    tier: "smoke",
+    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    build: () => pageWith(`<img alt="gradient" src="${dataUri("image/png", png({ width: 160, height: 120 }))}">`),
+  },
+  {
     id: "assets-png-truecolor",
     category: "images",
     tier: "full",

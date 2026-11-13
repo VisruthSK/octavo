@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { differences, missingFrom } from "./compare.mjs";
+import { PNG } from "pngjs";
+import { compare, differences, missingFrom } from "./compare.mjs";
+import { canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -66,6 +68,207 @@ test("a diagonal gradient is compared as written", () => {
   assert.deepEqual(missingFrom(diagonal, "background-image:linear-gradient(225deg, blue 0%, red 100%)"), [diagonal]);
 });
 
+test("a font family with its quotes removed is the same style", () => {
+  const quoted = "font-family:SFMono-Regular, Menlo, \"Liberation Mono\", \"Courier New\", monospace";
+  const bare = "font-family:SFMono-Regular, Menlo, Liberation Mono, Courier New, monospace";
+  assert.deepEqual(missingFrom(quoted, bare), []);
+  assert.deepEqual(missingFrom(bare, quoted), []);
+  assert.deepEqual(missingFrom("font-family:Menlo, monospace", "font-family:monospace"), ["font-family:Menlo, monospace"]);
+});
+
+test("a quoted keyword or a name that needs its quotes is not the unquoted one", () => {
+  assert.deepEqual(missingFrom('font-family:"serif"', "font-family:serif"), ['font-family:"serif"']);
+  assert.deepEqual(missingFrom('font-family:"Monospace", Menlo', "font-family:monospace, Menlo"), ['font-family:"Monospace", Menlo']);
+  assert.deepEqual(missingFrom('font-family:"1Face"', "font-family:1Face"), ['font-family:"1Face"']);
+  assert.deepEqual(missingFrom("font-family:'Fira Sans', serif", 'font-family:"Fira Sans", serif'), []);
+});
+
+test("font fallback order remains significant", () => {
+  assert.deepEqual(missingFrom("font-family:Arial, serif", "font-family:serif, Arial"), ["font-family:Arial, serif"]);
+});
+
+test("loaded font-family serialization normalizes only syntactic quotes and keeps case", () => {
+  assert.equal(canonicalFontFamily('"Source Sans Pro"'), "Source Sans Pro");
+  assert.equal(canonicalFontFamily('"serif"'), '"serif"');
+  assert.notEqual(canonicalFontFamily('"Arial"'), canonicalFontFamily("arial"));
+});
+
+test("logical sizes are removed only when an equal physical size is present", () => {
+  assert.deepEqual(canonicalStyle("width:33.333332%;inline-size:33.333332%"), "width:33.333332%");
+  assert.deepEqual(
+    missingFrom(canonicalStyle("width:33.333332%;inline-size:34%"), "width:33.333332%"),
+    ["inline-size:34%"],
+  );
+  assert.deepEqual(missingFrom(canonicalStyle("inline-size:33.333332%"), "width:33.333332%"), ["inline-size:33.333332%"]);
+});
+
+test("vertical logical sizes retain their property when a physical size is missing or differs", () => {
+  const inline = canonicalStyle("inline-size:40px", "vertical-rl");
+  assert.equal(inline, "inline-size:40px");
+  assert.deepEqual(missingFrom(inline, canonicalStyle("height:40px", "vertical-rl")), ["inline-size:40px"]);
+  assert.deepEqual(
+    missingFrom(canonicalStyle("height:40px;inline-size:41px", "vertical-rl"), "height:40px"),
+    ["inline-size:41px"],
+  );
+  assert.deepEqual(
+    missingFrom(canonicalStyle("height:40px;inline-size:40px", "vertical-rl"), "height:40px"),
+    [],
+  );
+});
+
+test("CSS property numbers compare at six significant digits without changing units", () => {
+  assert.equal(CSS_SIGNIFICANT_DIGITS, 6);
+  assert.deepEqual(missingFrom("width:33.333332%", "width:33.333302%"), []);
+  assert.deepEqual(missingFrom("width:33.3333%", "width:33.3334%"), ["width:33.3333%"]);
+  assert.deepEqual(missingFrom("width:100px", "width:100.02px"), ["width:100px"]);
+  assert.deepEqual(missingFrom("width:12.3456789px", "width:12.3457px"), []);
+  assert.deepEqual(missingFrom("width:0.0001px", "width:0.0002px"), ["width:0.0001px"]);
+  assert.deepEqual(missingFrom("width:12.3456789px", "width:12.3457em"), ["width:12.3456789px"]);
+});
+
+test("numeric text and font names are not rounded", () => {
+  assert.deepEqual(missingFrom('content:"100px"', 'content:"100.000px"'), ['content:"100px"']);
+  assert.deepEqual(missingFrom("font-family:Font 123", "font-family:Font 123.00000"), ["font-family:Font 123"]);
+});
+
+test("physical boxes and screenshot pixels remain exact", () => {
+  const state = (width) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [100, 100],
+    labels: ["DIV"],
+    rects: [[0, 0, width, 100]],
+    styles: [`width:${width}px`],
+    screenshot: Buffer.from("same"),
+  });
+  const issues = compare(
+    { states: [state(100)], errors: [], requests: [] },
+    { states: [state(100.02)], errors: [], requests: [] },
+    false,
+  );
+  assert.ok(issues.some((issue) => issue.includes("laid out differently")));
+  assert.ok(issues.some((issue) => issue.includes("different computed style")));
+  assert.equal(differences(image(1, 1), nudged(image(1, 1), [[0, 0]], 9)).count, 1);
+});
+
+test("a missing screenshot is an issue when either or both captures lack one", () => {
+  const state = (screenshot) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [0, 0],
+    labels: [],
+    rects: [],
+    styles: [],
+    screenshot,
+  });
+  for (const [before, after] of [[null, null], [Buffer.from("png"), null], [null, Buffer.from("png")]]) {
+    const issues = compare(
+      { states: [state(before)], errors: [], requests: [] },
+      { states: [state(after)], errors: [], requests: [] },
+      false,
+    );
+    assert.ok(issues.some((issue) => issue.includes("screenshot missing")));
+  }
+});
+
+test("matching screenshot limits pass and one-sided or different limits fail", () => {
+  const state = (screenshot) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [0, 0],
+    labels: [],
+    rects: [],
+    styles: [],
+    screenshot,
+  });
+  const compareScreenshots = (before, after) => compare(
+    { states: [state(before)], errors: [], requests: [] },
+    { states: [state(after)], errors: [], requests: [] },
+    false,
+  );
+  const limited = (height, limit = 20_000_000) => ({ kind: "limit", width: 1280, height, limit });
+  assert.deepEqual(compareScreenshots(limited(200_000), limited(200_000)), []);
+  assert.ok(compareScreenshots(limited(200_000), Buffer.from("not a screenshot"))[0].includes("page too large for screenshots limit"));
+  assert.ok(compareScreenshots(limited(200_000), limited(210_000))[0].includes("page too large for screenshots limit differs"));
+});
+
+test("large screenshots compare every tile", () => {
+  const state = (screenshot) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [0, 0],
+    labels: [],
+    rects: [],
+    styles: [],
+    screenshot,
+  });
+  const pixel = (color) => {
+    const image = new PNG({ width: 1, height: 1 });
+    image.data = Buffer.from([color, 0, 0, 255]);
+    return PNG.sync.write(image);
+  };
+  const tiles = (color) => ({
+    kind: "tiles",
+    width: 1,
+    height: 1,
+    tiles: [{ x: 0, y: 0, width: 1, height: 1, png: pixel(color) }],
+  });
+  const check = (before, after) => compare(
+    { states: [state(before)], errors: [], requests: [] },
+    { states: [state(after)], errors: [], requests: [] },
+    false,
+  );
+  assert.deepEqual(check(tiles(0), tiles(0)), []);
+  assert.ok(check(tiles(0), tiles(200)).some((issue) => issue.includes("tile at 0,0: screenshot")));
+});
+
+test("an unreachable marker differing from a reachable state fails comparison", () => {
+  const state = (forced) => ({
+    title: "",
+    accessibility: "",
+    forced: [[":hover on interactive #0", forced]],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [0, 0],
+    labels: [],
+    rects: [],
+    styles: [],
+    screenshot: Buffer.from("same"),
+  });
+  const issues = compare(
+    { states: [state("unreachable")], errors: [], requests: [] },
+    { states: [state("color:red")], errors: [], requests: [] },
+    false,
+  );
+  assert.ok(issues.some((issue) => issue.includes("forced :hover")));
+});
+
+test("quotes elsewhere in a declaration still matter", () => {
+  assert.deepEqual(missingFrom('content:"a"', "content:a"), ['content:"a"']);
+});
+
 test("declarations without gradients still compare exactly", () => {
   assert.deepEqual(missingFrom("color:red;width:10px", "width:10px"), ["color:red"]);
 });
@@ -74,4 +277,29 @@ test("a mirrored gradient makes two style strings the same, an extra declaration
   const { sameStyle } = await import("./compare.mjs");
   assert.equal(sameStyle(`color:red;${up}`, `${down};color:red`), true);
   assert.equal(sameStyle(`color:red;${up}`, `${down};color:red;width:1px`), false);
+});
+
+test("missing and extra computed style entries are reported instead of throwing", () => {
+  const state = (styles) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [0, 0],
+    labels: ["DIV", "P"],
+    rects: [[0, 0, 1, 1], [0, 0, 1, 1]],
+    styles,
+    screenshot: null,
+  });
+  for (const styles of [["color:red"], ["color:red", "color:blue", "color:green"]]) {
+    const issues = compare(
+      { states: [state(["color:red", "color:blue"])], errors: [], requests: [] },
+      { states: [state(styles)], errors: [], requests: [] },
+      false,
+    );
+    assert.ok(issues.some((issue) => issue.includes("style count")));
+  }
 });

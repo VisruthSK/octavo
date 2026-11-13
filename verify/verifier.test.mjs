@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeBrowser, verify, withTimeout } from "./verify.mjs";
+import { checksOf, engine, engineNames } from "./engines/index.mjs";
 
 after(closeBrowser);
 
@@ -28,6 +29,8 @@ const base = [
   "a.link{color:rgb(0,0,200)}",
   "a.link{transition:color 2s}",
   "a.link:hover{color:rgb(200,0,0)}",
+  "a.link:focus{color:rgb(0,200,0)}",
+  "a.link:active{color:rgb(200,200,0)}",
   "@media (max-width:500px){h1{font-size:12px}}",
   "@media (min-width:700px) and (max-width:900px){h1{font-size:40px}}",
   "@media (prefers-color-scheme:dark){body{background:rgb(0,0,0);color:rgb(255,255,255)}}",
@@ -36,6 +39,7 @@ const base = [
   "input::placeholder{color:rgb(0,128,0)}",
   "@media (prefers-reduced-motion:reduce){h1{letter-spacing:2px}}",
 ].join("");
+const changedPlaceholderColor = engine.placeholderStyle ? "rgb(0,128,1)" : "rgb(200,0,0)";
 
 const write = (name, html) => {
   const file = join(directory, `${name}.html`);
@@ -52,16 +56,36 @@ test("an identical copy passes every scenario", async () => {
   assert.deepEqual(await scenariosFailing(page(base), page(base)), []);
 });
 
+test(`the self-test runs in ${engine.label}`, () => {
+  assert.ok(engineNames.includes(engine.name));
+});
+
+test("every forced state is applied on every engine", async () => {
+  const report = await verify(write("original", page(base)), write("changed", page(base)));
+  for (const { scenario, checks } of report) {
+    if (scenario === "motion" || scenario === "no-js") continue;
+    assert.deepEqual(checksOf(checks), [], scenario);
+  }
+});
+
+test("active state is checked on a target below the initial viewport", async () => {
+  const scrolled = page("button:active{color:red}", '<div style="height:1400px"></div><button>Press</button>');
+  const report = await verify(write("scrolled-original", scrolled), write("scrolled-optimized", scrolled), { only: ["desktop-light"] });
+  assert.equal(report[0].checks.active, report[0].checks.elements);
+});
+
 const breakages = [
   ["a dropped keyframes rule", (css) => css.replace("@keyframes slide{from{margin-left:0}to{margin-left:100px}}", ""), "motion"],
   ["a changed animation duration", (css) => css.replace("2s infinite", "3s infinite"), "motion"],
   ["a dropped hover rule", (css) => css.replace("a.link:hover{color:rgb(200,0,0)}", ""), "desktop-light"],
+  ["a dropped focus rule", (css) => css.replace("a.link:focus{color:rgb(0,200,0)}", ""), "desktop-light"],
+  ["a dropped active rule", (css) => css.replace("a.link:active{color:rgb(200,200,0)}", ""), "desktop-light"],
   ["a dropped mobile media rule", (css) => css.replace("@media (max-width:500px){h1{font-size:12px}}", ""), "mobile"],
   ["a dropped tablet media rule", (css) => css.replace("@media (min-width:700px) and (max-width:900px){h1{font-size:40px}}", ""), "tablet"],
   ["a dropped dark rule", (css) => css.replace("@media (prefers-color-scheme:dark){body{background:rgb(0,0,0);color:rgb(255,255,255)}}", ""), "desktop-dark"],
   ["a dropped print rule", (css) => css.replace("@media print{.box{display:none}}", ""), "print"],
   ["a changed marker colour", (css) => css.replace("li::marker{color:rgb(255,0,0)}", "li::marker{color:rgb(255,0,1)}"), "desktop-light"],
-  ["a changed placeholder colour", (css) => css.replace("input::placeholder{color:rgb(0,128,0)}", "input::placeholder{color:rgb(0,128,1)}"), "desktop-light"],
+  ["a changed placeholder colour", (css) => css.replace("input::placeholder{color:rgb(0,128,0)}", `input::placeholder{color:${changedPlaceholderColor}}`), "desktop-light"],
   ["a dropped reduced-motion rule", (css) => css.replace("@media (prefers-reduced-motion:reduce){h1{letter-spacing:2px}}", ""), "desktop-light"],
   ["a one-unit colour change", (css) => css.replace("rgb(10,20,30)", "rgb(10,20,31)"), "desktop-light"],
   ["a changed text node", (css) => css, "desktop-light"],

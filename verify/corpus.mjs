@@ -8,6 +8,7 @@ import { documentPath, materialize } from "../corpus/build.mjs";
 import { readRendered, renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
 import { scenariosFor } from "./capture.mjs";
+import { engine, engineNotice, checksOf } from "./engines/index.mjs";
 
 const SLOWDOWN_LIMIT = 100;
 const RATE_FLOOR_BYTES = 256 * 1024;
@@ -19,6 +20,10 @@ const flag = (name, fallback) => {
   return at < 0 ? fallback : (process.argv[at + 1] ?? fallback);
 };
 const tier = flag("tier", "smoke");
+const deadlineMinutes = Number(flag("deadline-minutes", "0"));
+if (!Number.isFinite(deadlineMinutes) || deadlineMinutes < 0) throw new RangeError("deadline-minutes must be a non-negative number");
+const deadlineAt = deadlineMinutes ? Date.now() + deadlineMinutes * 60_000 : Infinity;
+const deadlineReached = () => Date.now() >= deadlineAt;
 const revalidatePercent = Number(flag("revalidate", process.env.CI && tier === "full" ? "5" : "0"));
 const levels = flag("levels", tier === "full" ? "safe,scripts,packed" : "safe,packed").split(",");
 const filter = new RegExp(flag("filter", "."));
@@ -47,14 +52,14 @@ const run = (args) =>
     child.on("close", (code) => done({ code, stdout, stderr, ms: Number(process.hrtime.bigint() - started) / 1e6 }));
   });
 
-const pool = async (items, limit, work) => {
+const pool = async (items, limit, work, unstarted) => {
   const results = new Array(items.length);
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(limit, items.length) }, async () => {
       while (next < items.length) {
         const at = next++;
-        results[at] = await work(items[at]);
+        results[at] = deadlineReached() ? await unstarted(items[at]) : await work(items[at]);
       }
     }),
   );
@@ -106,6 +111,25 @@ rmSync(outDirectory, { recursive: true, force: true });
 mkdirSync(outDirectory, { recursive: true });
 
 const work = selected.flatMap((row) => levels.map((level) => ({ row, level })));
+const deadlineFailure = ({ row, level }) => {
+  const input = row.path;
+  const source = readFileSync(input, "utf8");
+  return {
+    id: row.id,
+    category: row.category,
+    level,
+    inBytes: statSync(input).size,
+    outBytes: null,
+    ms: 0,
+    outcome: "not run",
+    baselines: { naive: naive(source).length, brotliOriginal: brotli(source), brotliOptimized: null },
+    problems: [`not processed because the ${deadlineMinutes}-minute verification deadline was reached`],
+    excluded: null,
+    browser: false,
+    input,
+    output: join(outDirectory, `${row.id}.${level}.html`),
+  };
+};
 const results = await pool(work, jobs, async ({ row, level }) => {
   const input = row.path;
   const output = join(outDirectory, `${row.id}.${level}.html`);
@@ -133,16 +157,30 @@ const results = await pool(work, jobs, async ({ row, level }) => {
     input,
     output,
   };
-});
+}, deadlineFailure);
 
 const timing = { original: 0, optimized: 0, compare: 0, cached: 0 };
 const browserCache = { hits: 0, misses: 0 };
 let browserName = "";
+const engineTag = engine.tag;
+const browserChecks = {
+  scenarios: new Set(),
+  totals: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0 },
+  unreachable: {
+    original: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0 },
+    optimized: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0 },
+  },
+  unreachableDetails: [],
+  screenshotLimits: [],
+  degraded: [],
+};
+
 if (browser) {
   const { closeBrowser, pages, verifyLevels } = await import("./verify.mjs");
-  const { browserIdentity } = await import("./browser.mjs");
+  const { browserIdentity } = await import("./verify.mjs");
   const { readVerdict, revalidateVerdict, shouldRevalidate, verdictKey, verifierHash, writeVerdict } = await import("./verdicts.mjs");
   const verifier = verifierHash();
+  console.log(`browser: ${engineNotice()}`);
   const identity = await browserIdentity();
   const documents = [...Map.groupBy(results.filter((entry) => entry.browser), (entry) => entry.input).values()];
   const cache = { hits: 0, misses: 0 };
@@ -170,23 +208,55 @@ if (browser) {
       plans.push({ level: entry.level, path: entry.output, key, optimized });
     }
     if (!plans.length) return;
-    const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })));
+    const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })), { deadlineReached });
     timing.original += measured.timing.original;
     timing.optimized += measured.timing.optimized;
     timing.compare += measured.timing.compare;
     for (const [at, plan] of plans.entries()) {
       const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
       const report = measured.reports[at];
-      if (plan.revalidate) await revalidateVerdict(
-        plan.key,
-        true,
-        async () => report.every(({ scenario, issues }) => (plan.level !== "packed" || scenario !== "no-js") && !issues.length),
-      );
+      for (const { scenario, checks, optimizedChecks } of report) {
+        if (!checks) continue;
+        browserChecks.scenarios.add(scenario);
+        for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) browserChecks.totals[state] += checks[state] ?? 0;
+        for (const [side, captureChecks] of [["original", checks], ["optimized", optimizedChecks]]) {
+          if (!captureChecks) continue;
+          for (const limit of captureChecks.screenshots?.limits ?? []) {
+            browserChecks.screenshotLimits.push({ id: entry.id, scenario, side, ...limit });
+          }
+          for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) {
+            browserChecks.unreachable[side][state] += captureChecks.unreachable?.[state] ?? 0;
+          }
+          if (captureChecks.unreachable?.details.length) {
+            browserChecks.unreachableDetails.push({ id: entry.id, scenario, side, details: captureChecks.unreachable.details });
+          }
+          const missing = checksOf(captureChecks);
+          if (missing.length) browserChecks.degraded.push({ id: entry.id, scenario, side, missing });
+        }
+      }
+      const unfinished = report.some(({ issues }) => issues.some((issue) => issue.includes("verification deadline reached")));
+      if (plan.revalidate && !unfinished) {
+        try {
+          await revalidateVerdict(
+            plan.key,
+            true,
+            async () => report.every(({ scenario, issues }) =>
+              plan.level === "packed" && scenario === "no-js"
+                ? !issues.some((issue) => issue.startsWith("check incomplete:") || issue.includes("screenshot missing"))
+                : !issues.length,
+            ),
+          );
+        } catch (error) {
+          entry.problems.push(error.message);
+        }
+      }
       entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
       const issues = [];
       for (const { scenario, issues: found } of report) {
-        if (entry.level === "packed" && scenario === "no-js") continue;
-        for (const issue of found) issues.push(`${scenario}: ${issue}`);
+        for (const issue of found) {
+          if (entry.level === "packed" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
+          issues.push(`${engineTag}${scenario}: ${issue}`);
+        }
       }
       entry.problems.push(...issues);
       if (!issues.length && verdictCache) {
@@ -199,6 +269,9 @@ if (browser) {
         });
       }
     }
+  }, (entries) => {
+    cache.misses += entries.length;
+    for (const entry of entries) entry.problems.push(`browser comparison not started because the ${deadlineMinutes}-minute verification deadline was reached`);
   });
   await closeBrowser();
   browserName = identity;
@@ -207,11 +280,12 @@ if (browser) {
 }
 
 const measured = results.filter((entry) => !entry.excluded);
-const large = measured.filter((entry) => entry.inBytes >= RATE_FLOOR_BYTES);
+const timed = measured.filter((entry) => entry.outBytes !== null);
+const large = timed.filter((entry) => entry.inBytes >= RATE_FLOOR_BYTES);
 const medianRate = Math.max(median(large.map((entry) => entry.ms / entry.inBytes)), 1e-6);
-for (const entry of measured) {
+for (const entry of timed) {
   const allowed = STARTUP_ALLOWANCE_MS + SLOWDOWN_LIMIT * medianRate * entry.inBytes;
-  if (entry.ms > allowed) {
+  if (entry.ms > allowed && !deadlineReached()) {
     const retry = await run([entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores)]);
     entry.ms = Math.min(entry.ms, retry.ms);
   }
@@ -232,7 +306,7 @@ const overall = [...Map.groupBy(
 
 const categories = Map.groupBy(measured, (entry) => `${entry.category} / ${entry.level}`);
 const kib = (bytes) => (bytes / 1024).toFixed(1);
-const lines = [`# Corpus report`, ``, `Tier ${tier}, ${selected.length} documents, levels ${levels.join(", ")}, browser ${browser ? "on" : "off"}. ${jobs} documents at a time, ${threads} threads each.`, ``];
+const lines = [`# Corpus report`, ``, `Tier ${tier}, ${selected.length} documents, levels ${levels.join(", ")}, browser ${browser ? engineNotice() : "off"}. ${jobs} documents at a time, ${threads} threads each.`, ``];
 lines.push(`## Overall by level`, ``, `| Level | Docs | Input MiB | Output MiB | Output as % of input | Octavo seconds | MiB/s |`, `|---|---|---|---|---|---|---|`, ...overall, ``);
 if (browser) {
   lines.push(
@@ -270,6 +344,15 @@ lines.push(``, `## Excluded (upstream render was not self-contained)`, excludedR
 for (const entry of excludedRows) lines.push(`- ${entry.id}: ${entry.excluded}`);
 lines.push(``, `## Problems`, failures.length ? "" : "None.");
 for (const entry of failures) lines.push(`- ${entry.id} (${entry.level}): ${entry.problems.join("; ")}`);
+if (browser) {
+  const limits = [
+    ...(engine.placeholderStyle ? [] : [`${engine.label}: computed style for ::placeholder is unavailable; screenshot pixel comparison remains active.`]),
+    ...browserChecks.screenshotLimits.map((entry) =>
+      `${entry.id} (${entry.scenario}, ${entry.side}, ${entry.label}): page too large for screenshots limit ${entry.limit} pixels at ${entry.height}px tall (${entry.width}px wide).`,
+    ),
+  ];
+  lines.push(``, `## Limits`, limits.length ? "" : "None.", ...limits.map((limit) => `- ${limit}`));
+}
 const cachedRows = results.filter((entry) => entry.cached);
 lines.push(``, `## Cached verdicts`, cachedRows.length ? "" : "None.");
 for (const entry of cachedRows) lines.push(`- ${entry.id} (${entry.level}): cached`);
@@ -278,6 +361,24 @@ lines.push(
   ``,
   `Total browser verification: ${total.toFixed(1)} s for ${browserCache.hits + browserCache.misses} comparisons (${browserCache.hits} cached) by ${browserName}.`,
 );
+if (browser) {
+  const totals = browserChecks.totals;
+  lines.push(
+    ``,
+    `## Browser checks`,
+    ``,
+    `Engine ${engineNotice()} compared the scenarios ${[...browserChecks.scenarios].join(", ")}.`,
+    `Forced hover, focus, focus-visible and active states were checked with real pointer and keyboard events in scenarios with scripts. Hidden and unreachable targets are recorded in the compared state.`,
+    `Checked ${totals.elements} elements: hover applied to ${totals.hover}, focus to ${totals.focus}, focus visible to ${totals.focusVisible}, active to ${totals.active}.`,
+    ``,
+    `Incomplete checks: ${browserChecks.degraded.length ? browserChecks.degraded.length : "none"}.`,
+    ...browserChecks.degraded.map((entry) => `- ${entry.id} (${entry.scenario}, ${entry.side}): ${entry.missing.join(", ")}`),
+    `Unreachable elements: original ${browserChecks.unreachable.original.elements}, optimized ${browserChecks.unreachable.optimized.elements}.`,
+    `Unreachable states: original ${browserChecks.unreachable.original.hover} hover, ${browserChecks.unreachable.original.focus} focus, ${browserChecks.unreachable.original.focusVisible} focus-visible, ${browserChecks.unreachable.original.active} active; optimized ${browserChecks.unreachable.optimized.hover} hover, ${browserChecks.unreachable.optimized.focus} focus, ${browserChecks.unreachable.optimized.focusVisible} focus-visible, ${browserChecks.unreachable.optimized.active} active.`,
+    `Unreachable details: ${browserChecks.unreachableDetails.length ? browserChecks.unreachableDetails.length : "none"}.`,
+    ...browserChecks.unreachableDetails.map((entry) => `- ${entry.id} (${entry.scenario}, ${entry.side}): ${entry.details.join("; ")}`),
+  );
+}
 
 writeFileSync(join(outDirectory, "report.md"), `${lines.join("\n")}\n`);
 writeFileSync(join(outDirectory, "report.json"), `${JSON.stringify(results.map(({ input, output, ...rest }) => rest), null, 2)}\n`);

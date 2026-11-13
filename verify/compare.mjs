@@ -1,5 +1,7 @@
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
+import { engine } from "./engines/index.mjs";
+import { canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
@@ -43,15 +45,25 @@ function canonicalGradient(body) {
   return `linear-gradient(180deg,${upright.map(([color, position]) => `${color} ${trimmed(position)}%`).join(",")})`;
 }
 
+const unquotedFamilies = (declaration) =>
+  declaration.replace(/font-family:(.*)$/, (_, value) => `font-family:${value.split(",").map(canonicalFontFamily).join(", ")}`);
+
 const canonical = (declaration) => {
+  let text = unquotedFamilies(declaration);
   const marker = "linear-gradient(";
-  const start = declaration.indexOf(marker);
-  if (start < 0) return declaration;
-  const open = start + marker.length - 1;
-  const end = closing(declaration, open);
-  if (end < 0) return declaration;
-  const replaced = canonicalGradient(declaration.slice(open + 1, end));
-  return replaced ? declaration.slice(0, start) + replaced + declaration.slice(end + 1) : declaration;
+  const start = text.indexOf(marker);
+  if (start >= 0) {
+    const open = start + marker.length - 1;
+    const end = closing(text, open);
+    if (end >= 0) {
+      const replaced = canonicalGradient(text.slice(open + 1, end));
+      if (replaced) text = text.slice(0, start) + replaced + text.slice(end + 1);
+    }
+  }
+  const pseudo = ["::before", "::after", "::marker", "::placeholder"].find((prefix) => text.startsWith(prefix)) ?? "";
+  const colon = text.indexOf(":", pseudo ? 2 : 0);
+  if (colon < 0 || text.slice(pseudo.length, colon) === "font-family") return text;
+  return `${text.slice(0, colon + 1)}${canonicalCssValue(text.slice(colon + 1))}`;
 };
 
 export const sameStyle = (left, right = "") =>
@@ -62,13 +74,14 @@ export const missingFrom = (reference, candidate = "") => {
   return reference.split(";").filter((declaration) => !present.has(canonical(declaration)));
 };
 
-const CHANNEL_ROUNDING = 1;
-const FAINT_LEVELS = 8;
-const FAINT_PIXEL_BUDGET = 12;
-
-export function differences(left, right) {
+export function differences(left, right, tolerance = engine.pixel) {
+  const rounding = tolerance.channel;
+  const faintLevels = tolerance.faint;
+  const budget = tolerance.budget;
   let count = 0;
   let rounded = 0;
+  let different = 0;
+  let max = 0;
   const faint = [];
   let [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Infinity, Infinity, -1, -1];
   let [minX, minY, maxX, maxY] = [Infinity, Infinity, -1, -1];
@@ -82,12 +95,16 @@ export function differences(left, right) {
         Math.abs(left.data[at + 2] - right.data[at + 2]),
         Math.abs(left.data[at + 3] - right.data[at + 3]),
       );
-      if (worst > 0) [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Math.min(anyMinX, x), Math.min(anyMinY, y), Math.max(anyMaxX, x), Math.max(anyMaxY, y)];
-      if (worst <= CHANNEL_ROUNDING) {
+      if (worst > 0) {
+        different += 1;
+        max = Math.max(max, worst);
+        [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Math.min(anyMinX, x), Math.min(anyMinY, y), Math.max(anyMaxX, x), Math.max(anyMaxY, y)];
+      }
+      if (worst <= rounding) {
         if (worst > 0) rounded += 1;
         continue;
       }
-      if (worst <= FAINT_LEVELS) {
+      if (worst <= faintLevels) {
         faint.push([x, y, at]);
         continue;
       }
@@ -96,17 +113,17 @@ export function differences(left, right) {
       [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
     }
   }
-  const spread = count > 0 || faint.length > FAINT_PIXEL_BUDGET;
+  const spread = count > 0 || faint.length > budget;
   if (!spread) rounded += faint.length;
   else for (const [x, y, at] of faint) {
     count += 1;
     first ||= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
     [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
   }
-  return { count, rounded, box: [minX, minY, maxX, maxY], anyBox: [anyMinX, anyMinY, anyMaxX, anyMaxY], where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
+  return { count, rounded, different, max, box: [minX, minY, maxX, maxY], anyBox: [anyMinX, anyMinY, anyMaxX, anyMaxY], where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
 }
 
-function compareScreenshots(a, b, lossy, stats) {
+function compareImageBytes(a, b, lossy, stats) {
   if (a.equals(b)) return [];
   const left = PNG.sync.read(a);
   const right = PNG.sync.read(b);
@@ -119,7 +136,37 @@ function compareScreenshots(a, b, lossy, stats) {
   }
   const { count, rounded, where } = differences(left, right);
   if (stats) stats.roundedPixels += rounded;
-  return count ? [`screenshot: ${count} pixels differ by more than ${CHANNEL_ROUNDING}${where}`] : [];
+  return count ? [`screenshot: ${count} pixels differ by more than ${engine.pixel.channel}${where}`] : [];
+}
+
+const screenshotLimit = (screenshot) => screenshot?.kind === "limit";
+const limitDescription = (screenshot) => `${screenshot.width}x${screenshot.height} at ${screenshot.limit} pixels`;
+
+function compareScreenshots(a, b, lossy, stats) {
+  if (screenshotLimit(a) || screenshotLimit(b)) {
+    if (!screenshotLimit(a) || !screenshotLimit(b)) {
+      const limited = screenshotLimit(a) ? "original" : "optimized";
+      const screenshot = screenshotLimit(a) ? a : b;
+      return [`page too large for screenshots limit on ${limited}: ${limitDescription(screenshot)}`];
+    }
+    return a.width === b.width && a.height === b.height && a.limit === b.limit
+      ? []
+      : [`page too large for screenshots limit differs: original ${limitDescription(a)}, optimized ${limitDescription(b)}`];
+  }
+  if (a.kind !== "tiles" && b.kind !== "tiles") return compareImageBytes(a, b, lossy, stats);
+  if (a.kind !== "tiles" || b.kind !== "tiles") return ["screenshot tile coverage differs"];
+  if (a.width !== b.width || a.height !== b.height) return [`screenshot size ${a.width}x${a.height} vs ${b.width}x${b.height}`];
+  if (a.tiles.length !== b.tiles.length) return [`screenshot tile count ${a.tiles.length} vs ${b.tiles.length}`];
+  const issues = [];
+  for (const [index, left] of a.tiles.entries()) {
+    const right = b.tiles[index];
+    if (left.x !== right.x || left.y !== right.y || left.width !== right.width || left.height !== right.height) {
+      issues.push(`screenshot tile ${index} region differs: ${left.x},${left.y} ${left.width}x${left.height} vs ${right.x},${right.y} ${right.width}x${right.height}`);
+      continue;
+    }
+    issues.push(...compareImageBytes(left.png, right.png, lossy, stats).map((issue) => `tile at ${left.x},${left.y}: ${issue}`));
+  }
+  return issues;
 }
 
 function compareState(a, b, lossy, stats) {
@@ -154,13 +201,26 @@ function compareState(a, b, lossy, stats) {
     const [first] = moved;
     issues.push(`${moved.length} elements laid out differently, e.g. ${a.labels[first]}: [${a.rects[first]}] vs [${b.rects[first]}]`);
   }
-  const differing = a.styles.flatMap((style, i) => (sameStyle(style, b.styles[i]) ? [] : [i]));
+  const beforeStyles = a.styles ?? [];
+  const afterStyles = b.styles ?? [];
+  if (beforeStyles.length !== afterStyles.length) issues.push(`style count ${beforeStyles.length} vs ${afterStyles.length}`);
+  const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, i) => i).filter((i) =>
+    !sameStyle(canonicalStyle(beforeStyles[i] ?? "", a.writingModes?.[i]), canonicalStyle(afterStyles[i] ?? "", b.writingModes?.[i])),
+  );
   if (differing.length) {
     const [first] = differing;
-    const lost = missingFrom(a.styles[first], b.styles[first]).slice(0, 3);
-    issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first]}: ${lost.join(" | ")}`);
+    const before = beforeStyles[first] ?? "";
+    const after = afterStyles[first] ?? "";
+    const lost = missingFrom(before, after).slice(0, 3);
+    const gained = missingFrom(after, before).slice(0, 3);
+    issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first] ?? ""}: lost ${JSON.stringify(lost)} gained ${JSON.stringify(gained)}`);
   }
-  if (a.screenshot && b.screenshot) issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy, stats));
+  if (!a.screenshot || !b.screenshot) {
+    const missing = [!a.screenshot && "original", !b.screenshot && "optimized"].filter(Boolean);
+    issues.push(`screenshot missing in ${missing.join(" and ")} capture`);
+  } else {
+    issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy, stats));
+  }
   return issues;
 }
 

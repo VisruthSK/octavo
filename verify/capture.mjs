@@ -1,4 +1,7 @@
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { engine } from "./engines/index.mjs";
+import { canonicalFontFamily } from "./styles.mjs";
 
 export const SCENARIOS = {
   "desktop-light": { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light", pixels: true },
@@ -58,8 +61,8 @@ const TIMERS = Symbol.for("octavo.timers");
 
 export function trackTimers() {
   const from = 50;
-  const to = 1000;
-  const max = 8;
+  const to = 6000;
+  const max = 32;
   const state = { pending: new Map() };
   globalThis[Symbol.for("octavo.timers")] = state;
   const native = window.setTimeout;
@@ -84,26 +87,7 @@ export function trackTimers() {
   };
 }
 
-async function observe({ lossy, probe, motion, pixels }) {
-  const describe = (element, pseudo) => {
-    const style = getComputedStyle(element, pseudo);
-    if (pseudo && style.content === "none") return "";
-    const noImage = style.backgroundImage === "none";
-    const legacyBox = style.display.includes("box");
-    const prefix = pseudo ?? "";
-    let text = "";
-    for (const name of style) {
-      if (name.startsWith("--")) continue;
-      const position = name.startsWith("background-position");
-      if (noImage && position) continue;
-      if (!legacyBox && name.startsWith("-webkit-box-")) continue;
-      const value = style.getPropertyValue(name);
-      text += `${prefix}${name}:${position ? value.replace(/\b0px\b/g, "0%") : value};`;
-    }
-    return text;
-  };
-  if (probe) return describe(document.querySelectorAll(probe.selector)[probe.index], null);
-
+async function fingerprints({ lossy, linked }) {
   const remembered = (globalThis[Symbol.for("octavo.fingerprints")] ??= new Map());
   const fingerprint = async (uri) => {
     const key = `${lossy}:${uri}`;
@@ -121,18 +105,66 @@ async function observe({ lossy, probe, motion, pixels }) {
     }
     return remembered.get(key);
   };
+  if (linked) return [];
+  const embedded = [...document.querySelectorAll("img")].flatMap((img) =>
+    ["src", "data-src"].flatMap((attribute) => {
+      const value = img.getAttribute(attribute);
+      return value && (lossy ? value.startsWith("data:image/") : /^data:image\/(png|webp)[;,]/.test(value)) ? [value] : [];
+    }),
+  );
+  return Promise.all(embedded.map((value) => fingerprint(value).catch(() => value)));
+}
+
+function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true }) {
+  const describe = (element, pseudo) => {
+    const style = getComputedStyle(element, pseudo);
+    if (pseudo && style.content === "none") return "";
+    const noImage = style.backgroundImage === "none";
+    const legacyBox = style.display.includes("box");
+    const prefix = pseudo ?? "";
+    let text = "";
+    for (const name of style) {
+      if (name.startsWith("--")) continue;
+      if (["width", "height"].includes(name)) continue;
+      const position = name.startsWith("background-position");
+      if (noImage && position) continue;
+      if (!legacyBox && /^-[a-z]+-box-/.test(name)) continue;
+      const raw = style.getPropertyValue(name);
+      const value = linked ? raw.replace(/url\([^)]*\)/g, "url()") : raw;
+      text += `${prefix}${name}:${position ? value.replace(/\b0px\b/g, "0%") : value};`;
+    }
+    for (const name of ["width", "height"]) {
+      const value = style.getPropertyValue(name);
+      if (value) text += `${prefix}${name}:${value};`;
+    }
+    return text;
+  };
+  if (probe) {
+    const element = document.querySelectorAll(probe.selector)[probe.index];
+    if (!element) return { style: "", states: {} };
+    return {
+      style: describe(element, null),
+      writingMode: getComputedStyle(element).writingMode,
+      states: {
+        hover: element.matches(":hover"),
+        focus: element.matches(":focus"),
+        focusVisible: element.matches(":focus-visible"),
+        active: element.matches(":active"),
+      },
+    };
+  }
+
   const clone = document.documentElement.cloneNode(true);
   clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
   const embedded = [...clone.querySelectorAll("img")].flatMap((img) =>
     ["src", "data-src"].flatMap((attribute) => {
       const value = img.getAttribute(attribute);
-      return value?.startsWith(lossy ? "data:image/" : "data:image/png") ? [{ img, attribute, value }] : [];
+      return value && (lossy ? value.startsWith("data:image/") : /^data:image\/(png|webp)[;,]/.test(value)) ? [{ img, attribute }] : [];
     }),
   );
-  const prints = await Promise.all(embedded.map(({ value }) => (pixels ? fingerprint(value).catch(() => value) : "skipped")));
   for (const [at, { img, attribute }] of embedded.entries()) {
     img.removeAttribute(attribute);
-    img.setAttribute(`pixels-${attribute}`, prints[at]);
+    img.setAttribute(`pixels-${attribute}`, prints[at] ?? "skipped");
   }
   const elements = [...document.body.querySelectorAll("*:not(script):not(style):not(link):not(noscript)")];
   const position = new Map(elements.map((element, at) => [element, at]));
@@ -162,7 +194,7 @@ async function observe({ lossy, probe, motion, pixels }) {
     "::before",
     "::after",
     ...(getComputedStyle(element).display === "list-item" ? ["::marker"] : []),
-    ...(element.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
+    ...(placeholderStyle && element.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
   ];
   return {
     animations,
@@ -174,29 +206,17 @@ async function observe({ lossy, probe, motion, pixels }) {
       return [x, y, width, height].map((n) => Math.round(n * 100) / 100);
     }),
     styles: elements.map((el) => pseudosOf(el).map((pseudo) => describe(el, pseudo)).join("")),
+    writingModes: elements.map((el) => getComputedStyle(el).writingMode),
     fonts: [...document.fonts].filter((font) => font.status === "loaded").map((font) => font.family).sort(),
     sheets: document.styleSheets.length,
     scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
   };
 }
 
-async function forcedStates(page) {
-  const session = await page.context().newCDPSession(page);
-  await session.send("DOM.enable");
-  await session.send("CSS.enable");
-  const { root } = await session.send("DOM.getDocument", { depth: 0 });
-  const { nodeIds } = await session.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector: INTERACTIVE });
-  const states = [];
-  for (const [index, nodeId] of nodeIds.slice(0, 40).entries()) {
-    for (const state of [["hover"], ["focus", "focus-visible"], ["active"]]) {
-      await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: state });
-      states.push([`:${state[0]} on interactive #${index}`, await page.evaluate(observe, { probe: { selector: INTERACTIVE, index } })]);
-    }
-    await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [] });
-  }
-  await session.detach();
-  return states;
-}
+const emptyChecks = (elements) => ({
+  states: [],
+  checks: { elements, hover: 0, focus: 0, focusVisible: 0, active: 0 },
+});
 
 const QUIET = 150;
 const LIMIT = 3000;
@@ -324,18 +344,39 @@ const HOVER = 3;
 const NAVIGATION = 4;
 const ALWAYS_OBSERVED = new Set([HOVER]);
 
-async function digestOf(page) {
-  return page.evaluate(async () => {
+async function digestOf(page, forms = [], linked = false) {
+  return page.evaluate(async ({ forms, linked }) => {
     const clone = document.documentElement.cloneNode(true);
     clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
-    for (const node of clone.querySelectorAll('[src^="data:"], [data-src^="data:"]')) {
+    for (const node of clone.querySelectorAll(linked ? "[src], [data-src], [srcset]" : '[src^="data:"], [data-src^="data:"]')) {
       node.removeAttribute("src");
       node.removeAttribute("data-src");
+      if (linked) node.removeAttribute("srcset");
     }
-    const text = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
+    const html = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
+    const text = forms.reduce((current, form) => current.split(form).join("{site}"), html);
     const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
     return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-  });
+  }, { forms, linked });
+}
+
+function rootForms(root) {
+  if (!root) return [];
+  const slashed = resolve(root).replaceAll("\\", "/");
+  const withoutDrive = slashed.replace(/^[A-Za-z]:/, "");
+  const url = pathToFileURL(resolve(root)).href;
+  const forms = new Set([url, decodeURI(url), `file://${slashed}`, slashed, withoutDrive, encodeURI(slashed), encodeURI(withoutDrive)]);
+  return [...forms].filter((form) => form.length > 3).sort((a, b) => b.length - a.length);
+}
+
+function scrubDeep(value, forms) {
+  if (!forms.length) return value;
+  if (typeof value === "string") return forms.reduce((text, form) => text.split(form).join("{site}"), value);
+  if (Array.isArray(value)) return value.map((item) => scrubDeep(item, forms));
+  if (value && typeof value === "object" && !ArrayBuffer.isView(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrubDeep(item, forms)]));
+  }
+  return value;
 }
 
 export async function hasInteractions(browser, file) {
@@ -350,9 +391,78 @@ export async function hasInteractions(browser, file) {
 }
 
 const PATIENCE = 4;
+const CAPTURE_TIMEOUT_MS = 110_000;
+const SCREENSHOT_TIMEOUT_MS = 5_000;
+const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
+const MAX_SCREENSHOT_PIXELS = 20_000_000;
 
-export async function capture(browser, file, scenario, lossy, { interact = true, patient = false } = {}) {
+export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture") {
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    void context.close().catch(() => {});
+  }, timeoutMs);
+  return {
+    timedOut: () => timedOut,
+    phase,
+    close: async () => {
+      clearTimeout(timer);
+      await context.close().catch(() => {});
+    },
+  };
+}
+
+async function captureScreenshot(page, viewport) {
+  const pageSize = await page.evaluate(() => ({
+    width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
+    height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
+  }));
+  const width = Math.max(viewport.width, pageSize.width);
+  const height = Math.max(viewport.height, pageSize.height);
+  try {
+    return await page.screenshot({ fullPage: true, animations: "disabled", timeout: SCREENSHOT_TIMEOUT_MS });
+  } catch {}
+  if (width * height > MAX_SCREENSHOT_PIXELS) {
+    return { kind: "limit", width, height, limit: MAX_SCREENSHOT_PIXELS };
+  }
+  const tileWidth = Math.min(viewport.width, MAX_SCREENSHOT_TILE_HEIGHT);
+  const tileHeight = Math.min(viewport.height, MAX_SCREENSHOT_TILE_HEIGHT);
+  const positions = (size, step) => Array.from({ length: Math.ceil(size / step) }, (_, index) => index * step);
+  const originalScroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
+  const tiles = [];
+  try {
+    for (const y of positions(height, tileHeight)) {
+      for (const x of positions(width, tileWidth)) {
+        await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), [x, y]);
+        const [left, top] = await page.evaluate(() => [window.scrollX, window.scrollY]);
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const clipX = x - left;
+        const clipY = y - top;
+        const clipWidth = Math.min(tileWidth, width - x);
+        const clipHeight = Math.min(tileHeight, height - y);
+        const png = await page.screenshot({
+          clip: { x: clipX, y: clipY, width: clipWidth, height: clipHeight },
+          animations: "disabled",
+          timeout: SCREENSHOT_TIMEOUT_MS,
+        });
+        tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
+      }
+    }
+  } finally {
+    await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), originalScroll);
+  }
+  return { kind: "tiles", width, height, tiles };
+}
+
+export async function capture(
+  browser,
+  file,
+  scenario,
+  lossy,
+  { interact = true, patient = false, root, linked = false, timeoutMs = CAPTURE_TIMEOUT_MS } = {},
+) {
   const pace = patient ? PATIENCE : 1;
+  const forms = rootForms(root);
   const scripted = scenario.javaScriptEnabled !== false;
   const context = await browser.newContext({
     viewport: scenario.viewport,
@@ -360,16 +470,20 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
     deviceScaleFactor: 1,
     reducedMotion: scenario.motion ? "no-preference" : "reduce",
     javaScriptEnabled: scripted,
+    ...engine.contextOptions,
   });
+  let phase = "new page";
+  const deadline = captureDeadline(context, timeoutMs, () => phase);
   try {
+    phase = "install init scripts";
     await context.addInitScript(seedRandom);
     await context.addInitScript(trackTimers);
     const page = await context.newPage();
     const errors = [];
     const requests = [];
     const network = { pending: 0, count: 0, last: 0 };
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+    page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
+    page.on("console", (message) => message.type() === "error" && errors.push(engine.normalizeError(message.text())));
     page.on("request", (request) => {
       if (/^(data|blob|about):/.test(request.url())) return;
       network.pending += 1;
@@ -383,31 +497,64 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
     };
     page.on("requestfinished", finished);
     page.on("requestfailed", finished);
-    const wait = (options = {}) => settle(page, { quiet: (options.quiet ?? QUIET) * pace, limit: LIMIT * pace, network });
+    const wait = async (name, options = {}) => {
+      phase = `settle ${name}`;
+      await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: (options.limit ?? LIMIT) * pace, network });
+    };
+    phase = "goto";
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
+    phase = "document body ready";
+    await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch(() => {});
+    if (!(await page.evaluate(() => Boolean(document.body)).catch(() => false))) throw new Error("document body did not appear after page load");
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
+    phase = "fonts ready";
+    if (scripted) await page.evaluate(() => document.fonts.ready);
+    else await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 3000 }).catch(() => {});
+    await wait("initial page");
 
     const states = [];
     const record = async (label, extra = {}) => {
+      phase = `screenshot ${label}`;
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
-      const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" }).catch(() => null);
-      states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, pixels: scenario.pixels })), screenshot, ...extra });
+      const screenshot = await captureScreenshot(page, scenario.viewport).catch(() => null);
+      phase = `image fingerprints ${label}`;
+      const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
+      phase = `page observation ${label}`;
+      const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle });
+      observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
+      states.push({ label, ...observation, screenshot, ...extra });
     };
-    await wait();
-    const forced = scripted && !scenario.motion ? await forcedStates(page) : [];
+    await wait("before forced states");
+    phase = "forcedStates element count";
+    const forced = scripted && !scenario.motion
+      ? await engine.forcedStates(page, INTERACTIVE, observe, (detail) => { phase = detail; })
+      : emptyChecks(0);
+    phase = "accessibility snapshot";
     const accessibility = await settledAccessibilityTree(page);
-    await wait();
-    await record("load", { forced, accessibility });
+    await wait("before initial capture");
+    await record("load", { forced: forced.states, accessibility });
     const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
     if (interact && scripted && scenario.sweep) {
+      phase = "reveal slide number lookup";
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
-      let previous = await digestOf(page);
+      let previous = await digestOf(page, forms, linked);
       states[0].digest = previous;
       for (const [index, interact] of interactions.entries()) {
+        phase = `interaction sweep step ${index} slide number lookup`;
+        const slideNumber = await page.evaluate(() => {
+          const index = window.Reveal?.getIndices?.();
+          return index ? `${index.h}.${index.v}` : "none";
+        }).catch(() => "unknown");
+        phase = `interaction sweep step ${index} slide ${slideNumber}`;
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
-        await wait({ quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : QUIET });
-        const digest = await digestOf(page);
+        const cursorDelay = slideDeck && index === HOVER
+          ? await page.evaluate(() => window.Reveal?.getConfig?.().hideCursorTime ?? 0).catch(() => 0)
+          : 0;
+        const quiet = slideDeck ? (index === NAVIGATION ? 1200 : Math.max(400, cursorDelay + QUIET)) : QUIET;
+        const limit = slideDeck && index === HOVER ? Math.max(LIMIT, cursorDelay + quiet + 500) : LIMIT;
+        await wait(`interaction sweep step ${index} slide ${slideNumber}`, { quiet, limit });
+        const digest = await digestOf(page, forms, linked);
         if (digest === previous && !ALWAYS_OBSERVED.has(index)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });
           continue;
@@ -416,8 +563,27 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
         await record(`interaction ${index}`, { digest });
       }
     }
-    return { states, errors, requests, base };
+    const recorded = states.filter((state) => !state.unchanged);
+    return scrubDeep({
+      states,
+      errors,
+      requests,
+      base,
+      checks: {
+        ...forced.checks,
+        screenshots: {
+          taken: recorded.filter((state) => state.screenshot).length,
+          total: recorded.length,
+          limits: recorded.flatMap(({ label, screenshot }) =>
+            screenshot?.kind === "limit" ? [{ label, width: screenshot.width, height: screenshot.height, limit: screenshot.limit }] : [],
+          ),
+        },
+      },
+    }, forms);
+  } catch (error) {
+    if (deadline.timedOut()) throw new Error(`capture timed out during ${deadline.phase()} after ${timeoutMs} ms`);
+    throw new Error(`capture failed during ${phase}: ${error.message}`);
   } finally {
-    await context.close();
+    await deadline.close();
   }
 }
