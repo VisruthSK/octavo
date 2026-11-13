@@ -312,7 +312,6 @@ jobs:
           name: linked-report-${{ matrix.shard }}
           path: out/linked/report.md
           if-no-files-found: ignore
-          if-no-files-found: ignore
 
   totals:
     name: Totals
