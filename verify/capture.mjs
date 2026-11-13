@@ -385,7 +385,7 @@ export async function hasInteractions(browser, file) {
 const PATIENCE = 4;
 const CAPTURE_TIMEOUT_MS = 100_000;
 
-export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS) {
+export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture") {
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
@@ -393,6 +393,7 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS) {
   }, timeoutMs);
   return {
     timedOut: () => timedOut,
+    phase,
     close: async () => {
       clearTimeout(timer);
       await context.close().catch(() => {});
@@ -418,8 +419,10 @@ export async function capture(
     javaScriptEnabled: scripted,
     ...engine.contextOptions,
   });
-  const deadline = captureDeadline(context, timeoutMs);
+  let phase = "new page";
+  const deadline = captureDeadline(context, timeoutMs, () => phase);
   try {
+    phase = "install init scripts";
     await context.addInitScript(seedRandom);
     await context.addInitScript(trackTimers);
     const page = await context.newPage();
@@ -441,35 +444,53 @@ export async function capture(
     };
     page.on("requestfinished", finished);
     page.on("requestfailed", finished);
-    const wait = (options = {}) =>
-      engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: LIMIT * pace, network });
+    const wait = async (name, options = {}) => {
+      phase = `settle ${name}`;
+      await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: LIMIT * pace, network });
+    };
+    phase = "goto";
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
+    phase = "fonts ready";
     if (scripted) await page.evaluate(() => document.fonts.ready);
     else await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 3000 }).catch(() => {});
-    await wait();
+    await wait("initial page");
 
     const states = [];
     const record = async (label, extra = {}) => {
+      phase = `screenshot ${label}`;
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
       const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" }).catch(() => null);
+      phase = `image fingerprints ${label}`;
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
+      phase = `page observation ${label}`;
       states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints })), screenshot, ...extra });
     };
-    await wait();
-    const forced = scripted && !scenario.motion ? await engine.forcedStates(page, INTERACTIVE, observe) : emptyChecks(0);
+    await wait("before forced states");
+    phase = "forcedStates element count";
+    const forced = scripted && !scenario.motion
+      ? await engine.forcedStates(page, INTERACTIVE, observe, (detail) => { phase = detail; })
+      : emptyChecks(0);
+    phase = "accessibility snapshot";
     const accessibility = await settledAccessibilityTree(page);
-    await wait();
+    await wait("before initial capture");
     await record("load", { forced: forced.states, accessibility });
     const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
     if (interact && scripted && scenario.sweep) {
+      phase = "reveal slide number lookup";
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
       let previous = await digestOf(page, forms, linked);
       states[0].digest = previous;
       for (const [index, interact] of interactions.entries()) {
+        phase = `interaction sweep step ${index} slide number lookup`;
+        const slideNumber = await page.evaluate(() => {
+          const index = window.Reveal?.getIndices?.();
+          return index ? `${index.h}.${index.v}` : "none";
+        }).catch(() => "unknown");
+        phase = `interaction sweep step ${index} slide ${slideNumber}`;
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
-        await wait({ quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : QUIET });
+        await wait(`interaction sweep step ${index} slide ${slideNumber}`, { quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : QUIET });
         const digest = await digestOf(page, forms, linked);
         if (digest === previous && !ALWAYS_OBSERVED.has(index)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });
@@ -488,7 +509,7 @@ export async function capture(
       checks: { ...forced.checks, screenshots: { taken: recorded.filter((state) => state.screenshot).length, total: recorded.length } },
     }, forms);
   } catch (error) {
-    if (deadline.timedOut()) throw new Error(`capture timed out after ${timeoutMs} ms`);
+    if (deadline.timedOut()) throw new Error(`capture timed out during ${deadline.phase()} after ${timeoutMs} ms`);
     throw error;
   } finally {
     await deadline.close();

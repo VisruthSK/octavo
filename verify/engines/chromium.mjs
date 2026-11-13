@@ -41,7 +41,7 @@ export const identity = (browser) => `${label} ${browser.version()}`;
 export const settle = (page, settlePage, options) => settlePage(page, options);
 export const normalizeError = (message) => message;
 
-export async function forcedStates(page, selector, observe) {
+export async function forcedStates(page, selector, observe, onPhase = () => {}) {
   const session = await page.context().newCDPSession(page);
   await session.send("DOM.enable");
   await session.send("CSS.enable");
@@ -51,6 +51,7 @@ export async function forcedStates(page, selector, observe) {
   const checks = { elements: Math.min(nodeIds.length, 40), hover: 0, focus: 0, focusVisible: 0, active: 0 };
   for (const [index, nodeId] of nodeIds.slice(0, 40).entries()) {
     for (const state of [["hover"], ["focus", "focus-visible"], ["active"]]) {
+      onPhase(`forcedStates element ${index} ${state[0]}`);
       await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: state });
       const seen = await page.evaluate(observe, { probe: { selector, index } });
       states.push([`:${state[0]} on interactive #${index}`, seen.style]);
