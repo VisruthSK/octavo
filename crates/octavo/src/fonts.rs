@@ -40,6 +40,8 @@ enum Decision {
     Replace { uri: String, notice: Option<String> },
 }
 
+type Outcome = (Decision, Option<(String, usize)>);
+
 struct RuleFacts {
     pseudo_only: bool,
     declared: Vec<String>,
@@ -78,7 +80,6 @@ pub(crate) struct Settings<'a> {
     pub(crate) src: &'a str,
     pub(crate) words: &'a Words,
     pub(crate) subset_text_fonts: bool,
-    pub(crate) font_experiment: Option<&'a str>,
     pub(crate) notices: Licenses,
     pub(crate) cache: Option<&'a Path>,
     pub(crate) tuning: Tuning,
@@ -112,7 +113,7 @@ pub(crate) fn rewrite(
         .collect();
     let surviving: Vec<&str> = surviving.iter().map(String::as_str).collect();
     let chars = collect_chars(&surviving, loose, settings);
-    let decisions: Vec<Vec<(Decision, Option<(String, usize)>)>> = faces
+    let decisions: Vec<Vec<Outcome>> = faces
         .par_iter()
         .map(|sheet_faces| {
             sheet_faces
@@ -147,7 +148,10 @@ pub(crate) fn rewrite(
             apply.notices
         })
         .collect();
-    Rewritten { notices, kept_whole }
+    Rewritten {
+        notices,
+        kept_whole,
+    }
 }
 
 pub(crate) struct Rewritten {
@@ -196,7 +200,7 @@ fn decide(
     usage: &Usage,
     chars: &Chars,
     settings: &Settings,
-) -> (Decision, Option<(String, usize)>) {
+) -> Outcome {
     let plain = face
         .family
         .chars()
@@ -225,7 +229,6 @@ fn decide(
         &font.bytes,
         subset,
         text,
-        settings.font_experiment,
         settings.notices,
         settings.cache,
         settings.tuning,
@@ -484,7 +487,6 @@ fn transcode(
     bytes: &[u8],
     chars: Option<&HashSet<char>>,
     text: bool,
-    experiment: Option<&str>,
     notices: Licenses,
     cache: Option<&Path>,
     tuning: Tuning,
@@ -498,17 +500,26 @@ fn transcode(
     let kept_whole = text && chars.is_some() && !subsetting_is_exact(&sfnt);
     let chars = if kept_whole { None } else { chars };
     let (Some(root), None) = (cache, chars) else {
-        return convert(&sfnt, chars, experiment, notices, quality)
-            .map(|converted| Transcoded { kept_whole, ..converted });
+        return convert(&sfnt, chars, notices, quality).map(|converted| Transcoded {
+            kept_whole,
+            ..converted
+        });
     };
     let directory = root.join(cache::FONTS);
     let key = cache::key(&[bytes, &[quality]]);
-    if let Some(entry) = cache::load(&directory, &key).and_then(|entry| Transcoded::decode(&entry)) {
-        return Some(Transcoded { kept_whole, ..entry });
+    if let Some(entry) = cache::load(&directory, &key).and_then(|entry| Transcoded::decode(&entry))
+    {
+        return Some(Transcoded {
+            kept_whole,
+            ..entry
+        });
     }
-    let converted = convert(&sfnt, chars, experiment, notices, quality)?;
+    let converted = convert(&sfnt, chars, notices, quality)?;
     cache::store(&directory, &key, &converted.encode());
-    Some(Transcoded { kept_whole, ..converted })
+    Some(Transcoded {
+        kept_whole,
+        ..converted
+    })
 }
 
 fn subsetting_is_exact(sfnt: &[u8]) -> bool {
@@ -558,12 +569,11 @@ fn transform_glyf_loca(sfnt: &[u8]) -> bool {
 fn convert(
     sfnt: &[u8],
     chars: Option<&HashSet<char>>,
-    experiment: Option<&str>,
     notices: Licenses,
     quality: u8,
 ) -> Option<Transcoded> {
     let sfnt: Cow<[u8]> = Cow::Borrowed(sfnt);
-    let subset = chars.and_then(|chars| subsetted(&sfnt, chars, experiment));
+    let subset = chars.and_then(|chars| subsetted(&sfnt, chars));
     let notice = subset.as_ref().and_then(|_| {
         if notices == Licenses::Keep {
             notice(&sfnt)
@@ -587,7 +597,7 @@ fn convert(
     })
 }
 
-fn subsetted(sfnt: &[u8], chars: &HashSet<char>, experiment: Option<&str>) -> Option<Vec<u8>> {
+fn subsetted(sfnt: &[u8], chars: &HashSet<char>) -> Option<Vec<u8>> {
     let font = Sfnt::new(sfnt).ok()?;
     if font.maxp().is_err() {
         return None;
@@ -606,49 +616,17 @@ fn subsetted(sfnt: &[u8], chars: &HashSet<char>, experiment: Option<&str>) -> Op
     name_ids.insert(NameId::from(14));
     let mut name_languages = IntSet::empty();
     name_languages.insert(0x0409);
-    let has = |token: &str| {
-        experiment.is_some_and(|value| {
-            value
-                .split(',')
-                .map(str::trim)
-                .any(|part| part == token || part == "all")
-        })
-    };
-    let mut flags = skera::SubsetFlags::SUBSET_FLAGS_DEFAULT;
-    if has("os2") {
-        flags |= skera::SubsetFlags::SUBSET_FLAGS_NO_PRUNE_UNICODE_RANGES;
-    }
-    if has("gids") {
-        flags |= skera::SubsetFlags::SUBSET_FLAGS_RETAIN_GIDS;
-    }
-    if has("loca") {
-        flags |= skera::SubsetFlags::SUBSET_FLAGS_IFTB_REQUIREMENTS;
-    }
-    if has("post") {
-        flags |= skera::SubsetFlags::SUBSET_FLAGS_GLYPH_NAMES;
-    }
-    if has("names") {
-        name_ids = IntSet::all();
-        name_languages = IntSet::all();
-    }
-    let mut plan = skera::Plan::new(
+    let plan = skera::Plan::new(
         &IntSet::<GlyphId>::empty(),
         &unicodes,
         &font,
-        flags,
+        skera::SubsetFlags::SUBSET_FLAGS_DEFAULT,
         &skera::DEFAULT_DROP_TABLES.iter().copied().collect(),
         &IntSet::<SfntTag>::all(),
         &features,
         &name_ids,
         &name_languages,
     );
-    if has("cmap") {
-        let copied = [b"gasp", b"fpgm", b"prep", b"VDMX", b"DSIG", b"cmap"]
-            .map(SfntTag::new)
-            .into_iter()
-            .collect();
-        plan.set_no_subset_tables(&copied);
-    }
     let subset = skera::subset_font(&font, &plan).ok()?;
     (!has_positioning(sfnt) || has_positioning(&subset)).then_some(subset)
 }

@@ -3,7 +3,8 @@
 //!
 //! A document goes through a fixed series of stages: dead Quarto runtime
 //! libraries are removed, scripts and stylesheets are minified and pruned,
-//! fonts are converted to WOFF2 (icon fonts are subsetted to the glyphs the
+//! fonts are converted to WOFF2 (text fonts are subsetted, hinted static
+//! fonts are kept whole, and icon fonts are subsetted to the glyphs the
 //! CSS can reach), and images are recompressed.
 //! Each stage reads the document and returns edits to byte ranges, so
 //! anything Octavo does not understand stays exactly as it was.
@@ -101,16 +102,18 @@ impl FromStr for Mode {
 
 /// Settings for [`simplify`].
 ///
-/// The default keeps images lossless, keeps text fonts whole and keeps license
-/// notices.
+/// The default keeps images lossless, subsets text fonts to the characters
+/// the document uses (keeping hinted static fonts whole, because Chromium
+/// draws them with slightly different strokes on Linux after subsetting)
+/// and keeps license notices.
 ///
 /// ```
 /// use octavo::{simplify, Options};
 ///
 /// let options = Options::default();
-/// assert!(options.images.is_none() && !options.subset_text_fonts && !options.strip_licenses);
+/// assert!(options.images.is_none() && options.subset_text_fonts && !options.strip_licenses);
 /// ```
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Options {
     /// Re-encode embedded PNG and JPEG images when that makes them smaller.
     /// `None` keeps them as they are, recompressed losslessly.
@@ -118,14 +121,16 @@ pub struct Options {
     /// Subset embedded text fonts to the characters in the document plus
     /// the Latin letters, digits and punctuation, keeping every layout
     /// feature and all kerning. This is often the largest saving in a themed
-    /// document, but it is off by default: on Linux, Chromium draws some
-    /// hinted fonts, such as Fira Sans, with slightly different strokes after
-    /// subsetting, so the output is not pixel-exact everywhere. Text that
-    /// JavaScript adds later with characters outside that set falls back to a
-    /// system font. Icon fonts are always subsetted to the glyphs the CSS can
-    /// reach.
+    /// document, and it is on by default. Hinted static fonts, those with
+    /// `fpgm`, `prep` and `cvt ` tables, are kept whole instead, because
+    /// Chromium on Linux draws them with slightly different strokes after
+    /// subsetting; variable fonts and fonts without hinting programs are
+    /// subsetted. When a font is kept whole for this reason, an entry with
+    /// [`Transform::FontKeptWhole`] appears in [`Applied`], so audits show
+    /// it. Text that JavaScript adds later with characters outside that set
+    /// falls back to a system font. Icon fonts are always subsetted to the
+    /// glyphs the CSS can reach.
     pub subset_text_fonts: bool,
-    pub font_experiment: Option<String>,
     /// Drop the license and copyright notices of bundled libraries and
     /// fonts. Most open-source licenses require them to stay with copies,
     /// so only set this if the notices are shipped some other way. By
@@ -164,6 +169,20 @@ impl Options {
     /// [`Options::image_memory`] is `None`: 2.5 GiB, which fits one 81
     /// megapixel image at a time.
     pub const DEFAULT_IMAGE_MEMORY: u64 = 2_684_354_560;
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            images: None,
+            subset_text_fonts: true,
+            strip_licenses: false,
+            keep_png: false,
+            image_memory: None,
+            cache_directory: None,
+            compression: Compression::default(),
+        }
+    }
 }
 
 /// How much time to spend compressing.
@@ -699,7 +718,6 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
                         &doc,
                         &words,
                         options.subset_text_fonts,
-                        options.font_experiment.as_deref(),
                         licenses,
                         options.cache_directory.as_deref(),
                         options.compression.tuning(),

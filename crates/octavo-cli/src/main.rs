@@ -177,19 +177,8 @@ struct Optimize {
         help = "Do not download files that the page links from the web. Such a page keeps needing the network"
     )]
     no_fetch: bool,
-    #[arg(
-        long,
-        help_heading = "Fonts",
-        help = "Keep only the characters each text font needs. Often a large saving, but on Linux some hinted fonts draw with slightly different strokes"
-    )]
-    subset_fonts: bool,
-    #[arg(
-        long,
-        hide = true,
-        value_name = "NAME",
-        help_heading = "Fonts"
-    )]
-    font_experiment: Option<String>,
+    #[arg(long, help_heading = "Fonts")]
+    no_subset_fonts: bool,
     #[arg(
         long,
         value_name = "DIRECTORY",
@@ -279,6 +268,16 @@ fn command() -> clap::Command {
                 "Shrink images whose longest side is over this many pixels{side}"
             ))
         })
+        .mut_arg("no_subset_fonts", |arg| {
+            arg.help(format!(
+                "Keep the text fonts whole instead of subsetting them to the characters the document uses [default: subsetting is {}]",
+                if Options::default().subset_text_fonts {
+                    "on"
+                } else {
+                    "off"
+                }
+            ))
+        })
         .mut_arg("woff2_quality", |arg| {
             arg.help(format!(
                 "Quality of re-encoded fonts [default: {}, slowest: {}]",
@@ -323,8 +322,7 @@ fn main() -> ExitCode {
         audit: audit_only,
         lossy_images,
         image_quality,
-        subset_fonts,
-        font_experiment,
+        no_subset_fonts,
         max_image_side,
         keep_png,
         image_memory,
@@ -355,8 +353,7 @@ fn main() -> ExitCode {
     });
     let options = Options {
         images,
-        subset_text_fonts: subset_fonts,
-        font_experiment,
+        subset_text_fonts: !no_subset_fonts,
         strip_licenses,
         keep_png,
         image_memory: image_memory.map(|mib| mib.saturating_mul(1_048_576)),
