@@ -16,10 +16,9 @@ fn font_page_with(font: &[u8]) -> String {
 }
 
 fn whole_font() -> Options {
-    Options {
-        subset_text_fonts: false,
-        ..Options::default()
-    }
+    let mut options = Options::default();
+    options.subset_text_fonts = false;
+    options
 }
 
 fn woff2_from(html: &str) -> Vec<u8> {

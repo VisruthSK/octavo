@@ -42,15 +42,9 @@ fn png_with_comment(comment: &str) -> Vec<u8> {
 }
 
 fn png_only(src: &str) -> String {
-    simplified(
-        src,
-        Options {
-            keep_png: true,
-            ..Options::default()
-        },
-    )
-    .pack(Mode::Safe)
-    .html
+    let mut options = Options::default();
+    options.keep_png = true;
+    simplified(src, options).pack(Mode::Safe).html
 }
 
 fn page(attr: &str, png: &[u8]) -> String {

@@ -7,7 +7,7 @@ use clap::{
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{
     Compression, Error as OctavoError, ImageEncoding, ImageFormat, Loaded, Mode, Options, Quality,
-    Resources, Transform, Tuning, Warning, embed_resources, optimize, simplify,
+    Resources, Transform, Tuning, Warning, embed_resources, simplify,
 };
 use std::{
     collections::{BTreeMap, HashSet},
