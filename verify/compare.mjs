@@ -6,7 +6,13 @@ import { canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
 const excerpt = (text, at) => text.slice(Math.max(0, at - 60), at + 100);
-const firstDifference = (a, b) => [...a].findIndex((char, i) => char !== b[i]);
+const firstDifference = (a, b) => {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    if (a.charCodeAt(i) !== b.charCodeAt(i)) return i;
+  }
+  return a.length !== b.length ? len : -1;
+};
 const closing = (text, open) => {
   let depth = 0;
   for (let at = open; at < text.length; at++) {
@@ -75,6 +81,9 @@ export const missingFrom = (reference, candidate = "") => {
 };
 
 export function differences(left, right, tolerance = engine.pixel) {
+  if (Buffer.from(left.data.buffer, left.data.byteOffset, left.data.byteLength).equals(Buffer.from(right.data.buffer, right.data.byteOffset, right.data.byteLength))) {
+    return { count: 0, rounded: 0, different: 0, max: 0, box: [Infinity, Infinity, -1, -1], anyBox: [Infinity, Infinity, -1, -1], where: "" };
+  }
   const rounding = tolerance.channel;
   const faintLevels = tolerance.faint;
   const budget = tolerance.budget;
@@ -123,10 +132,20 @@ export function differences(left, right, tolerance = engine.pixel) {
   return { count, rounded, different, max, box: [minX, minY, maxX, maxY], anyBox: [anyMinX, anyMinY, anyMaxX, anyMaxY], where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
 }
 
+const decodedPng = new WeakMap();
+const getPng = (buf) => {
+  let png = decodedPng.get(buf);
+  if (!png) {
+    png = PNG.sync.read(buf);
+    decodedPng.set(buf, png);
+  }
+  return png;
+};
+
 function compareImageBytes(a, b, lossy, stats) {
   if (a.equals(b)) return [];
-  const left = PNG.sync.read(a);
-  const right = PNG.sync.read(b);
+  const left = getPng(a);
+  const right = getPng(b);
   if (left.width !== right.width || left.height !== right.height) {
     return [`screenshot size ${left.width}x${left.height} vs ${right.width}x${right.height}`];
   }
@@ -187,7 +206,8 @@ function compareState(a, b, lossy, stats) {
   }
   if (a.fonts.join() !== b.fonts.join()) issues.push(`fonts ${a.fonts} vs ${b.fonts}`);
   if (a.animations.join("\n") !== b.animations.join("\n")) {
-    const missing = a.animations.filter((animation) => !b.animations.includes(animation));
+    const present = new Set(b.animations);
+    const missing = a.animations.filter((animation) => !present.has(animation));
     issues.push(`animations ${a.animations.length} vs ${b.animations.length}, e.g. ${(missing[0] ?? "extra in optimized").slice(0, 160)}`);
   }
   if (a.sheets !== b.sheets) issues.push(`style sheets ${a.sheets} vs ${b.sheets}`);

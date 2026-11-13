@@ -180,3 +180,12 @@ test("a script moved from the head into the body is not a difference", async () 
   const moved = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title><style>${base}</style></head><body><h1>Title</h1>${script}</body></html>`;
   assert.deepEqual(await scenariosFailing(original, moved), []);
 });
+
+test("a dropped hover rule on a page with only a link is reported", async () => {
+  const original = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title><style>a{color:rgb(0,0,200)}a:hover{color:rgb(200,0,0)}</style></head><body><a href="#x">link</a></body></html>';
+  const changed = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title><style>a{color:rgb(0,0,200)}</style></head><body><a href="#x">link</a></body></html>';
+  const failing = (await verify(write("link-hover-original", original), write("link-hover-changed", changed), { only: ["desktop-light"] }))
+    .filter(({ issues }) => issues.length)
+    .map(({ scenario }) => scenario);
+  assert.ok(failing.includes("desktop-light"), `${failing}`);
+});
