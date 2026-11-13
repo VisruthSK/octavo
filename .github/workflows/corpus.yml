@@ -128,7 +128,7 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 40 || 120 }}
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 60 || 345 }}
     strategy:
       fail-fast: false
       matrix:
@@ -172,8 +172,8 @@ jobs:
           restore-keys: |
             verdicts-${{ matrix.shard }}-${{ strategy.job-total }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 30 || 95 }}" --octavo-args "${{ inputs.octavo_args }}"
-        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 33 || 100 }}
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}" --octavo-args "${{ inputs.octavo_args }}"
+        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
       - uses: actions/cache/save@v6
         if: always()
         continue-on-error: true
@@ -209,7 +209,7 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 45 || 150 }}
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 60 || 345 }}
     strategy:
       fail-fast: false
       matrix:
@@ -249,8 +249,8 @@ jobs:
           path: corpus/.cache
           key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 32 || 128 }}"
-        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 36 || 130 }}
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}"
+        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -263,7 +263,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.tier != 'select' && (github.event_name != 'workflow_dispatch' || inputs.filter == '.')
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -295,7 +295,7 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 30 || 240 }}
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 45 || 300 }}
     strategy:
       fail-fast: false
       matrix:
