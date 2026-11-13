@@ -400,7 +400,7 @@ export async function hasInteractions(browser, file) {
 }
 
 const PATIENCE = 4;
-const CAPTURE_TIMEOUT_MS = 110_000;
+const CAPTURE_TIMEOUT_MS = 300_000;
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
 const MAX_SCREENSHOT_PIXELS = 20_000_000;
