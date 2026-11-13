@@ -141,7 +141,7 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
       if (isDeadlineReached()) return [...issues, "verification deadline reached during document comparison"];
       const patient = round > 0;
       const [again, optimizedAgain] = await Promise.all([
-        take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked }).catch(crashed),
+        take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, linkedOriginal: linked }).catch(crashed),
         take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked }).catch(crashed),
       ]);
       if ([again.crashed, optimizedAgain.crashed].some((message) => message?.includes("capture timed out"))) {
@@ -199,7 +199,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
     slots.using(async () => {
       try {
         return await withTimeout(
-          () => take(file, scenario, lossy, { interact, root: rootFor(file), linked }),
+          () => take(file, scenario, lossy, { interact, root: rootFor(file), linked, linkedOriginal: linked && file === original }),
           COMPARISON_TIMEOUT_MS,
           closeBrowser,
         );

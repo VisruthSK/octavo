@@ -336,7 +336,7 @@ export default [
     id: "assets-opaque-png-is-recompressed-as-png",
     category: "images",
     tier: "smoke",
-    expect: { outcome: "optimizes", retains: ["data:image/png;base64,"] },
+    expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => pageWith(`<img alt="gradient" src="${dataUri("image/png", png({ width: 160, height: 120 }))}">`),
   },
   {

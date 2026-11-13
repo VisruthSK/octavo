@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
+import { isLinkedFileLoadFailure } from "./linked-artifacts.mjs";
 import { canonicalFontFamily } from "./styles.mjs";
 
 export const SCENARIOS = {
@@ -467,7 +468,7 @@ export async function capture(
   file,
   scenario,
   lossy,
-  { interact = true, patient = false, root, linked = false, timeoutMs = CAPTURE_TIMEOUT_MS } = {},
+  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS } = {},
 ) {
   const pace = patient ? PATIENCE : 1;
   const forms = rootForms(root);
@@ -491,7 +492,11 @@ export async function capture(
     const requests = [];
     const network = { pending: 0, count: 0, last: 0 };
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
-    page.on("console", (message) => message.type() === "error" && errors.push(engine.normalizeError(message.text())));
+    page.on("console", (message) => {
+      if (message.type() !== "error") return;
+      if (linkedOriginal && isLinkedFileLoadFailure(message.text(), message.location())) return;
+      errors.push(engine.normalizeError(message.text()));
+    });
     page.on("request", (request) => {
       if (/^(data|blob|about):/.test(request.url())) return;
       network.pending += 1;

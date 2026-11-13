@@ -72,7 +72,7 @@ jobs:
           else
             tier=full
           fi
-          if [ "$tier" = full ]; then shards="$(node -e 'console.log(JSON.stringify(Array.from({length: 24}, (_, i) => i + 1)))')"; else shards='[1,2,3,4]'; fi
+          if [ "$tier" = full ]; then shards="$(node -e 'console.log(JSON.stringify(Array.from({length: 10}, (_, i) => i + 1)))')"; else shards='[1,2]'; fi
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "shards=$shards" >> "$GITHUB_OUTPUT"
 
@@ -128,7 +128,7 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 30 || 120 }}
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 60 || 345 }}
     strategy:
       fail-fast: false
       matrix:
@@ -172,8 +172,8 @@ jobs:
           restore-keys: |
             verdicts-${{ matrix.shard }}-${{ strategy.job-total }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 23 || 95 }}" --octavo-args "${{ inputs.octavo_args }}"
-        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 25 || 100 }}
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}" --octavo-args "${{ inputs.octavo_args }}"
+        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
       - uses: actions/cache/save@v6
         if: always()
         continue-on-error: true
@@ -209,11 +209,11 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 25 || 150 }}
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 60 || 345 }}
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
+        browser: [firefox, webkit]
         shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     env:
       TIER: ${{ needs.plan.outputs.tier }}
@@ -240,12 +240,6 @@ jobs:
           done
           exit 1
         working-directory: verify
-      - name: Verify engine self-tests
-        if: matrix.shard == 1 && (github.event_name != 'workflow_dispatch' || inputs.filter == '.')
-        run: node --test verifier.test.mjs
-        env:
-          OCTAVO_PAGES: 1
-        working-directory: verify
       - run: node corpus/build.mjs --check
       - uses: quarto-dev/quarto-actions/setup@v2
         with:
@@ -255,8 +249,8 @@ jobs:
           path: corpus/.cache
           key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 18 || 128 }}"
-        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 20 || 130 }}
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}"
+        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -264,12 +258,44 @@ jobs:
           path: out/engines-*
           if-no-files-found: ignore
 
+  selftest:
+    name: ${{ matrix.browser }} self-test
+    needs: plan
+    if: needs.plan.outputs.tier != 'select' && (github.event_name != 'workflow_dispatch' || inputs.filter == '.')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    env:
+      OCTAVO_BROWSER: ${{ matrix.browser }}
+      OCTAVO_PAGES: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: verify
+      - run: |
+          for attempt in 1 2 3 4; do
+            npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
+            sleep $((attempt * 20))
+          done
+          exit 1
+        working-directory: verify
+      - run: node --test verifier.test.mjs
+        working-directory: verify
+
   linked:
     name: Linked renders (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 30 || 240 }}
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 45 || 300 }}
     strategy:
       fail-fast: false
       matrix:

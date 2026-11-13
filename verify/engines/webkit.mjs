@@ -20,4 +20,6 @@ export const identity = (browser, { channel = "" } = {}) => {
   return `${label} ${browser.version()} ${path} ${stamp} channel=${channel} args=[]`;
 };
 export const settle = (page, settlePage, options) => settlePage(page, options);
-export const normalizeError = (message) => message.replace(/null is not an object \(evaluating '[^']*'\)/g, "null is not an object");
+const MISSING_VALUE_EXPRESSION = /\b(null|undefined) is not an object \(evaluating '[^']*'\)/g;
+
+export const normalizeError = (message) => message.replace(MISSING_VALUE_EXPRESSION, "$1 is not an object");
