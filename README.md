@@ -24,7 +24,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/VisruthSK/octavo/r
 
 ### Build
 
-To build from source, run `cargo install octavo-cli`. The WOFF2 encoder is C++, so you need a C++ compiler. Font subsetting is pure Rust and needs nothing else.
+To build from source, run `cargo install octavo-cli`. Compression links libdeflate, so you need a C compiler. Font subsetting and WOFF2 encoding are pure Rust.
 
 ```powershell
 cargo install octavo-cli
@@ -245,7 +245,7 @@ A web file that cannot be downloaded does not stop the run. It is reported as a 
 | Parse, prune and minify CSS | [`lightningcss`](https://crates.io/crates/lightningcss) |
 | Parse, mangle and minify JavaScript | [`oxc`](https://crates.io/crates/oxc) |
 | Subset fonts | [`skera`](https://crates.io/crates/skera) |
-| Write WOFF2 | [`woofwoof`](https://crates.io/crates/woofwoof), which wraps Google's WOFF2 encoder |
+| Write WOFF2 | [`ttf2woff2`](https://crates.io/crates/ttf2woff2), a pure Rust encoder |
 | Decode WOFF and WOFF2 input | [`wuff`](https://crates.io/crates/wuff) |
 | Recompress PNG losslessly | [`oxipng`](https://crates.io/crates/oxipng) |
 | Decode PNG and JPEG | [`image`](https://crates.io/crates/image) |
@@ -259,7 +259,7 @@ A web file that cannot be downloaded does not stop the run. It is reported as a 
 | Text-safe encoding of the blob | [`base91`](https://crates.io/crates/base91) |
 | Name cached fonts | [`blake3`](https://crates.io/crates/blake3) |
 
-Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The non-Rust code in the build is the WOFF2 encoder behind `woofwoof` and libdeflate behind `oxipng` and `libdeflater`.
+Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The non-Rust code in the build is libdeflate behind `oxipng` and `libdeflater`.
 
 ## As a library
 

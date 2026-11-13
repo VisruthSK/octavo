@@ -486,6 +486,18 @@ impl Transcoded {
     }
 }
 
+const MAX_GLYF_LENGTH_FOR_TRANSFORM: u32 = 131_070;
+
+fn transform_glyf_loca(sfnt: &[u8]) -> bool {
+    Sfnt::new(sfnt).is_ok_and(|font| {
+        font.table_directory()
+            .table_records()
+            .iter()
+            .find(|record| record.tag() == SfntTag::new(b"glyf"))
+            .is_some_and(|record| record.length() <= MAX_GLYF_LENGTH_FOR_TRANSFORM)
+    })
+}
+
 fn convert(
     bytes: &[u8],
     chars: Option<&HashSet<char>>,
@@ -507,7 +519,15 @@ fn convert(
     });
     let sfnt = subset.map_or(sfnt, Cow::Owned);
     Some(Transcoded {
-        woff2: woofwoof::compress(&sfnt, "", usize::from(quality), true)?,
+        woff2: ttf2woff2::encode_with_options(
+            &sfnt,
+            ttf2woff2::EncodeOptions {
+                quality: ttf2woff2::BrotliQuality::from(quality),
+                transform_glyf_loca: transform_glyf_loca(&sfnt),
+                threads: None,
+            },
+        )
+        .ok()?,
         notice,
     })
 }
