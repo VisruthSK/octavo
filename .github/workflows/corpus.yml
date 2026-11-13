@@ -58,6 +58,7 @@ jobs:
     outputs:
       tier: ${{ steps.plan.outputs.tier }}
       shards: ${{ steps.plan.outputs.shards }}
+      shard_count: ${{ steps.plan.outputs.shard_count }}
       engine_shards: ${{ steps.plan.outputs.engine_shards }}
       engine_count: ${{ steps.plan.outputs.engine_count }}
     steps:
@@ -78,6 +79,7 @@ jobs:
           list() { node -e 'console.log(JSON.stringify(Array.from({length: Number(process.argv[1])}, (_, i) => i + 1)))' "$1"; }
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "shards=$(list $count)" >> "$GITHUB_OUTPUT"
+          echo "shard_count=$count" >> "$GITHUB_OUTPUT"
           echo "engine_shards=$(list $engine_count)" >> "$GITHUB_OUTPUT"
           echo "engine_count=$engine_count" >> "$GITHUB_OUTPUT"
 
@@ -116,6 +118,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node corpus/build.mjs --check
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -140,7 +146,8 @@ jobs:
         shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     env:
       TIER: ${{ needs.plan.outputs.tier }}
-      SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+      SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.shard_count }}
+      OCTAVO_PAGES: 4
     steps:
       - uses: actions/checkout@v7
         with:
@@ -162,20 +169,19 @@ jobs:
           done
           exit 1
         working-directory: verify
-      - run: node corpus/build.mjs --check
       - uses: quarto-dev/quarto-actions/setup@v2
         with:
           version: 1.11.9
       - uses: actions/cache@v6
         with:
           path: corpus/.cache
-          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
+          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ needs.plan.outputs.shard_count }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
       - uses: actions/cache/restore@v6
         with:
           path: corpus/.cache/verdicts
-          key: verdicts-${{ matrix.shard }}-${{ strategy.job-total }}-${{ github.sha }}
+          key: verdicts-${{ matrix.shard }}-${{ needs.plan.outputs.shard_count }}-${{ github.sha }}
           restore-keys: |
-            verdicts-${{ matrix.shard }}-${{ strategy.job-total }}-
+            verdicts-${{ matrix.shard }}-${{ needs.plan.outputs.shard_count }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}" --octavo-args "${{ inputs.octavo_args }}"
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
@@ -184,7 +190,7 @@ jobs:
         continue-on-error: true
         with:
           path: corpus/.cache/verdicts
-          key: verdicts-${{ matrix.shard }}-${{ strategy.job-total }}-${{ github.sha }}
+          key: verdicts-${{ matrix.shard }}-${{ needs.plan.outputs.shard_count }}-${{ github.sha }}
       - name: Diagnose one document
         if: always() && inputs.diagnose != ''
         run: |
@@ -224,6 +230,7 @@ jobs:
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
       OCTAVO_BROWSER: ${{ matrix.browser }}
+      OCTAVO_PAGES: 4
     steps:
       - uses: actions/checkout@v7
         with:
@@ -240,12 +247,11 @@ jobs:
         working-directory: verify
       - run: |
           for attempt in 1 2 3 4; do
-            npx playwright-core install --with-deps chromium firefox webkit && exit 0
+            npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
             sleep $((attempt * 20))
           done
           exit 1
         working-directory: verify
-      - run: node corpus/build.mjs --check
       - uses: quarto-dev/quarto-actions/setup@v2
         with:
           version: 1.11.9
@@ -275,7 +281,7 @@ jobs:
         browser: [firefox, webkit]
     env:
       OCTAVO_BROWSER: ${{ matrix.browser }}
-      OCTAVO_PAGES: 2
+      OCTAVO_PAGES: 4
     steps:
       - uses: actions/checkout@v7
         with:
@@ -307,7 +313,7 @@ jobs:
         shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     env:
       TIER: ${{ needs.plan.outputs.tier }}
-      SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+      SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.shard_count }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -335,7 +341,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: corpus/.cache
-          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ strategy.job-total }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
+          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ needs.plan.outputs.shard_count }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/linked.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}"
       - if: always()
@@ -349,7 +355,7 @@ jobs:
 
   totals:
     name: Totals
-    needs: [plan, corpus]
+    needs: [plan, corpus, engines]
     if: always() && needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
