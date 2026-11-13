@@ -458,6 +458,9 @@ export async function capture(
     };
     phase = "goto";
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
+    phase = "document body ready";
+    await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch(() => {});
+    if (!(await page.evaluate(() => Boolean(document.body)).catch(() => false))) throw new Error("document body did not appear after page load");
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
     phase = "fonts ready";
@@ -522,7 +525,7 @@ export async function capture(
     }, forms);
   } catch (error) {
     if (deadline.timedOut()) throw new Error(`capture timed out during ${deadline.phase()} after ${timeoutMs} ms`);
-    throw error;
+    throw new Error(`capture failed during ${phase}: ${error.message}`);
   } finally {
     await deadline.close();
   }

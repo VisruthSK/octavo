@@ -6,19 +6,15 @@ const GUARD = () => {
     event.preventDefault();
     event.stopImmediatePropagation();
   };
-  for (const type of ["pointerover", "pointermove", "mouseover", "mousemove", "mousedown", "mouseup"]) {
-    window.addEventListener(type, hold, true);
-  }
-  window.addEventListener("click", block, true);
+  for (const type of ["mousedown", "mouseup"]) document.addEventListener(type, hold, true);
+  document.addEventListener("click", block, true);
   window.octavoGuard = { hold, block };
 };
 
 const UNGUARD = () => {
   if (!window.octavoGuard) return;
-  for (const type of ["pointerover", "pointermove", "mouseover", "mousemove", "mousedown", "mouseup"]) {
-    window.removeEventListener(type, window.octavoGuard.hold, true);
-  }
-  window.removeEventListener("click", window.octavoGuard.block, true);
+  for (const type of ["mousedown", "mouseup"]) document.removeEventListener(type, window.octavoGuard.hold, true);
+  document.removeEventListener("click", window.octavoGuard.block, true);
   delete window.octavoGuard;
 };
 

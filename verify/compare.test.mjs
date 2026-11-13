@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { differences, missingFrom } from "./compare.mjs";
+import { compare, differences, missingFrom } from "./compare.mjs";
 import { canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
@@ -120,4 +120,29 @@ test("a mirrored gradient makes two style strings the same, an extra declaration
   const { sameStyle } = await import("./compare.mjs");
   assert.equal(sameStyle(`color:red;${up}`, `${down};color:red`), true);
   assert.equal(sameStyle(`color:red;${up}`, `${down};color:red;width:1px`), false);
+});
+
+test("missing and extra computed style entries are reported instead of throwing", () => {
+  const state = (styles) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [0, 0],
+    labels: ["DIV", "P"],
+    rects: [[0, 0, 1, 1], [0, 0, 1, 1]],
+    styles,
+    screenshot: null,
+  });
+  for (const styles of [["color:red"], ["color:red", "color:blue", "color:green"]]) {
+    const issues = compare(
+      { states: [state(["color:red", "color:blue"])], errors: [], requests: [] },
+      { states: [state(styles)], errors: [], requests: [] },
+      false,
+    );
+    assert.ok(issues.some((issue) => issue.includes("style count")));
+  }
 });

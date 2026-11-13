@@ -165,14 +165,19 @@ function compareState(a, b, lossy, stats) {
     const [first] = moved;
     issues.push(`${moved.length} elements laid out differently, e.g. ${a.labels[first]}: [${a.rects[first]}] vs [${b.rects[first]}]`);
   }
-  const differing = a.styles.flatMap((style, i) =>
-    sameStyle(canonicalStyle(style, a.writingModes?.[i]), canonicalStyle(b.styles[i] ?? "", b.writingModes?.[i])) ? [] : [i],
+  const beforeStyles = a.styles ?? [];
+  const afterStyles = b.styles ?? [];
+  if (beforeStyles.length !== afterStyles.length) issues.push(`style count ${beforeStyles.length} vs ${afterStyles.length}`);
+  const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, i) => i).filter((i) =>
+    !sameStyle(canonicalStyle(beforeStyles[i] ?? "", a.writingModes?.[i]), canonicalStyle(afterStyles[i] ?? "", b.writingModes?.[i])),
   );
   if (differing.length) {
     const [first] = differing;
-    const lost = missingFrom(a.styles[first], b.styles[first]).slice(0, 3);
-    const gained = missingFrom(b.styles[first], a.styles[first]).slice(0, 3);
-    issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first]}: lost ${JSON.stringify(lost)} gained ${JSON.stringify(gained)}`);
+    const before = beforeStyles[first] ?? "";
+    const after = afterStyles[first] ?? "";
+    const lost = missingFrom(before, after).slice(0, 3);
+    const gained = missingFrom(after, before).slice(0, 3);
+    issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first] ?? ""}: lost ${JSON.stringify(lost)} gained ${JSON.stringify(gained)}`);
   }
   if (a.screenshot && b.screenshot) issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy, stats));
   return issues;
