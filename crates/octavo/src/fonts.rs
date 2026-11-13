@@ -158,18 +158,29 @@ fn collect_chars(css: &[&str], loose: &[&str], settings: &Settings) -> Chars {
     for text in css.iter().chain(loose) {
         icons.extend(content_chars(text));
     }
-    let text = settings.subset_text_fonts.then(|| {
-        let cased: Vec<char> = icons
-            .iter()
-            .flat_map(|c| c.to_uppercase().chain(c.to_lowercase()))
-            .collect();
-        let western = WESTERN_TEXT
+    let text = settings
+        .subset_text_fonts
+        .then(|| text_charset(icons.iter().copied()));
+    Chars { icons, text }
+}
+
+/// The characters a subset of a text font keeps: the given ones, every case
+/// variant of them, and the Latin letters, digits and punctuation a page can
+/// always rely on.
+pub(crate) fn text_charset(chars: impl IntoIterator<Item = char>) -> HashSet<char> {
+    let mut set: HashSet<char> = chars.into_iter().collect();
+    let cased: Vec<char> = set
+        .iter()
+        .flat_map(|c| c.to_uppercase().chain(c.to_lowercase()))
+        .collect();
+    set.extend(cased);
+    set.extend(
+        WESTERN_TEXT
             .into_iter()
             .flatten()
-            .filter_map(char::from_u32);
-        icons.iter().copied().chain(western).chain(cased).collect()
-    });
-    Chars { icons, text }
+            .filter_map(char::from_u32),
+    );
+    set
 }
 
 fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Decision {
@@ -400,7 +411,7 @@ fn content_chars(css: &str) -> HashSet<char> {
     chars
 }
 
-fn document_chars(src: &str) -> HashSet<char> {
+pub(crate) fn document_chars(src: &str) -> HashSet<char> {
     let decoded = html_escape::decode_html_entities(src);
     let mut chars: HashSet<char> = decoded.chars().filter(|c| !c.is_ascii()).collect();
     for (at, _) in src.match_indices("\\u") {
@@ -488,6 +499,18 @@ impl Transcoded {
 
 pub(crate) fn woff2_file(bytes: &[u8], cache: Option<&Path>, tuning: Tuning) -> Option<Vec<u8>> {
     transcode(bytes, None, Licenses::Keep, cache, tuning).map(|converted| converted.woff2)
+}
+
+/// Converts a font to WOFF2 cut down to `chars`, keeping every layout feature.
+///
+/// A subset that fails, or that would lose a table the font has, keeps the
+/// whole font, so the result is either smaller or not there at all.
+pub(crate) fn woff2_file_subsets(
+    bytes: &[u8],
+    chars: &HashSet<char>,
+    tuning: Tuning,
+) -> Option<Vec<u8>> {
+    transcode(bytes, Some(chars), Licenses::Keep, None, tuning).map(|converted| converted.woff2)
 }
 
 fn convert(

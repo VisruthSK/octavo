@@ -9,7 +9,7 @@ use crate::{
 use percent_encoding::percent_decode_str;
 use rayon::prelude::*;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt, fs, io,
     ops::Range,
     path::{Path, PathBuf},
@@ -198,8 +198,10 @@ fn io_error(path: &Path, source: io::Error) -> SiteError {
 /// Pages and every other file are copied unchanged, and files keep their
 /// names, so the pages work as before and browsers still cache the shared
 /// files once. Passing the same directory as `input` and `output` rewrites the
-/// files in place. Images are never re-encoded lossily and text fonts are never
-/// subsetted here, whatever `options` says.
+/// files in place. Images are never re-encoded lossily. With
+/// [`Options::subset_text_fonts`], text fonts are also cut to the characters
+/// that any page, script, stylesheet or JSON file of the site can show; when
+/// one of those files cannot be read, every text font stays whole.
 ///
 /// The output is written into a staging directory beside `output` and put in
 /// place with renames once every file is there, so a run that fails leaves
@@ -460,6 +462,20 @@ pub fn plan_directory(input: &Path, options: &Options) -> Result<SitePlan, SiteE
         })
         .collect();
 
+    let subset = options
+        .subset_text_fonts
+        .then(|| {
+            site_text_charset(
+                &keys,
+                &sources,
+                &pages,
+                &script_texts,
+                &optimized_sheets,
+                &mut report,
+            )
+        })
+        .flatten();
+
     let mut font_sources: BTreeSet<String> = BTreeSet::new();
     for (key, text) in &optimized_sheets {
         for span in reference_spans(text) {
@@ -474,7 +490,10 @@ pub fn plan_directory(input: &Path, options: &Options) -> Result<SitePlan, SiteE
         .par_iter()
         .filter_map(|key| {
             let bytes = fs::read(&sources[key]).ok()?;
-            let woff2 = fonts::woff2_file(&bytes, options.cache_directory.as_deref(), tuning)?;
+            let woff2 = match &subset {
+                Some(chars) => fonts::woff2_file_subsets(&bytes, chars, tuning),
+                None => fonts::woff2_file(&bytes, options.cache_directory.as_deref(), tuning),
+            }?;
             let target = woff2_name(key);
             (woff2.len() < bytes.len() && !keys.contains(&target)).then_some((key.clone(), woff2))
         })
@@ -666,6 +685,59 @@ fn optimize_stylesheet(
         .strip_prefix("<style>")?
         .strip_suffix("</style>")
         .map(str::to_string)
+}
+
+/// The characters that any page of the site can show: the text of the pages,
+/// the scripts, the stylesheets and every JSON file, with the case variants
+/// and the Latin base added. `None` keeps every text font whole, because a
+/// file could not be read and the set would be incomplete.
+fn site_text_charset(
+    keys: &BTreeSet<String>,
+    sources: &BTreeMap<String, PathBuf>,
+    pages: &[(String, String)],
+    scripts: &BTreeMap<String, String>,
+    sheets: &BTreeMap<String, String>,
+    report: &mut SiteReport,
+) -> Option<HashSet<char>> {
+    let mut unreadable = |name: &str| {
+        report.warnings.push(format!(
+            "{name} could not be read, so text fonts were kept whole"
+        ));
+    };
+    for key in keys.iter().filter(|key| is_page(key)) {
+        if !pages.iter().any(|(page, _)| *page == *key) {
+            unreadable(key);
+            return None;
+        }
+    }
+    for key in keys.iter().filter(|key| key.ends_with(".js")) {
+        if !scripts.contains_key(key) {
+            unreadable(key);
+            return None;
+        }
+    }
+    let mut chars: HashSet<char> = HashSet::new();
+    for text in pages
+        .iter()
+        .map(|(_, text)| text.as_str())
+        .chain(scripts.values().map(String::as_str))
+        .chain(sheets.values().map(String::as_str))
+    {
+        chars.extend(fonts::document_chars(text));
+    }
+    for key in keys
+        .iter()
+        .filter(|key| key.to_ascii_lowercase().ends_with(".json"))
+    {
+        match fs::read_to_string(&sources[key]) {
+            Ok(text) => chars.extend(fonts::document_chars(&text)),
+            Err(_) => {
+                unreadable(key);
+                return None;
+            }
+        }
+    }
+    Some(fonts::text_charset(chars))
 }
 
 fn is_page(key: &str) -> bool {

@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file. The format is b
 
 ### Changed
 
+- Site mode: `--subset-fonts` now cuts text fonts to the characters that any page, script, stylesheet or JSON file of the site can show, including the text that only `search.json` reveals. When one of those files cannot be read, every text font stays whole.
 - Site mode writes the whole tree into a staging directory next to the output, checks that every planned file is there with the planned size, and only then promotes the tree with renames. The promotion is a sequence of renames and not a single atomic operation: the old output is renamed aside, the staged tree takes its place, and the old tree is deleted afterwards. A run that fails before the promotion removes the staging directory and leaves the previous output byte for byte as it was, and a file from an earlier run that is no longer part of the site does not survive.
 - Site mode reads regular files only. A symbolic link that points at a regular file inside the site is copied as a regular file, and one that points outside the site is an error that names the path. Any other kind of entry is an error too, so nothing is left out silently.
 
