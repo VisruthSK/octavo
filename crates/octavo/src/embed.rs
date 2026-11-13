@@ -205,7 +205,10 @@ struct ScanCtx<'a> {
     depth: usize,
     level: usize,
     rules_started: bool,
+    imports_seen: bool,
+    conditional_seen: bool,
     prelude_end: usize,
+    pending: Vec<(Range<usize>, Range<usize>)>,
     urls: Vec<Range<usize>>,
     replacements: Vec<(Range<usize>, String)>,
     hoists: Vec<Range<usize>>,
@@ -346,7 +349,10 @@ impl State<'_> {
             depth,
             level: 0,
             rules_started: false,
+            imports_seen: false,
+            conditional_seen: false,
             prelude_end: 0,
+            pending: Vec::new(),
             urls: Vec::new(),
             replacements: Vec::new(),
             hoists: Vec::new(),
@@ -354,6 +360,16 @@ impl State<'_> {
         let mut input = ParserInput::new(css);
         let mut parser = Parser::new(&mut input);
         self.walk(css, &mut parser, &mut ctx);
+        if ctx.conditional_seen {
+            ctx.hoist_pending();
+        } else {
+            for (statement, reference) in std::mem::take(&mut ctx.pending) {
+                match self.splice_import(&css[reference], ctx.from, ctx.depth, rebase) {
+                    Some(flat) => ctx.replacements.push((statement, flat)),
+                    None => ctx.hoists.push(statement),
+                }
+            }
+        }
         for span in ctx.urls {
             if span.start >= span.end {
                 continue;
@@ -379,7 +395,13 @@ impl State<'_> {
         ))
     }
 
-    fn splice_import(&mut self, reference: &str, from: &str, depth: usize) -> Option<String> {
+    fn splice_import(
+        &mut self,
+        reference: &str,
+        from: &str,
+        depth: usize,
+        rebase: &str,
+    ) -> Option<String> {
         let url = Url::parse(reference)?;
         if url.origin() == Origin::Remote || depth > DEPTH_LIMIT {
             return None;
@@ -394,10 +416,18 @@ impl State<'_> {
             return Some(String::new());
         }
         self.resource_bytes += loaded.bytes.len() as u64;
-        let rebase = rebase_prefix(from, &loaded.id);
+        let next_rebase = if rebase.is_empty() {
+            rebase_prefix(from, &loaded.id)
+        } else {
+            format!("{rebase}{}", rebase_prefix(from, &loaded.id))
+        };
         let processed = String::from_utf8(loaded.bytes).ok().map(|text| {
             let id = loaded.id.clone();
-            strip_charset(self.css(&text, &id, depth + 1, &rebase).unwrap_or(text))
+            strip_charset(
+                &self
+                    .css(&text, &id, depth + 1, &next_rebase)
+                    .unwrap_or(text),
+            )
         });
         self.active.remove(&loaded.id);
         let flat = processed?;
@@ -417,10 +447,15 @@ impl State<'_> {
             }
             let end = parser.position().byte_index();
             match token {
-                Token::WhiteSpace(_) | Token::Comment(_) | Token::CDO | Token::CDC => {}
+                Token::WhiteSpace(_) | Token::Comment(_) | Token::CDO | Token::CDC => {
+                    if ctx.level == 0 && !ctx.rules_started && !ctx.imports_seen {
+                        ctx.prelude_end = end;
+                    }
+                }
                 Token::AtKeyword(ref kw) => {
                     if ctx.level == 0 {
                         if !ctx.rules_started
+                            && !ctx.imports_seen
                             && (kw.eq_ignore_ascii_case("charset")
                                 || kw.eq_ignore_ascii_case("namespace"))
                         {
@@ -434,17 +469,9 @@ impl State<'_> {
                                     statement,
                                     reference,
                                 }) => {
+                                    ctx.imports_seen = true;
                                     if !ctx.rules_started {
-                                        match self.splice_import(
-                                            &css[reference],
-                                            ctx.from,
-                                            ctx.depth,
-                                        ) {
-                                            Some(flat) => {
-                                                ctx.replacements.push((statement, flat));
-                                            }
-                                            None => ctx.hoists.push(statement),
-                                        }
+                                        ctx.pending.push((statement, reference));
                                     } else {
                                         ctx.urls.push(reference);
                                         ctx.hoists.push(statement);
@@ -454,6 +481,8 @@ impl State<'_> {
                                     statement,
                                     reference,
                                 }) => {
+                                    ctx.imports_seen = true;
+                                    ctx.conditional_seen = true;
                                     ctx.urls.push(reference);
                                     ctx.hoists.push(statement);
                                 }
@@ -563,8 +592,17 @@ impl State<'_> {
                 Ok::<(), ParseError<'_, ()>>(())
             });
             ctx.level -= 1;
-        } else {
+        } else if !ctx.imports_seen {
             ctx.prelude_end = parser.position().byte_index();
+        }
+    }
+}
+
+impl ScanCtx<'_> {
+    fn hoist_pending(&mut self) {
+        for (statement, reference) in std::mem::take(&mut self.pending) {
+            self.urls.push(reference);
+            self.hoists.push(statement);
         }
     }
 }
@@ -734,7 +772,8 @@ fn skip_to_semicolon(parser: &mut Parser<'_, '_>) {
     }
 }
 
-fn strip_charset(text: String) -> String {
+fn strip_charset(text: &str) -> String {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let bytes = text.as_bytes();
     let mut at = 0;
     loop {
@@ -747,7 +786,7 @@ fn strip_charset(text: String) -> String {
                     at = at + 2 + end + 2;
                     continue;
                 }
-                None => return text,
+                None => return text.to_string(),
             }
         }
         break;
@@ -757,7 +796,7 @@ fn strip_charset(text: String) -> String {
         .unwrap_or_default()
         .to_ascii_lowercase();
     if prefix != "@charset" {
-        return text;
+        return text.to_string();
     }
     match text[at..].find(';') {
         Some(offset) => {
@@ -767,7 +806,7 @@ fn strip_charset(text: String) -> String {
             out.push_str(&text[end..]);
             out
         }
-        None => text,
+        None => text.to_string(),
     }
 }
 
@@ -1418,6 +1457,138 @@ mod behaviour_tests {
         assert!(css.contains("url(sub/hero.jpg)"), "{css}");
         assert_eq!(embedded.missing, vec!["hero.jpg".to_string()]);
         assert_eq!(embedded.embedded, 2);
+    }
+
+    #[test]
+    fn a_relative_url_in_a_nested_inlined_sheet_is_rebased_against_the_root() {
+        let mut files = Files::new(&[
+            ("main.css", b"@import url(sub/b.css);\n.m { color: red; }"),
+            (
+                "sub/b.css",
+                b"@import url(../other/c.css);\n.b { color: blue; }",
+            ),
+            ("other/c.css", b".c { background: url(img.png); }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "main.css");
+        let css = decoded_css(&embedded.html);
+        assert!(css.contains("url(sub/../other/img.png)"), "{css}");
+        assert_eq!(embedded.missing, vec!["img.png".to_string()]);
+        assert_eq!(embedded.embedded, 3);
+    }
+
+    #[test]
+    fn a_bom_in_an_inlined_sheet_still_strips_its_charset() {
+        let mut files = Files::new(&[
+            ("theme.css", b"@import 'face.css';\n.t { color: red; }"),
+            (
+                "face.css",
+                "\u{feff}@charset \"utf-8\";\n.f { color: blue; }".as_bytes(),
+            ),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        assert!(!css.contains("@charset"), "{css}");
+        assert!(css.contains(".f { color: blue; }"), "{css}");
+        assert_eq!(embedded.embedded, 2);
+    }
+
+    #[test]
+    fn hoisted_imports_stay_below_leading_comments() {
+        let mut files = Files::new(&[(
+            "theme.css",
+            b"/* License Banner */\n@import url(https://remote.example/r.css);\nbody { color: red; }",
+        )]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        let comment = css.find("/* License Banner */").expect("the banner");
+        let import = css.find("@import").expect("the kept import");
+        assert!(comment < import, "{css}");
+        assert!(css.contains("https://remote.example/r.css"), "{css}");
+        assert_eq!(embedded.embedded, 1);
+    }
+
+    #[test]
+    fn an_import_after_an_inlined_import_stays_before_the_rules_with_a_layer_between() {
+        let mut files = Files::new(&[
+            (
+                "theme.css",
+                b"@import 'a.css';\n@layer components;\n@import url(https://example.com/b.css);",
+            ),
+            ("a.css", b".a { color: red; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        let import = css.find("@import").expect("a kept import");
+        let layer = css.find("@layer").expect("the layer statement");
+        let inlined = css.find(".a {").expect("the inlined sheet");
+        assert!(import < inlined && inlined < layer, "{css}");
+        assert!(
+            css.rfind("@import").is_none_or(|last| last < inlined),
+            "{css}"
+        );
+        assert!(css.contains("https://example.com/b.css"), "{css}");
+        assert_eq!(embedded.embedded, 2);
+    }
+
+    #[test]
+    fn mixed_plain_and_conditional_imports_keep_their_relative_order() {
+        let mut files = Files::new(&[
+            (
+                "theme.css",
+                b"@import 'base.css';\n@import 'override.css' screen;\n.late { color: late; }",
+            ),
+            ("base.css", b"h1 { color: red; }"),
+            ("override.css", b"h1 { color: blue; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        let first = css.find("@import").expect("the first import");
+        let second = css[first + 1..].find("@import").expect("the second import") + first + 1;
+        let rule = css.find(".late {").expect("the later rule");
+        assert!(first < second && second < rule, "{css}");
+        let mut data = css.split("data:text/css;base64,");
+        let _ = data.next();
+        let mut sheets = data.map(|chunk| {
+            let end = chunk.find(['\'', '"']).unwrap();
+            String::from_utf8(STANDARD.decode(&chunk[..end]).unwrap()).unwrap()
+        });
+        assert_eq!(sheets.next(), Some("h1 { color: red; }".to_string()));
+        assert_eq!(sheets.next(), Some("h1 { color: blue; }".to_string()));
+    }
+
+    #[test]
+    fn plain_conditional_plain_imports_with_rules_between_keep_order() {
+        let mut files = Files::new(&[
+            (
+                "theme.css",
+                b"@import 'first.css';\n.mid { color: mid; }\n@import 'cond.css' screen;\n@import 'last.css';\n.tail { color: tail; }",
+            ),
+            ("first.css", b".f { color: f; }"),
+            ("cond.css", b".c { color: c; }"),
+            ("last.css", b".l { color: l; }"),
+        ]);
+        let embedded = linked_stylesheet(&mut files, "theme.css");
+        let css = decoded_css(&embedded.html);
+        let mut at = 0;
+        let mut imports = Vec::new();
+        while let Some(found) = css[at..].find("@import") {
+            imports.push(at + found);
+            at += found + 7;
+        }
+        assert_eq!(imports.len(), 3, "{css}");
+        let mid = css.find(".mid {").expect("the middle rule");
+        let tail = css.find(".tail {").expect("the tail rule");
+        assert!(imports[0] < imports[1] && imports[1] < imports[2], "{css}");
+        assert!(imports[2] < mid && mid < tail, "{css}");
+        let mut data = css.split("data:text/css;base64,");
+        let _ = data.next();
+        let mut sheets = data.map(|chunk| {
+            let end = chunk.find(['\'', '"']).unwrap();
+            String::from_utf8(STANDARD.decode(&chunk[..end]).unwrap()).unwrap()
+        });
+        assert_eq!(sheets.next(), Some(".f { color: f; }".to_string()));
+        assert_eq!(sheets.next(), Some(".c { color: c; }".to_string()));
+        assert_eq!(sheets.next(), Some(".l { color: l; }".to_string()));
     }
 
     #[test]
