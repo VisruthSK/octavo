@@ -95,8 +95,10 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
   const scroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
   const restore = () => page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), scroll);
   const probe = (index) => page.evaluate(observe, { probe: { selector, index } });
-  await page.evaluate(GUARD);
+  const print = await page.evaluate(() => matchMedia("print").matches);
+  if (print) await page.emulateMedia({ media: "screen" });
   try {
+    await page.evaluate(GUARD);
     for (let index = 0; index < count; index++) {
       onPhase(`forcedStates element ${index} pointer hover`);
       const element = interactive.nth(index);
@@ -204,6 +206,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
     await page.evaluate(UNGUARD);
     await page.mouse.move(0, 0).catch(() => {});
     await restore();
+    if (print) await page.emulateMedia({ media: "print" });
   }
   return { states, checks };
 }
