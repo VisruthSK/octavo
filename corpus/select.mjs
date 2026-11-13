@@ -1,3 +1,5 @@
+import { hardnessPerCost } from "./hardness.mjs";
+
 const markers = {
   slides: /<div class="reveal"|Reveal\.initialize/,
   dashboard: /class="[^"]*quarto-dashboard/,
@@ -22,16 +24,67 @@ const markers = {
   toc: /id="TOC"|class="[^"]*toc-/,
 };
 
-const sumLengths = (html, pattern) => [...html.matchAll(pattern)].reduce((total, match) => total + (match[1]?.length ?? 0), 0);
+const sumLengths = (html, pattern) =>
+  [...html.matchAll(pattern)].reduce((total, match) => total + (match[1]?.length ?? 0), 0);
+
+const countOf = (text, pattern) => (text.match(pattern) ?? []).length;
+
+const styleText = (html) => [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((match) => match[1]).join("\n");
+
+const voidElements = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
+
+const nestingDepth = (html) => {
+  let depth = 0;
+  let deepest = 0;
+  for (const match of html.matchAll(/<\/?([a-z][a-z0-9-]*)\b[^>]*>/gi)) {
+    if (match[0].startsWith("</")) {
+      depth = Math.max(0, depth - 1);
+    } else if (!voidElements.has(match[1].toLowerCase()) && !match[0].endsWith("/>")) {
+      depth += 1;
+      deepest = Math.max(deepest, depth);
+    }
+  }
+  return deepest;
+};
 
 export function featuresOf(html) {
+  const css = styleText(html);
   return {
     bytes: Buffer.byteLength(html),
     scriptBytes: sumLengths(html, /<script\b[^>]*>([\s\S]*?)<\/script>/gi),
     styleBytes: sumLengths(html, /<style\b[^>]*>([\s\S]*?)<\/style>/gi),
     imageBytes: sumLengths(html, /data:image\/[a-z+.-]+;base64,([A-Za-z0-9+/=]+)/gi),
     fontBytes: sumLengths(html, /data:(?:application\/(?:x-)?font-?[a-z0-9-]*|font\/[a-z0-9-]+);base64,([A-Za-z0-9+/=]+)/gi),
-    svgs: (html.match(/<svg\b/gi) ?? []).length,
+    svgs: countOf(html, /<svg\b/gi),
+    elements: countOf(html, /<[a-z][a-z0-9-]*\b/gi),
+    interactive: countOf(html, /<(?:button|input|select|textarea|details|summary|video|audio|canvas)\b/gi),
+    scripts: countOf(html, /<script\b/gi),
+    inlineHandlers: countOf(html, /\son[a-z]+\s*=/gi),
+    images: countOf(html, /<img\b/gi),
+    dataUrls: countOf(html, /data:[a-z0-9.+-]+\/[a-z0-9.+-]+/gi),
+    fonts: countOf(css, /font-family\s*:/gi),
+    fontFaces: countOf(css, /@font-face\b/gi),
+    animations: countOf(css, /\banimation(?:-name)?\s*:/gi),
+    keyframes: countOf(css, /@(?:-webkit-)?keyframes\b/gi),
+    mediaQueries: countOf(css, /@media\b/gi),
+    customProperties: countOf(css, /--[a-z0-9-]+\s*:/gi),
+    cssRules: countOf(css, /\{/g),
+    depth: nestingDepth(html),
     markers: Object.keys(markers).filter((name) => markers[name].test(html)),
   };
 }
@@ -47,6 +100,9 @@ const dimensions = [
 ];
 
 const NEW_GROUP_BONUS = 0.5;
+const HARDNESS_SHARE = 0.6;
+
+const byId = (a, b) => a.id.localeCompare(b.id);
 
 export function select(pool, count) {
   if (count >= pool.length) return pool.map((entry) => entry.id).sort();
@@ -59,7 +115,10 @@ export function select(pool, count) {
   const nearest = new Array(pool.length).fill(Infinity);
   const groups = new Set();
   const chosen = [];
-  let next = order.reduce((best, at) => (distance(points[at], centroid) < distance(points[best], centroid) ? at : best), order[0]);
+  let next = order.reduce(
+    (best, at) => (distance(points[at], centroid) < distance(points[best], centroid) ? at : best),
+    order[0],
+  );
   while (chosen.length < count) {
     chosen.push(next);
     groups.add(pool[next].group);
@@ -78,11 +137,32 @@ export function select(pool, count) {
   return chosen.map((at) => pool[at].id);
 }
 
-export function selectStratified(pool, quotas) {
+export function selectSmoke(pool, count, pinned = []) {
+  const pinnedIds = new Set(pinned);
+  const fixed = pool.filter((entry) => pinnedIds.has(entry.id)).sort(byId).slice(0, count);
+  const open = pool.filter((entry) => !pinnedIds.has(entry.id));
+  const remaining = count - fixed.length;
+  if (remaining <= 0) return fixed.map((entry) => entry.id);
+  const hardnessSlots = Math.max(0, Math.min(remaining, Math.round(count * HARDNESS_SHARE) - fixed.length));
+  const ranked = [...open].sort(
+    (a, b) => hardnessPerCost(b.features) - hardnessPerCost(a.features) || byId(a, b),
+  );
+  const hardest = ranked.slice(0, hardnessSlots);
+  const chosen = new Set([...fixed, ...hardest].map((entry) => entry.id));
+  const rest = open.filter((entry) => !chosen.has(entry.id));
+  return [
+    ...fixed.map((entry) => entry.id),
+    ...hardest.map((entry) => entry.id),
+    ...select(rest, remaining - hardest.length),
+  ];
+}
+
+export function selectStratified(pool, quotas, pinned = []) {
   return Object.entries(quotas).flatMap(([format, count]) =>
-    select(
+    selectSmoke(
       pool.filter((entry) => entry.format === format),
       count,
+      pinned,
     ).map((id, position) => ({ id, format, position })),
   );
 }
