@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PNG } from "pngjs";
 import { compare, differences, missingFrom } from "./compare.mjs";
-import { canonicalFontFamily, canonicalStyle } from "./styles.mjs";
+import { canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -114,6 +114,46 @@ test("vertical logical sizes retain their property when a physical size is missi
     missingFrom(canonicalStyle("height:40px;inline-size:40px", "vertical-rl"), "height:40px"),
     [],
   );
+});
+
+test("CSS property numbers compare at six significant digits without changing units", () => {
+  assert.equal(CSS_SIGNIFICANT_DIGITS, 6);
+  assert.deepEqual(missingFrom("width:33.333332%", "width:33.333302%"), []);
+  assert.deepEqual(missingFrom("width:33.3333%", "width:33.3334%"), ["width:33.3333%"]);
+  assert.deepEqual(missingFrom("width:100px", "width:100.02px"), ["width:100px"]);
+  assert.deepEqual(missingFrom("width:12.3456789px", "width:12.3457px"), []);
+  assert.deepEqual(missingFrom("width:0.0001px", "width:0.0002px"), ["width:0.0001px"]);
+  assert.deepEqual(missingFrom("width:12.3456789px", "width:12.3457em"), ["width:12.3456789px"]);
+});
+
+test("numeric text and font names are not rounded", () => {
+  assert.deepEqual(missingFrom('content:"100px"', 'content:"100.000px"'), ['content:"100px"']);
+  assert.deepEqual(missingFrom("font-family:Font 123", "font-family:Font 123.00000"), ["font-family:Font 123"]);
+});
+
+test("physical boxes and screenshot pixels remain exact", () => {
+  const state = (width) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [100, 100],
+    labels: ["DIV"],
+    rects: [[0, 0, width, 100]],
+    styles: [`width:${width}px`],
+    screenshot: Buffer.from("same"),
+  });
+  const issues = compare(
+    { states: [state(100)], errors: [], requests: [] },
+    { states: [state(100.02)], errors: [], requests: [] },
+    false,
+  );
+  assert.ok(issues.some((issue) => issue.includes("laid out differently")));
+  assert.ok(issues.some((issue) => issue.includes("different computed style")));
+  assert.equal(differences(image(1, 1), nudged(image(1, 1), [[0, 0]], 9)).count, 1);
 });
 
 test("a missing screenshot is an issue when either or both captures lack one", () => {

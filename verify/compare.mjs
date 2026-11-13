@@ -1,7 +1,7 @@
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import { engine } from "./engines/index.mjs";
-import { canonicalFontFamily, canonicalStyle } from "./styles.mjs";
+import { canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
@@ -49,15 +49,21 @@ const unquotedFamilies = (declaration) =>
   declaration.replace(/font-family:(.*)$/, (_, value) => `font-family:${value.split(",").map(canonicalFontFamily).join(", ")}`);
 
 const canonical = (declaration) => {
-  const text = unquotedFamilies(declaration);
+  let text = unquotedFamilies(declaration);
   const marker = "linear-gradient(";
   const start = text.indexOf(marker);
-  if (start < 0) return text;
-  const open = start + marker.length - 1;
-  const end = closing(text, open);
-  if (end < 0) return text;
-  const replaced = canonicalGradient(text.slice(open + 1, end));
-  return replaced ? text.slice(0, start) + replaced + text.slice(end + 1) : text;
+  if (start >= 0) {
+    const open = start + marker.length - 1;
+    const end = closing(text, open);
+    if (end >= 0) {
+      const replaced = canonicalGradient(text.slice(open + 1, end));
+      if (replaced) text = text.slice(0, start) + replaced + text.slice(end + 1);
+    }
+  }
+  const pseudo = ["::before", "::after", "::marker", "::placeholder"].find((prefix) => text.startsWith(prefix)) ?? "";
+  const colon = text.indexOf(":", pseudo ? 2 : 0);
+  if (colon < 0 || text.slice(pseudo.length, colon) === "font-family") return text;
+  return `${text.slice(0, colon + 1)}${canonicalCssValue(text.slice(colon + 1))}`;
 };
 
 export const sameStyle = (left, right = "") =>

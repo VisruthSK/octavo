@@ -206,6 +206,7 @@ Resources loaded from the network (a CDN script, a web font) do not stop the run
 - The Brotli decoder runs through `new Function`, and `packed` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` header that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, allow `unsafe-eval` for the packed pages or use `--level scripts`, which never needs it.
 - Modules, import maps and elements whose attributes contain character references are never packed.
 - `--subset-fonts` can change how some hinted fonts are drawn on Linux, as described under [Fonts](#fonts).
+- Octavo rounds CSS numbers to six significant digits and the verifier compares them at that precision.
 
 ## The libraries doing the real work
 
