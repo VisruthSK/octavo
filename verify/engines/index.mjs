@@ -35,3 +35,8 @@ export const checksOf = (checks) => {
 };
 
 export const incompleteChecks = (checks) => checksOf(checks).map((text) => `check incomplete: ${text}`);
+
+export const withIncompleteCheckIssues = (issues, ...checks) => [
+  ...issues,
+  ...checks.flatMap(incompleteChecks),
+];

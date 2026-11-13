@@ -1,7 +1,7 @@
 import { cpus } from "node:os";
 import { capture, hasInteractions, scenariosFor } from "./capture.mjs";
 import { compare, signature } from "./compare.mjs";
-import { checksOf, engine, engineNotice, incompleteChecks, launch } from "./engines/index.mjs";
+import { checksOf, engine, engineNotice, launch, withIncompleteCheckIssues } from "./engines/index.mjs";
 
 const wanted = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
 const isolated = engine.isolated;
@@ -265,10 +265,9 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
           deadlineReached,
         );
         timing.compare += elapsed(startedCompare);
-        const incomplete = [...incompleteChecks(before.checks), ...incompleteChecks(after.checks)];
         reports[plans.indexOf(plan)].push({
           scenario: scenario.name,
-          issues: [...issues, ...incomplete],
+          issues: withIncompleteCheckIssues(issues, before.checks, after.checks),
           rounded,
           checks: before.checks,
           optimizedChecks: after.checks,

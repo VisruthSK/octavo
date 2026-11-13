@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import * as chromium from "./chromium.mjs";
 import * as firefox from "./firefox.mjs";
 import * as webkit from "./webkit.mjs";
-import { checksOf, engineName, engineNames, engineNotice, incompleteChecks } from "./index.mjs";
+import { checksOf, engineName, engineNames, engineNotice, incompleteChecks, withIncompleteCheckIssues } from "./index.mjs";
 
 const engines = { chromium, firefox, webkit };
 const shape = {
@@ -95,6 +95,22 @@ test("a check that could not be applied is reported", () => {
   assert.deepEqual(
     checksOf({ elements: 1, hover: 0, focus: 1, focusVisible: 1, active: 1, expected: { hover: 0, focus: 1, focusVisible: 1, active: 1 } }),
     [],
+  );
+});
+
+test("an incomplete visible-control fixture creates a verification issue", () => {
+  const visibleButton = {
+    elements: 1,
+    hover: 0,
+    focus: 1,
+    focusVisible: 1,
+    active: 1,
+    expected: { hover: 1, focus: 1, focusVisible: 1, active: 1 },
+    details: { hover: ['button, selector "button", index 0: state did not apply although the target was reachable'] },
+  };
+  assert.deepEqual(
+    withIncompleteCheckIssues([], visibleButton),
+    ['check incomplete: hover on 1 of 1 elements: button, selector "button", index 0: state did not apply although the target was reachable'],
   );
 });
 
