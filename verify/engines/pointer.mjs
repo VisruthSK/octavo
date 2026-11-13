@@ -4,15 +4,19 @@ const GUARD = () => {
     event.preventDefault();
     event.stopImmediatePropagation();
   };
-  for (const type of ["mousedown", "mouseup"]) document.addEventListener(type, hold, true);
-  document.addEventListener("click", block, true);
+  for (const type of ["pointerover", "pointermove", "mouseover", "mousemove", "mousedown", "mouseup"]) {
+    window.addEventListener(type, hold, true);
+  }
+  window.addEventListener("click", block, true);
   window.octavoGuard = { hold, block };
 };
 
 const UNGUARD = () => {
   if (!window.octavoGuard) return;
-  for (const type of ["mousedown", "mouseup"]) document.removeEventListener(type, window.octavoGuard.hold, true);
-  document.removeEventListener("click", window.octavoGuard.block, true);
+  for (const type of ["pointerover", "pointermove", "mouseover", "mousemove", "mousedown", "mouseup"]) {
+    window.removeEventListener(type, window.octavoGuard.hold, true);
+  }
+  window.removeEventListener("click", window.octavoGuard.block, true);
   delete window.octavoGuard;
 };
 
@@ -38,16 +42,21 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
     for (let index = 0; index < count; index++) {
       onPhase(`forcedStates element ${index} pointer hover`);
       const element = interactive.nth(index);
+      onPhase(`forcedStates element ${index} scrollIntoView`);
       await element.scrollIntoViewIfNeeded().catch(() => {});
+      onPhase(`forcedStates element ${index} boundingBox`);
       let box = await element.boundingBox().catch(() => null);
       if (!box || !box.width || !box.height) {
         for (const state of STATES) states.push([`:${state} on interactive #${index}`, "hidden"]);
         continue;
       }
       checks.elements += 1;
+      onPhase(`forcedStates element ${index} mouse move`);
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      onPhase(`forcedStates element ${index} hover probe`);
       let seen = await probe(index);
       for (let attempt = 0; attempt < 3 && !seen.states.hover; attempt++) {
+        onPhase(`forcedStates element ${index} hover retry ${attempt}`);
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.waitForTimeout(50);
         seen = await probe(index);
