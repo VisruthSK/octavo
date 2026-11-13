@@ -95,6 +95,7 @@ test("loaded font-family serialization normalizes only syntactic quotes and keep
 test("horizontal inline size matches width only at the same resolved value", () => {
   assert.deepEqual(missingFrom(canonicalStyle("inline-size:33.333332%"), canonicalStyle("width:33.333332%")), []);
   assert.deepEqual(missingFrom(canonicalStyle("inline-size:33.333332%"), canonicalStyle("width:34%")), ["width:33.333332%"]);
+  assert.deepEqual(missingFrom("width:33.333332%", canonicalStyle(undefined)), ["width:33.333332%"]);
 });
 
 test("vertical inline size resolves to height and remains distinct from width", () => {

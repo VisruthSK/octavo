@@ -12,7 +12,7 @@ export const canonicalFontFamily = (name) => {
 };
 
 
-export const canonicalStyle = (style, writingMode = "horizontal-tb") => {
+export const canonicalStyle = (style = "", writingMode = "horizontal-tb") => {
   const horizontal = writingMode.startsWith("horizontal");
   return style.split(";").map((declaration) => {
     const colon = declaration.indexOf(":");

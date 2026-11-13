@@ -165,7 +165,9 @@ function compareState(a, b, lossy, stats) {
     const [first] = moved;
     issues.push(`${moved.length} elements laid out differently, e.g. ${a.labels[first]}: [${a.rects[first]}] vs [${b.rects[first]}]`);
   }
-  const differing = a.styles.flatMap((style, i) => (sameStyle(canonicalStyle(style, a.writingModes?.[i]), canonicalStyle(b.styles[i], b.writingModes?.[i])) ? [] : [i]));
+  const differing = a.styles.flatMap((style, i) =>
+    sameStyle(canonicalStyle(style, a.writingModes?.[i]), canonicalStyle(b.styles[i] ?? "", b.writingModes?.[i])) ? [] : [i],
+  );
   if (differing.length) {
     const [first] = differing;
     const lost = missingFrom(a.styles[first], b.styles[first]).slice(0, 3);
