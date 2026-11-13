@@ -128,18 +128,22 @@ async function take(file, scenario, lossy, options) {
   }
 }
 
-async function confirmed(original, file, scenario, before, after, lossy, interact, sweep) {
+async function confirmed(original, file, scenario, before, after, lossy, interact, sweep, isDeadlineReached) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
-  if (!issues.length) return { issues, rounded: stats.roundedPixels };
+  if (!issues.length || issues.some((issue) => issue.includes("capture timed out"))) return { issues, rounded: stats.roundedPixels };
   const kept = await slots.using(async () => {
     const pairs = [{ before, after }];
     for (let round = 0; round < RECAPTURES; round++) {
+      if (isDeadlineReached()) return [...issues, "verification deadline reached during document comparison"];
       const patient = round > 0;
       const [again, optimizedAgain] = await Promise.all([
         take(original, scenario, lossy, { interact, patient }).catch(crashed),
         take(file, scenario, lossy, { interact, patient }).catch(crashed),
       ]);
+      if ([again.crashed, optimizedAgain.crashed].some((message) => message?.includes("capture timed out"))) {
+        return ["capture timed out during confirmation"];
+      }
       pairs.push({ before: view(again, sweep), after: view(optimizedAgain, sweep) });
       if (!compare(view(again, sweep), view(optimizedAgain, sweep), lossy).length) break;
     }
@@ -174,7 +178,7 @@ const unionOf = (plans) => {
 
 const orderOf = (plans) => unionOf(plans).map((scenario) => scenario.name);
 
-export async function verifyLevels(original, entries, { lossy = false } = {}) {
+export async function verifyLevels(original, entries, { lossy = false, deadlineReached = () => false } = {}) {
   const plans = entries.map((entry) => ({ ...entry, set: scenariosFor(entry.level).filter(({ name }) => !entry.only || entry.only.includes(name)) }));
   const groups = [...Map.groupBy(plans, (plan) => plan.key ?? plan.path).values()];
   const reports = plans.map(() => []);
@@ -199,10 +203,33 @@ export async function verifyLevels(original, entries, { lossy = false } = {}) {
         return crashed(error);
       }
     });
-  for (const scenario of unionOf(plans)) {
+  const scenarios = unionOf(plans);
+  const failRemainder = (from, reason) => {
+    for (const [index, plan] of plans.entries()) {
+      for (const entry of plan.set) {
+        const scenarioIndex = scenarios.findIndex((scenario) => scenario.name === entry.name);
+        if (scenarioIndex < from || reports[index].some((report) => report.scenario === entry.name)) continue;
+        reports[index].push({ scenario: entry.name, issues: [reason], rounded: 0 });
+      }
+    }
+  };
+  for (const [scenarioAt, scenario] of scenarios.entries()) {
+    if (deadlineReached()) {
+      failRemainder(scenarioAt, "verification deadline reached before document comparison");
+      break;
+    }
     const startedOriginal = process.hrtime.bigint();
     const before = await run(original, scenario);
     timing.original += elapsed(startedOriginal);
+    if (before.crashed?.includes("capture timed out")) {
+      failRemainder(scenarioAt, before.crashed);
+      break;
+    }
+    if (deadlineReached()) {
+      failRemainder(scenarioAt, "verification deadline reached before optimized capture");
+      break;
+    }
+    let stopped = false;
     for (const group of groups) {
       const wanted = group.filter((plan) => plan.set.some((entry) => entry.name === scenario.name));
       if (!wanted.length) continue;
@@ -210,6 +237,16 @@ export async function verifyLevels(original, entries, { lossy = false } = {}) {
       const startedOptimized = process.hrtime.bigint();
       const after = await run(group[0].path, { ...scenario, sweep });
       timing.optimized += elapsed(startedOptimized);
+      if (after.crashed?.includes("capture timed out")) {
+        failRemainder(scenarioAt, after.crashed);
+        stopped = true;
+        break;
+      }
+      if (deadlineReached()) {
+        failRemainder(scenarioAt, "verification deadline reached before comparison");
+        stopped = true;
+        break;
+      }
       for (const plan of wanted) {
         const entry = plan.set.find((candidate) => candidate.name === scenario.name);
         const startedCompare = process.hrtime.bigint();
@@ -222,11 +259,19 @@ export async function verifyLevels(original, entries, { lossy = false } = {}) {
           lossy,
           interact,
           entry.sweep,
+          deadlineReached,
         );
         timing.compare += elapsed(startedCompare);
         reports[plans.indexOf(plan)].push({ scenario: scenario.name, issues, rounded, checks: before.checks });
+        if (issues.some((issue) => issue.includes("capture timed out") || issue.includes("verification deadline reached"))) {
+          failRemainder(scenarioAt, issues.find((issue) => issue.includes("capture timed out") || issue.includes("verification deadline reached")));
+          stopped = true;
+          break;
+        }
       }
+      if (stopped) break;
     }
+    if (stopped) break;
   }
   const order = orderOf(plans);
   for (const report of reports) {

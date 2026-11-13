@@ -198,7 +198,7 @@ if (browser) {
       plans.push({ level: entry.level, path: entry.output, key, optimized });
     }
     if (!plans.length) return;
-    const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })));
+    const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })), { deadlineReached });
     timing.original += measured.timing.original;
     timing.optimized += measured.timing.optimized;
     timing.compare += measured.timing.compare;
@@ -212,11 +212,18 @@ if (browser) {
         const missing = checksOf(checks);
         if (missing.length) browserChecks.degraded.push({ id: entry.id, scenario, missing });
       }
-      if (plan.revalidate) await revalidateVerdict(
-        plan.key,
-        true,
-        async () => report.every(({ scenario, issues }) => (plan.level !== "packed" || scenario !== "no-js") && !issues.length),
-      );
+      const unfinished = report.some(({ issues }) => issues.some((issue) => issue.includes("verification deadline reached")));
+      if (plan.revalidate && !unfinished) {
+        try {
+          await revalidateVerdict(
+            plan.key,
+            true,
+            async () => report.every(({ scenario, issues }) => (plan.level !== "packed" || scenario !== "no-js") && !issues.length),
+          );
+        } catch (error) {
+          entry.problems.push(error.message);
+        }
+      }
       entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
       const issues = [];
       for (const { scenario, issues: found } of report) {
