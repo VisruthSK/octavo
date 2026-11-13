@@ -1,14 +1,30 @@
 import { pathToFileURL } from "node:url";
 
-export const scenarios = [
-  { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light", pixels: true },
-  { name: "desktop-dark", viewport: { width: 1280, height: 900 }, colorScheme: "dark" },
-  { name: "mobile", viewport: { width: 390, height: 844 }, colorScheme: "light" },
-  { name: "tablet", viewport: { width: 768, height: 1024 }, colorScheme: "light" },
-  { name: "motion", viewport: { width: 1280, height: 900 }, colorScheme: "light", motion: true },
-  { name: "no-js", viewport: { width: 1280, height: 900 }, colorScheme: "light", javaScriptEnabled: false },
-  { name: "print", viewport: { width: 1280, height: 900 }, colorScheme: "light", media: "print" },
-];
+export const SCENARIOS = {
+  "desktop-light": { name: "desktop-light", viewport: { width: 1280, height: 900 }, colorScheme: "light", pixels: true },
+  "desktop-dark": { name: "desktop-dark", viewport: { width: 1280, height: 900 }, colorScheme: "dark" },
+  mobile: { name: "mobile", viewport: { width: 390, height: 844 }, colorScheme: "light" },
+  tablet: { name: "tablet", viewport: { width: 768, height: 1024 }, colorScheme: "light" },
+  motion: { name: "motion", viewport: { width: 1280, height: 900 }, colorScheme: "light", motion: true },
+  "no-js": { name: "no-js", viewport: { width: 1280, height: 900 }, colorScheme: "light", javaScriptEnabled: false },
+  print: { name: "print", viewport: { width: 1280, height: 900 }, colorScheme: "light", media: "print" },
+};
+
+export const SCENARIO_SETS = {
+  safe: {
+    scenarios: ["desktop-light", "desktop-dark", "mobile", "tablet", "motion", "no-js", "print"],
+    sweep: ["desktop-light", "desktop-dark", "mobile", "tablet"],
+  },
+  scripts: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
+  packed: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
+};
+
+export const scenariosFor = (level) => {
+  const set = SCENARIO_SETS[level] ?? SCENARIO_SETS.safe;
+  return set.scenarios.map((name) => ({ ...SCENARIOS[name], sweep: set.sweep.includes(name) }));
+};
+
+export const scenarios = scenariosFor("safe");
 
 const INTERACTIVE = "a[href], button, input, select, summary, [role=tab], [tabindex]";
 const NO_MOTION = "*,*::before,*::after{transition:none!important;animation:none!important}";
@@ -35,6 +51,36 @@ function seedRandom() {
     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const TIMERS = Symbol.for("octavo.timers");
+
+export function trackTimers() {
+  const from = 50;
+  const to = 1000;
+  const max = 8;
+  const state = { pending: new Map() };
+  globalThis[Symbol.for("octavo.timers")] = state;
+  const native = window.setTimeout;
+  window.setTimeout = function (handler, delay, ...args) {
+    const wait = Number(delay) || 0;
+    if (typeof handler !== "function") return native.call(window, handler, wait, ...args);
+    const id = native.call(
+      window,
+      (...inner) => {
+        state.pending.delete(id);
+        handler(...inner);
+      },
+      wait,
+    );
+    if (wait >= from && wait <= to && state.pending.size < max) state.pending.set(id, Date.now() + wait);
+    return id;
+  };
+  const clear = window.clearTimeout;
+  window.clearTimeout = function (id) {
+    state.pending.delete(id);
+    return clear.call(window, id);
   };
 }
 
@@ -152,33 +198,112 @@ async function forcedStates(page) {
   return states;
 }
 
-async function settle(page, { quiet = 150, limit = 3000 } = {}) {
+const QUIET = 150;
+const LIMIT = 3000;
+
+const probe = () => {
+  const state = globalThis[Symbol.for("octavo.timers")];
+  const now = Date.now();
+  let due = 0;
+  if (state) {
+    for (const [id, at] of state.pending) {
+      if (at <= now) state.pending.delete(id);
+      else due = Math.max(due, at);
+    }
+  }
+  const running = document.getAnimations().filter((animation) => {
+    if (animation.playState !== "running") return false;
+    const timing = animation.effect?.getTiming?.() ?? {};
+    return timing.iterations !== Infinity;
+  });
+  const element = document.querySelector(".reveal");
+  const slides = document.querySelector(".reveal .slides");
+  const transitioning = [element, slides].some((node) => node && [...node.classList].some((name) => name.includes("transition")));
+  let indices = "";
+  try {
+    indices = window.Reveal?.getIndices ? JSON.stringify(window.Reveal.getIndices()) : "";
+  } catch {
+    indices = "";
+  }
+  return {
+    due,
+    running: running.length,
+    fonts: document.fonts.status === "loaded",
+    transitioning,
+    indices,
+    reveal: typeof window.Reveal?.isReady === "function",
+  };
+};
+
+const watch = () => {
+  const existing = globalThis[Symbol.for("octavo.quiet")];
+  if (existing) return existing;
+  const state = { changed: Date.now() };
+  globalThis[Symbol.for("octavo.quiet")] = state;
+  const touch = () => {
+    state.changed = Date.now();
+  };
+  const mutations = new MutationObserver(touch);
+  const resizes = new ResizeObserver(touch);
+  mutations.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+  resizes.observe(document.documentElement);
+  document.addEventListener("scroll", touch, { capture: true, passive: true });
+  return state;
+};
+
+const frames = async (page) => {
+  await Promise.race([
+    page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))).catch(() => {}),
+    page.waitForTimeout(500),
+  ]);
+};
+
+export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {}) {
+  const deadline = Date.now() + limit;
   await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
-  await page.evaluate(
-    ({ quiet, limit }) =>
-      new Promise((resolve) => {
-        let timer;
-        const finish = () => {
-          clearTimeout(timer);
-          mutations.disconnect();
-          resizes.disconnect();
-          document.removeEventListener("scroll", bump, { capture: true });
-          resolve();
-        };
-        const bump = () => {
-          clearTimeout(timer);
-          timer = setTimeout(finish, quiet);
-        };
-        const mutations = new MutationObserver(bump);
-        mutations.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-        const resizes = new ResizeObserver(bump);
-        resizes.observe(document.documentElement);
-        document.addEventListener("scroll", bump, { capture: true, passive: true });
-        setTimeout(finish, limit);
-        bump();
-      }),
-    { quiet, limit },
-  );
+  await page.evaluate(watch).catch(() => {});
+  let previous = null;
+  while (Date.now() < deadline) {
+    if (network) {
+      while (Date.now() < deadline) {
+        if (!network.pending && Date.now() - network.last >= quiet) break;
+        await page.waitForTimeout(50);
+      }
+    }
+    const state = await page.evaluate(probe).catch(() => null);
+    if (!state) {
+      await page.waitForTimeout(50);
+      continue;
+    }
+    if (state.reveal) {
+      const ready = await page.evaluate(() => Promise.resolve(window.Reveal.isReady())).catch(() => false);
+      if (ready !== true || state.transitioning || state.indices !== previous) {
+        previous = state.indices;
+        await page.waitForTimeout(100);
+        continue;
+      }
+    }
+    if (!state.fonts) {
+      await page.waitForTimeout(50);
+      continue;
+    }
+    if (state.due > Date.now()) {
+      await page.waitForTimeout(Math.min(state.due - Date.now(), 100));
+      continue;
+    }
+    if (state.running) {
+      await page.waitForTimeout(100);
+      continue;
+    }
+    const changed = await page.evaluate(() => globalThis[Symbol.for("octavo.quiet")]?.changed ?? Date.now()).catch(() => Date.now());
+    if (Date.now() - changed < quiet) {
+      await page.waitForTimeout(25);
+      continue;
+    }
+    await frames(page);
+    const settled = await page.evaluate(() => globalThis[Symbol.for("octavo.quiet")]?.changed ?? Date.now()).catch(() => 0);
+    if (Date.now() - settled >= quiet) return;
+  }
 }
 
 async function settledAccessibilityTree(page) {
@@ -228,7 +353,6 @@ const PATIENCE = 4;
 
 export async function capture(browser, file, scenario, lossy, { interact = true, patient = false } = {}) {
   const pace = patient ? PATIENCE : 1;
-  const wait = (page, { quiet = 150 } = {}) => settle(page, { quiet: quiet * pace, limit: 3000 * pace });
   const scripted = scenario.javaScriptEnabled !== false;
   const context = await browser.newContext({
     viewport: scenario.viewport,
@@ -239,17 +363,30 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
   });
   try {
     await context.addInitScript(seedRandom);
+    await context.addInitScript(trackTimers);
     const page = await context.newPage();
     const errors = [];
     const requests = [];
+    const network = { pending: 0, count: 0, last: 0 };
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-    page.on("request", (request) => !/^(file|data|blob|about):/.test(request.url()) && requests.push(request.url()));
+    page.on("request", (request) => {
+      if (/^(data|blob|about):/.test(request.url())) return;
+      network.pending += 1;
+      network.count += 1;
+      network.last = Date.now();
+      if (!/^file:/.test(request.url())) requests.push(request.url());
+    });
+    const finished = () => {
+      network.pending = Math.max(0, network.pending - 1);
+      network.last = Date.now();
+    };
+    page.on("requestfinished", finished);
+    page.on("requestfailed", finished);
+    const wait = (options = {}) => settle(page, { quiet: (options.quiet ?? QUIET) * pace, limit: LIMIT * pace, network });
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
-    await page.evaluate(() => document.fonts.ready);
-    if (scripted) await wait(page);
 
     const states = [];
     const record = async (label, extra = {}) => {
@@ -257,17 +394,19 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
       const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" }).catch(() => null);
       states.push({ label, ...(await page.evaluate(observe, { lossy, motion: scenario.motion, pixels: scenario.pixels })), screenshot, ...extra });
     };
+    await wait();
     const forced = scripted && !scenario.motion ? await forcedStates(page) : [];
     const accessibility = await settledAccessibilityTree(page);
-    if (scripted) await wait(page);
+    await wait();
     await record("load", { forced, accessibility });
-    if (interact && scripted && !scenario.media && !scenario.motion) {
+    const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
+    if (interact && scripted && scenario.sweep) {
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
       let previous = await digestOf(page);
       states[0].digest = previous;
       for (const [index, interact] of interactions.entries()) {
         await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
-        await wait(page, { quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : 150 });
+        await wait({ quiet: slideDeck ? (index === NAVIGATION ? 1200 : 400) : QUIET });
         const digest = await digestOf(page);
         if (digest === previous && !ALWAYS_OBSERVED.has(index)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });
@@ -277,7 +416,7 @@ export async function capture(browser, file, scenario, lossy, { interact = true,
         await record(`interaction ${index}`, { digest });
       }
     }
-    return { states, errors, requests };
+    return { states, errors, requests, base };
   } finally {
     await context.close();
   }

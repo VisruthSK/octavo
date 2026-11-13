@@ -1,10 +1,9 @@
 import { cpus } from "node:os";
 import { launch } from "./browser.mjs";
-import { capture, hasInteractions, scenarios } from "./capture.mjs";
+import { capture, hasInteractions, scenariosFor } from "./capture.mjs";
 import { compare, signature } from "./compare.mjs";
 
 export const pages = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
-const SCENARIOS_AT_ONCE = 3;
 
 class Slots {
   free = pages;
@@ -69,18 +68,36 @@ export async function closeBrowser() {
 
 const crashed = (error) => ({ crashed: error.message.slice(0, 200), states: [] });
 
-const eachLimited = async (items, limit, work) => {
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (next < items.length) await work(items[next++]);
-    }),
-  );
-};
-
 const RECAPTURES = 3;
+const COMPARISON_TIMEOUT_MS = 120_000;
 
-async function confirmed(original, file, scenario, before, after, lossy, interact) {
+export async function withTimeout(task, milliseconds, onTimeout) {
+  let timer;
+  try {
+    return await Promise.race([
+      task(),
+      new Promise((_, reject) => {
+        timer = setTimeout(async () => {
+          await onTimeout();
+          reject(new Error(`comparison timed out after ${milliseconds} ms`));
+        }, milliseconds);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const withoutSweep = (result) => ({
+  ...result,
+  states: result.base?.states ?? result.states.slice(0, 1),
+  errors: result.base?.errors ?? result.errors,
+  requests: result.base?.requests ?? result.requests,
+});
+
+const view = (result, sweep) => (sweep ? result : withoutSweep(result));
+
+async function confirmed(original, file, scenario, before, after, lossy, interact, sweep) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
   if (!issues.length) return { issues, rounded: stats.roundedPixels };
@@ -92,8 +109,8 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
         resilient((open) => capture(open, original, scenario, lossy, { interact, patient })).catch(crashed),
         resilient((open) => capture(open, file, scenario, lossy, { interact, patient })).catch(crashed),
       ]);
-      pairs.push({ before: again, after: optimizedAgain });
-      if (!compare(again, optimizedAgain, lossy).length) break;
+      pairs.push({ before: view(again, sweep), after: view(optimizedAgain, sweep) });
+      if (!compare(view(again, sweep), view(optimizedAgain, sweep), lossy).length) break;
     }
     const seen = (left, right) => new Set(compare(left, right, lossy).map(signature));
     const across = pairs.map((pair) => seen(pair.before, pair.after));
@@ -111,23 +128,82 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
   return { issues: kept, rounded: stats.roundedPixels };
 }
 
-export async function verify(original, optimized, { lossy = false } = {}) {
-  const files = [optimized].flat();
-  const reports = files.map(() => []);
+const elapsed = (started) => Number(process.hrtime.bigint() - started) / 1e6;
+
+const unionOf = (plans) => {
+  const union = new Map();
+  for (const plan of plans) {
+    for (const scenario of plan.set) {
+      const known = union.get(scenario.name);
+      union.set(scenario.name, { ...scenario, sweep: Boolean(known?.sweep || scenario.sweep) });
+    }
+  }
+  return [...union.values()];
+};
+
+const orderOf = (plans) => unionOf(plans).map((scenario) => scenario.name);
+
+export async function verifyLevels(original, entries, { lossy = false } = {}) {
+  const plans = entries.map((entry) => ({ ...entry, set: scenariosFor(entry.level) }));
+  const groups = [...Map.groupBy(plans, (plan) => plan.key ?? plan.path).values()];
+  const reports = plans.map(() => []);
+  const timing = { original: 0, optimized: 0, compare: 0 };
   const interact = await slots.using(() => resilient((open) => hasInteractions(open, original)).catch(() => true));
   const run = (file, scenario) =>
-    slots.using(() => resilient((open) => capture(open, file, scenario, lossy, { interact })).catch(crashed));
-  await eachLimited(scenarios, SCENARIOS_AT_ONCE, async (scenario) => {
-    const [before, ...afters] = await Promise.all([original, ...files].map((file) => run(file, scenario)));
-    await Promise.all(
-      files.map(async (file, at) => {
-        const { issues, rounded } = await confirmed(original, file, scenario, before, afters[at], lossy, interact);
-        reports[at].push({ scenario: scenario.name, issues, rounded });
-      }),
-    );
-  });
-  const order = (entry) => scenarios.findIndex((scenario) => scenario.name === entry.scenario);
-  for (const report of reports) report.sort((a, b) => order(a) - order(b));
+    slots.using(async () => {
+      try {
+        return await withTimeout(
+          () => resilient((open) => capture(open, file, scenario, lossy, { interact })),
+          COMPARISON_TIMEOUT_MS,
+          closeBrowser,
+        );
+      } catch (error) {
+        return crashed(error);
+      }
+    });
+  for (const scenario of unionOf(plans)) {
+    const startedOriginal = process.hrtime.bigint();
+    const before = await run(original, scenario);
+    timing.original += elapsed(startedOriginal);
+    for (const group of groups) {
+      const wanted = group.filter((plan) => plan.set.some((entry) => entry.name === scenario.name));
+      if (!wanted.length) continue;
+      const sweep = wanted.some((plan) => plan.set.some((entry) => entry.name === scenario.name && entry.sweep));
+      const startedOptimized = process.hrtime.bigint();
+      const after = await run(group[0].path, { ...scenario, sweep });
+      timing.optimized += elapsed(startedOptimized);
+      for (const plan of wanted) {
+        const entry = plan.set.find((candidate) => candidate.name === scenario.name);
+        const startedCompare = process.hrtime.bigint();
+        const { issues, rounded } = await confirmed(
+          original,
+          group[0].path,
+          { ...scenario, sweep: entry.sweep },
+          view(before, entry.sweep),
+          view(after, entry.sweep),
+          lossy,
+          interact,
+          entry.sweep,
+        );
+        timing.compare += elapsed(startedCompare);
+        reports[plans.indexOf(plan)].push({ scenario: scenario.name, issues, rounded });
+      }
+    }
+  }
+  const order = orderOf(plans);
+  for (const report of reports) {
+    report.sort((left, right) => order.indexOf(left.scenario) - order.indexOf(right.scenario));
+  }
+  return { reports, timing };
+}
+
+export async function verify(original, optimized, { lossy = false, level = "safe" } = {}) {
+  const files = [optimized].flat();
+  const { reports } = await verifyLevels(
+    original,
+    files.map((path) => ({ level, path })),
+    { lossy },
+  );
   return Array.isArray(optimized) ? reports : reports[0];
 }
 

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -7,6 +7,7 @@ import { brotliCompressSync } from "node:zlib";
 import { documentPath, materialize } from "../corpus/build.mjs";
 import { readRendered, renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
+import { scenariosFor } from "./capture.mjs";
 
 const SLOWDOWN_LIMIT = 100;
 const RATE_FLOOR_BYTES = 256 * 1024;
@@ -18,12 +19,14 @@ const flag = (name, fallback) => {
   return at < 0 ? fallback : (process.argv[at + 1] ?? fallback);
 };
 const tier = flag("tier", "smoke");
+const revalidatePercent = Number(flag("revalidate", process.env.CI && tier === "full" ? "5" : "0"));
 const levels = flag("levels", tier === "full" ? "safe,scripts,packed" : "safe,packed").split(",");
 const filter = new RegExp(flag("filter", "."));
 const cores = cpus().length;
 const jobs = Number(flag("jobs", Math.max(1, Math.floor(cores / 2))));
 const threads = Math.max(1, Math.floor(cores / jobs));
 const browser = process.argv.includes("--browser");
+const verdictCache = !process.argv.includes("--no-verdict-cache");
 const upstream = !process.argv.includes("--no-upstream");
 const outDirectory = resolve(flag("out", join(root, "out", "corpus")));
 
@@ -59,6 +62,7 @@ const pool = async (items, limit, work) => {
 };
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const scenarioHash = sha256(Buffer.concat(readdirSync(join(root, "corpus")).filter((name) => name.endsWith(".mjs")).sort().flatMap((name) => [Buffer.from(name), readFileSync(join(root, "corpus", name))])));
 
 const naive = (html) => html.replace(/<!--[\s\S]*?-->/g, "").replace(/>\s+</g, "><").replace(/\s{2,}/g, " ");
 const brotli = (text) => brotliCompressSync(Buffer.from(text)).length;
@@ -86,7 +90,7 @@ const check = (row, expect, result, output, input) => {
   return problems;
 };
 
-await run(["--version"]);
+const binaryVersion = (await run(["--version"])).stdout.trim();
 const upstreamRows = upstream
   ? readRendered().map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }))
   : [];
@@ -131,26 +135,75 @@ const results = await pool(work, jobs, async ({ row, level }) => {
   };
 });
 
+const timing = { original: 0, optimized: 0, compare: 0, cached: 0 };
+const browserCache = { hits: 0, misses: 0 };
+let browserName = "";
 if (browser) {
-  const { verify, closeBrowser, pages } = await import("./verify.mjs");
+  const { closeBrowser, pages, verifyLevels } = await import("./verify.mjs");
+  const { browserIdentity } = await import("./browser.mjs");
+  const { readVerdict, revalidateVerdict, shouldRevalidate, verdictKey, verifierHash, writeVerdict } = await import("./verdicts.mjs");
+  const verifier = verifierHash();
+  const identity = await browserIdentity();
   const documents = [...Map.groupBy(results.filter((entry) => entry.browser), (entry) => entry.input).values()];
+  const cache = { hits: 0, misses: 0 };
   await pool(documents, pages, async (entries) => {
-    const outputs = [...Map.groupBy(entries, (entry) => sha256(readFileSync(entry.output)))].map(([, same]) => same);
-    const reports = await verify(
-      entries[0].input,
-      outputs.map((same) => same[0].output),
-    );
-    for (const [at, same] of outputs.entries()) {
-      for (const entry of same) {
-        entry.roundedPixels = reports[at].reduce((total, report) => total + report.rounded, 0);
-        for (const { scenario, issues } of reports[at]) {
-          if (entry.level === "packed" && scenario === "no-js") continue;
-          for (const issue of issues) entry.problems.push(`${scenario}: ${issue}`);
+    const original = entries[0].input;
+    const originalBytes = readFileSync(original);
+    const plans = [];
+    for (const entry of entries) {
+      const optimized = sha256(readFileSync(entry.output));
+      const key = verdictKey({ original: originalBytes, optimized, level: entry.level, verifier, browser: identity, scenarios: scenarioHash, version: binaryVersion });
+      const started = process.hrtime.bigint();
+      const verdict = verdictCache ? readVerdict(key) : null;
+      timing.cached += Number(process.hrtime.bigint() - started) / 1e6;
+      if (verdict) {
+        if (!shouldRevalidate(key, revalidatePercent)) {
+          entry.cached = true;
+          cache.hits += 1;
+          continue;
         }
+        plans.push({ level: entry.level, path: entry.output, key, optimized, revalidate: true });
+        cache.hits += 1;
+        continue;
+      }
+      cache.misses += 1;
+      plans.push({ level: entry.level, path: entry.output, key, optimized });
+    }
+    if (!plans.length) return;
+    const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })));
+    timing.original += measured.timing.original;
+    timing.optimized += measured.timing.optimized;
+    timing.compare += measured.timing.compare;
+    for (const [at, plan] of plans.entries()) {
+      const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
+      const report = measured.reports[at];
+      if (plan.revalidate) await revalidateVerdict(
+        plan.key,
+        true,
+        async () => report.every(({ scenario, issues }) => (plan.level !== "packed" || scenario !== "no-js") && !issues.length),
+      );
+      entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
+      const issues = [];
+      for (const { scenario, issues: found } of report) {
+        if (entry.level === "packed" && scenario === "no-js") continue;
+        for (const issue of found) issues.push(`${scenario}: ${issue}`);
+      }
+      entry.problems.push(...issues);
+      if (!issues.length && verdictCache) {
+        writeVerdict(plan.key, {
+          level: plan.level,
+          original: sha256(originalBytes),
+          optimized: plan.optimized,
+          verifier,
+          browser: identity,
+        });
       }
     }
   });
   await closeBrowser();
+  browserName = identity;
+  browserCache.hits = cache.hits;
+  browserCache.misses = cache.misses;
 }
 
 const measured = results.filter((entry) => !entry.excluded);
@@ -181,6 +234,23 @@ const categories = Map.groupBy(measured, (entry) => `${entry.category} / ${entry
 const kib = (bytes) => (bytes / 1024).toFixed(1);
 const lines = [`# Corpus report`, ``, `Tier ${tier}, ${selected.length} documents, levels ${levels.join(", ")}, browser ${browser ? "on" : "off"}. ${jobs} documents at a time, ${threads} threads each.`, ``];
 lines.push(`## Overall by level`, ``, `| Level | Docs | Input MiB | Output MiB | Output as % of input | Octavo seconds | MiB/s |`, `|---|---|---|---|---|---|---|`, ...overall, ``);
+if (browser) {
+  lines.push(
+    `## Browser verification`,
+    ``,
+    `Scenarios: ${levels.map((level) => `${level}: ${scenariosFor(level).map((scenario) => scenario.name).join(", ")}`).join("; ")}.`,
+    ``,
+    `| Stage | Seconds |`,
+    `|---|---|`,
+    `| capture original | ${(timing.original / 1000).toFixed(1)} |`,
+    `| capture optimized | ${(timing.optimized / 1000).toFixed(1)} |`,
+    `| compare | ${(timing.compare / 1000).toFixed(1)} |`,
+    `| cached | ${(timing.cached / 1000).toFixed(1)} |`,
+    ``,
+    `Verdict cache: ${browserCache.hits} of ${browserCache.hits + browserCache.misses} comparisons served from the cache by ${browserName}.`,
+    ``,
+  );
+}
 lines.push(`| Category / level | Docs | Input KiB | Output KiB | Median ratio | p50 ms | p95 ms | Naive KiB | Brotli(original) KiB |`);
 lines.push(`|---|---|---|---|---|---|---|---|---|`);
 for (const [name, entries] of [...categories].sort(([a], [b]) => a.localeCompare(b))) {
@@ -200,6 +270,14 @@ lines.push(``, `## Excluded (upstream render was not self-contained)`, excludedR
 for (const entry of excludedRows) lines.push(`- ${entry.id}: ${entry.excluded}`);
 lines.push(``, `## Problems`, failures.length ? "" : "None.");
 for (const entry of failures) lines.push(`- ${entry.id} (${entry.level}): ${entry.problems.join("; ")}`);
+const cachedRows = results.filter((entry) => entry.cached);
+lines.push(``, `## Cached verdicts`, cachedRows.length ? "" : "None.");
+for (const entry of cachedRows) lines.push(`- ${entry.id} (${entry.level}): cached`);
+const total = (timing.original + timing.optimized + timing.compare + timing.cached) / 1000;
+lines.push(
+  ``,
+  `Total browser verification: ${total.toFixed(1)} s for ${browserCache.hits + browserCache.misses} comparisons (${browserCache.hits} cached) by ${browserName}.`,
+);
 
 writeFileSync(join(outDirectory, "report.md"), `${lines.join("\n")}\n`);
 writeFileSync(join(outDirectory, "report.json"), `${JSON.stringify(results.map(({ input, output, ...rest }) => rest), null, 2)}\n`);
