@@ -526,6 +526,7 @@ impl fmt::Display for Target {
 /// # Ok::<(), octavo::Error>(())
 /// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Applied {
     /// What kind of change this was.
     pub transform: Transform,
@@ -596,6 +597,7 @@ impl fmt::Display for Warning {
 /// # Ok::<(), octavo::Error>(())
 /// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Output {
     /// The optimized HTML.
     pub html: String,
@@ -822,6 +824,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
 /// # Ok::<(), octavo::Error>(())
 /// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Simplified {
     scanned: html::Scanned,
     applied: Vec<Applied>,
