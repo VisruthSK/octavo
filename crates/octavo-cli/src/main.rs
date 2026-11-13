@@ -342,6 +342,7 @@ fn main() -> ExitCode {
         eprintln!("{ERROR}error{ERROR:#}: no input file was given");
         return ExitCode::FAILURE;
     };
+    let output = output.unwrap_or_else(|| input.with_extension("min.html"));
     let images = lossy_images.map(|format| {
         let encoding = ImageEncoding::new(format);
         ImageEncoding {
@@ -377,9 +378,8 @@ fn main() -> ExitCode {
         },
     };
     let result = if audit_only {
-        audit(&input, level, &resource_path, !no_fetch)
+        audit(&input, level, options, &resource_path, !no_fetch)
     } else {
-        let output = output.unwrap_or_else(|| input.with_extension("min.html"));
         run(&input, &output, level, options, &resource_path, !no_fetch)
     };
     match result {
@@ -420,9 +420,17 @@ struct Savings {
     after: usize,
 }
 
-fn audit(input: &Path, level: Mode, resource_paths: &[PathBuf], fetch: bool) -> Result<(), String> {
+fn audit(
+    input: &Path,
+    level: Mode,
+    options: Options,
+    resource_paths: &[PathBuf],
+    fetch: bool,
+) -> Result<(), String> {
     let (src, _) = prepare(input, read(input)?, resource_paths, fetch);
-    let out = optimize(&src, level).map_err(|error| failure(input, &error))?;
+    let out = simplify(&src, options)
+        .map_err(|error| failure(input, &error))?
+        .pack(level);
     let mut totals: BTreeMap<Transform, Savings> = BTreeMap::new();
     for step in &out.applied {
         let total = totals.entry(step.transform).or_default();
