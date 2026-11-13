@@ -27,6 +27,7 @@ mod check;
 mod css;
 mod data;
 mod doc;
+mod embed;
 mod fonts;
 mod html;
 mod images;
@@ -36,6 +37,7 @@ mod quarto;
 mod words;
 
 pub use check::Url;
+pub use embed::{Embedded, Loaded, Resources, embed_resources};
 
 use doc::{Doc, Edit, Edits};
 use std::{
@@ -598,6 +600,21 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// Whether `src` links no local file, which is what [`optimize`] and
+/// [`simplify`] require. A document that fails this check can be passed
+/// through [`embed_resources`] first.
+///
+/// ```
+/// use octavo::is_self_contained;
+///
+/// assert!(is_self_contained("<html><head><style>a{}</style></head></html>"));
+/// assert!(!is_self_contained("<html><head><script src=\"app.js\"></script></head></html>"));
+/// ```
+#[must_use]
+pub fn is_self_contained(src: &str) -> bool {
+    check::links(&Doc::new(src)).is_self_contained()
+}
 
 /// Optimizes `src` in the given mode with the default [`Options`].
 ///

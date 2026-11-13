@@ -6,11 +6,11 @@ use clap::{
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{
-    Compression, ImageEncoding, ImageFormat, Mode, Options, Quality, Transform, Tuning, Warning,
-    optimize, simplify,
+    Compression, Error as OctavoError, ImageEncoding, ImageFormat, Loaded, Mode, Options, Quality,
+    Resources, Transform, Tuning, Warning, embed_resources, optimize, simplify,
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fs,
     num::{NonZeroU32, NonZeroUsize},
     path::{Path, PathBuf},
@@ -166,6 +166,19 @@ struct Optimize {
     image_memory: Option<u64>,
     #[arg(
         long,
+        value_name = "DIR",
+        help_heading = "Resources",
+        help = "Directory to search for files that the page links, after its own directory and that directory's parents. Can be repeated"
+    )]
+    resource_path: Vec<PathBuf>,
+    #[arg(
+        long,
+        help_heading = "Resources",
+        help = "Do not download files that the page links from the web. Such a page keeps needing the network"
+    )]
+    no_fetch: bool,
+    #[arg(
+        long,
         help_heading = "Fonts",
         help = "Keep only the characters each text font needs. Often a large saving, but on Linux some hinted fonts draw with slightly different strokes"
     )]
@@ -307,6 +320,8 @@ fn main() -> ExitCode {
         max_image_side,
         keep_png,
         image_memory,
+        resource_path,
+        no_fetch,
         strip_licenses,
         cache_dir,
         no_cache,
@@ -353,10 +368,10 @@ fn main() -> ExitCode {
         },
     };
     let result = if audit_only {
-        audit(&input, level)
+        audit(&input, level, &resource_path, !no_fetch)
     } else {
         let output = output.unwrap_or_else(|| input.with_extension("min.html"));
-        run(&input, &output, level, options)
+        run(&input, &output, level, options, &resource_path, !no_fetch)
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -396,9 +411,9 @@ struct Savings {
     after: usize,
 }
 
-fn audit(input: &Path, level: Mode) -> Result<(), String> {
-    let src = read(input)?;
-    let out = optimize(&src, level).map_err(|error| format!("{}: {error}", input.display()))?;
+fn audit(input: &Path, level: Mode, resource_paths: &[PathBuf], fetch: bool) -> Result<(), String> {
+    let (src, _) = prepare(input, read(input)?, resource_paths, fetch);
+    let out = optimize(&src, level).map_err(|error| failure(input, &error))?;
     let mut totals: BTreeMap<Transform, Savings> = BTreeMap::new();
     for step in &out.applied {
         let total = totals.entry(step.transform).or_default();
@@ -450,18 +465,27 @@ fn spinner() -> ProgressBar {
     bar
 }
 
-fn run(input: &Path, output: &Path, level: Mode, options: Options) -> Result<(), String> {
+fn run(
+    input: &Path,
+    output: &Path,
+    level: Mode,
+    options: Options,
+    resource_paths: &[PathBuf],
+    fetch: bool,
+) -> Result<(), String> {
     let started = Instant::now();
-    let src = read(input)?;
+    let original = read(input)?;
+    let original_len = original.len();
     let progress = spinner();
+    progress.set_message("reading the page");
+    let (src, linked) = prepare(input, original, resource_paths, fetch);
     progress.set_message("optimizing");
-    let simplified =
-        simplify(&src, options).map_err(|error| format!("{}: {error}", input.display()))?;
+    let simplified = simplify(&src, options).map_err(|error| failure(input, &error))?;
     progress.set_message(format!("packing ({level})"));
     let candidate = simplified.pack(level).html;
     progress.finish_and_clear();
     warn(simplified.warnings());
-    if candidate.len() >= src.len() {
+    if candidate.len() >= src.len() && linked.is_none() {
         if !same_file(input, output) {
             write(output, &src)?;
         }
@@ -471,15 +495,337 @@ fn run(input: &Path, output: &Path, level: Mode, options: Options) -> Result<(),
         );
         return Ok(());
     }
+    let text = if candidate.len() < src.len() {
+        &candidate
+    } else {
+        &src
+    };
     let staged = staging_path(output);
-    write(&staged, &candidate)?;
+    write(&staged, text)?;
     fs::rename(&staged, output).map_err(|e| format!("{}: {e}", output.display()))?;
+    let embedded = linked
+        .as_ref()
+        .map(|linked| format!(", {} linked files embedded", linked.files))
+        .unwrap_or_default();
+    let before = original_len + linked.map_or(0, |linked| linked.bytes as usize);
     println!(
-        "{} {DIM}[{}, {:.1?}]{DIM:#} {}",
+        "{} {DIM}[{}, {:.1?}{embedded}]{DIM:#} {}",
         output.display(),
         level,
         started.elapsed(),
-        summary(src.len(), candidate.len())
+        summary(before, text.len())
     );
     Ok(())
+}
+
+struct Linked {
+    files: usize,
+    bytes: u64,
+}
+
+fn prepare(
+    input: &Path,
+    original: String,
+    resource_paths: &[PathBuf],
+    fetch: bool,
+) -> (String, Option<Linked>) {
+    let mut resources = FsResources::new(input, resource_paths, fetch);
+    let embedded = embed_resources(&original, &mut resources);
+    if embedded.embedded == 0 {
+        return (original, None);
+    }
+    let linked = Linked {
+        files: embedded.embedded,
+        bytes: embedded.resource_bytes,
+    };
+    (embedded.html, Some(linked))
+}
+
+fn failure(input: &Path, error: &OctavoError) -> String {
+    let hint = if matches!(error, OctavoError::NotSelfContained(_)) {
+        "\nOctavo looked next to the page, in its parent directories and in each --resource-path. Use --resource-path <DIR> to name another directory to search"
+    } else {
+        ""
+    };
+    format!("{}: {error}{hint}", input.display())
+}
+
+const PARENTS_SEARCHED: usize = 9;
+
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 octavo";
+const DOWNLOAD_LIMIT: u64 = 64 * 1024 * 1024;
+
+struct FsResources {
+    page_dir: PathBuf,
+    extra: Vec<PathBuf>,
+    agent: Option<ureq::Agent>,
+    failed: HashSet<String>,
+}
+
+impl FsResources {
+    fn new(input: &Path, extra: &[PathBuf], fetch: bool) -> FsResources {
+        let page_dir = fs::canonicalize(input)
+            .ok()
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .unwrap_or_else(|| PathBuf::from("."));
+        let agent = fetch.then(|| {
+            ureq::Agent::config_builder()
+                .timeout_global(Some(Duration::from_secs(30)))
+                .user_agent(USER_AGENT)
+                .build()
+                .into()
+        });
+        FsResources {
+            page_dir,
+            extra: extra.to_vec(),
+            agent,
+            failed: HashSet::new(),
+        }
+    }
+
+    fn download(&mut self, url: String) -> Option<Loaded> {
+        let agent = self.agent.as_ref()?;
+        if self.failed.contains(&url) {
+            return None;
+        }
+        let fetched = agent
+            .get(&url)
+            .call()
+            .map_err(|error| error.to_string())
+            .and_then(|mut response| {
+                let content_type = response
+                    .headers()
+                    .get("content-type")
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_string);
+                response
+                    .body_mut()
+                    .with_config()
+                    .limit(DOWNLOAD_LIMIT)
+                    .read_to_vec()
+                    .map(|bytes| Loaded {
+                        bytes,
+                        id: url.clone(),
+                        content_type,
+                    })
+                    .map_err(|error| error.to_string())
+            });
+        if let Err(error) = &fetched {
+            eprintln!("{WARN}warning{WARN:#}: could not download {url}: {error}");
+        }
+        if fetched.is_err() {
+            self.failed.insert(url);
+        }
+        fetched.ok()
+    }
+
+    fn candidates(&self, relative: &str, from: &str) -> Vec<PathBuf> {
+        let trimmed = relative.trim_start_matches('/');
+        let mut found = Vec::new();
+        if !relative.starts_with('/') {
+            let base = if from.is_empty() {
+                Some(self.page_dir.as_path())
+            } else {
+                Path::new(from).parent()
+            };
+            found.extend(base.map(|directory| directory.join(trimmed)));
+        }
+        found.extend(self.extra.iter().map(|directory| directory.join(trimmed)));
+        found.extend(
+            self.page_dir
+                .ancestors()
+                .take(PARENTS_SEARCHED)
+                .map(|directory| directory.join(trimmed)),
+        );
+        let parts: Vec<&str> = trimmed.split('/').collect();
+        if let Some(at) = parts
+            .iter()
+            .position(|part| *part == "site_libs" || part.ends_with("_files"))
+        {
+            let suffix = parts[at..].join("/");
+            found.extend(
+                self.page_dir
+                    .ancestors()
+                    .take(PARENTS_SEARCHED)
+                    .map(|directory| directory.join(&suffix)),
+            );
+        }
+        found
+    }
+}
+
+impl Resources for FsResources {
+    fn load(&mut self, reference: &str, from: &str) -> Option<Loaded> {
+        let reference = reference.trim();
+        if let Some(url) = remote_url(reference, from) {
+            return self.download(url);
+        }
+        let end = reference.find(['?', '#']).unwrap_or(reference.len());
+        let decoded = percent_encoding::percent_decode_str(&reference[..end])
+            .decode_utf8()
+            .ok()?;
+        self.candidates(&decoded, from)
+            .into_iter()
+            .find_map(|path| {
+                let bytes = fs::read(&path).ok()?;
+                let id = fs::canonicalize(&path).unwrap_or(path);
+                Some(Loaded {
+                    bytes,
+                    id: id.to_string_lossy().into_owned(),
+                    content_type: None,
+                })
+            })
+    }
+}
+
+fn is_web(reference: &str) -> bool {
+    reference.starts_with("http://") || reference.starts_with("https://")
+}
+
+fn remote_url(reference: &str, from: &str) -> Option<String> {
+    if is_web(reference) {
+        return Some(reference.to_string());
+    }
+    if let Some(rest) = reference.strip_prefix("//") {
+        let scheme = if from.starts_with("http://") {
+            "http"
+        } else {
+            "https"
+        };
+        return Some(format!("{scheme}://{rest}"));
+    }
+    is_web(from).then(|| join_url(from, reference))
+}
+
+fn join_url(base: &str, reference: &str) -> String {
+    let base = &base[..base.find(['?', '#']).unwrap_or(base.len())];
+    let scheme_end = base.find("://").map_or(0, |at| at + 3);
+    let path_start = base[scheme_end..]
+        .find('/')
+        .map_or(base.len(), |at| scheme_end + at);
+    let (origin, base_path) = base.split_at(path_start);
+    let end = reference.find(['?', '#']).unwrap_or(reference.len());
+    let (path, suffix) = reference.split_at(end);
+    let mut segments: Vec<&str> = if path.starts_with('/') {
+        Vec::new()
+    } else {
+        let mut directory: Vec<&str> = base_path.split('/').skip(1).collect();
+        directory.pop();
+        directory
+    };
+    for piece in path.split('/') {
+        match piece {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            other => segments.push(other),
+        }
+    }
+    format!("{origin}/{}{suffix}", segments.join("/"))
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::*;
+
+    #[test]
+    fn join_url_resolves_relative_path_against_base_directory() {
+        assert_eq!(
+            join_url("https://a.test/dir/page.css", "font.woff2"),
+            "https://a.test/dir/font.woff2"
+        );
+    }
+
+    #[test]
+    fn join_url_resolves_parent_directory_segment() {
+        assert_eq!(
+            join_url("https://a.test/dir/sub/page.css", "../font.woff2"),
+            "https://a.test/dir/font.woff2"
+        );
+    }
+
+    #[test]
+    fn join_url_keeps_root_relative_path_at_origin() {
+        assert_eq!(
+            join_url("https://a.test/dir/page.css", "/root.png"),
+            "https://a.test/root.png"
+        );
+    }
+
+    #[test]
+    fn join_url_keeps_reference_query_and_drops_base_query_and_fragment() {
+        assert_eq!(
+            join_url("https://a.test/dir/page.css?v=1#x", "img/a.png?cache=2"),
+            "https://a.test/dir/img/a.png?cache=2"
+        );
+    }
+
+    #[test]
+    fn join_url_normalizes_dot_and_parent_segments() {
+        assert_eq!(
+            join_url("https://a.test/a/b/c.css", "./../../x.png"),
+            "https://a.test/x.png"
+        );
+    }
+
+    #[test]
+    fn join_url_appends_to_base_without_path() {
+        assert_eq!(join_url("https://a.test", "x.png"), "https://a.test/x.png");
+    }
+
+    #[test]
+    fn remote_url_keeps_absolute_web_reference() {
+        assert_eq!(
+            remote_url("https://a.test/x.css", ""),
+            Some("https://a.test/x.css".to_string())
+        );
+    }
+
+    #[test]
+    fn remote_url_expands_protocol_relative_reference_to_https() {
+        assert_eq!(
+            remote_url("//cdn.test/x.css", ""),
+            Some("https://cdn.test/x.css".to_string())
+        );
+    }
+
+    #[test]
+    fn remote_url_expands_protocol_relative_reference_using_base_scheme() {
+        assert_eq!(
+            remote_url("//cdn.test/x.css", "http://a.test/p.css"),
+            Some("http://cdn.test/x.css".to_string())
+        );
+    }
+
+    #[test]
+    fn remote_url_resolves_relative_reference_against_web_base() {
+        assert_eq!(
+            remote_url("img/a.png", "https://a.test/dir/p.css"),
+            Some("https://a.test/dir/img/a.png".to_string())
+        );
+    }
+
+    #[test]
+    fn remote_url_returns_none_for_non_web_base() {
+        assert_eq!(remote_url("img/a.png", "C:/site/p.css"), None);
+    }
+
+    #[test]
+    fn remote_url_returns_none_for_empty_base() {
+        assert_eq!(remote_url("img/a.png", ""), None);
+    }
+
+    #[test]
+    fn is_web_accepts_http_and_https_references() {
+        assert!(is_web("http://x"));
+        assert!(is_web("https://x"));
+    }
+
+    #[test]
+    fn is_web_rejects_other_reference_schemes() {
+        assert!(!is_web("//x"));
+        assert!(!is_web("ftp://x"));
+        assert!(!is_web("data:text/css,a"));
+    }
 }

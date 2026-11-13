@@ -35,7 +35,7 @@ pub struct Url {
 }
 
 impl Url {
-    fn parse(text: &str) -> Option<Url> {
+    pub(crate) fn parse(text: &str) -> Option<Url> {
         if text.is_empty() {
             return None;
         }

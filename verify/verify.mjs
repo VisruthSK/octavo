@@ -129,7 +129,7 @@ async function take(file, scenario, lossy, options) {
   }
 }
 
-async function confirmed(original, file, scenario, before, after, lossy, interact, sweep, isDeadlineReached) {
+async function confirmed(original, file, scenario, before, after, lossy, interact, sweep, isDeadlineReached, rootFor, linked) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
   if (!issues.length || issues.some((issue) => issue.includes("capture timed out") || issue.includes("screenshot missing"))) {
@@ -141,8 +141,8 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
       if (isDeadlineReached()) return [...issues, "verification deadline reached during document comparison"];
       const patient = round > 0;
       const [again, optimizedAgain] = await Promise.all([
-        take(original, scenario, lossy, { interact, patient }).catch(crashed),
-        take(file, scenario, lossy, { interact, patient }).catch(crashed),
+        take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked }).catch(crashed),
+        take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked }).catch(crashed),
       ]);
       if ([again.crashed, optimizedAgain.crashed].some((message) => message?.includes("capture timed out"))) {
         return ["capture timed out during confirmation"];
@@ -181,7 +181,8 @@ const unionOf = (plans) => {
 
 const orderOf = (plans) => unionOf(plans).map((scenario) => scenario.name);
 
-export async function verifyLevels(original, entries, { lossy = false, deadlineReached = () => false } = {}) {
+export async function verifyLevels(original, entries, { lossy = false, deadlineReached = () => false, roots, linked = false } = {}) {
+  const rootFor = (file) => (roots ? (file === original ? roots.original : roots.optimized) : undefined);
   const plans = entries.map((entry) => ({ ...entry, set: scenariosFor(entry.level).filter(({ name }) => !entry.only || entry.only.includes(name)) }));
   const groups = [...Map.groupBy(plans, (plan) => plan.key ?? plan.path).values()];
   const reports = plans.map(() => []);
@@ -198,7 +199,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
     slots.using(async () => {
       try {
         return await withTimeout(
-          () => take(file, scenario, lossy, { interact }),
+          () => take(file, scenario, lossy, { interact, root: rootFor(file), linked }),
           COMPARISON_TIMEOUT_MS,
           closeBrowser,
         );
@@ -263,6 +264,8 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
           interact,
           entry.sweep,
           deadlineReached,
+          rootFor,
+          linked,
         );
         timing.compare += elapsed(startedCompare);
         reports[plans.indexOf(plan)].push({
@@ -289,12 +292,12 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
   return { reports, timing };
 }
 
-export async function verify(original, optimized, { lossy = false, level = "safe", only } = {}) {
+export async function verify(original, optimized, { lossy = false, level = "safe", only, roots, linked = false } = {}) {
   const files = [optimized].flat();
   const { reports } = await verifyLevels(
     original,
     files.map((path) => ({ level, path, only })),
-    { lossy },
+    { lossy, roots, linked },
   );
   return Array.isArray(optimized) ? reports : reports[0];
 }

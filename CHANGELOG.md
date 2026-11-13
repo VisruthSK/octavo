@@ -8,6 +8,11 @@ All notable changes to this project are documented in this file. The format is b
 
 - Fonts: `--subset-fonts` cuts text fonts with [skera](https://crates.io/crates/skera) instead of HarfBuzz, so the build no longer compiles C++ for font subsetting. The same characters are kept, every layout feature survives, and the axes of a variable font are unchanged.
 
+### Added
+
+- Embedding: `octavo page.html` embeds the files a page links before optimizing it, so `embed-resources: true` is no longer required and the output is always one self-contained file. Octavo looks next to the page, in each `--resource-path <DIR>`, in parent directories (which finds `/site_libs/...`), and in `site_libs` or `<name>_files` directories beside the page or a parent. Files linked from the web are downloaded unless `--no-fetch` is given. Plain scripts are inlined, `@import` is flattened into the stylesheet and relative imports in module scripts become data URLs. The library has `embed_resources`, the `Resources` trait, `Loaded`, `Embedded` and `is_self_contained`. `verify/linked.mjs` and a job in the corpus workflow compare Octavo on linked renders with embedded renders of the same Quarto documents.
+- Lossless WebP: an 8-bit PNG without a colour profile, gamma, chromaticity, cICP, EXIF or animation chunk, and with only fully opaque or fully transparent pixels, becomes lossless WebP when that is smaller than the best PNG, with identical pixels. `--keep-png` (`Options::keep_png`) turns it off. `--image-memory <MIB>` (`Options::image_memory`, default `Options::DEFAULT_IMAGE_MEMORY`, 2560 MiB) caps the memory the encoder uses at once, at about 20 bytes per pixel. libwebp is added under the BSD-3-Clause license, and `ureq` with the CDLA-Permissive-2.0 root certificate data is added for downloads.
+
 ## [0.1.0-alpha.1]
 
 First pre-release. The command line and the library API can still change. On Quarto's own 465 test documents the median page shrinks 12.8 times at the `packed` level.

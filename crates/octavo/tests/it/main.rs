@@ -1,4 +1,5 @@
 mod common;
+mod embed;
 mod images;
 mod invariants;
 mod pipeline;
