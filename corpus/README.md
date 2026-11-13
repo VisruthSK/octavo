@@ -20,6 +20,19 @@ Every document belongs to a tier. `smoke` is a small sample that covers every ca
 | `smoke` | 59 | 12 | On every push and pull request |
 | `full` | 259 | 453 | Before every release tag, split across 24 shards in CI |
 
+`smoke` is chosen for difficulty first and diversity second. `hardest.json` pins the documents that must always be in the smoke tier because they exposed bugs, including the hand-written seed fixtures that assert the corpus's earliest known failures. A test fails if a pinned id is missing from `selection.json` or is not in the smoke tier.
+
+For the rest, `selectSmoke` scores every document for hardness and fills about 60 percent of each format quota with the highest hardness per estimated cost. Cost is document size plus 64 bytes per element plus twice the script size, capped at 4,000,000 so one huge page cannot take a whole shard. The remaining slots use the existing farthest-point diversity pick, so every format stratum and group still has a chance. Ties break on the document id, which makes the result independent of input order.
+
+The hardness score is one table named `HARDNESS_WEIGHTS` in `hardness.mjs`. Each row is a measure read from `featuresOf` and a reference value at which the measure counts fully: interactive elements, scripts and their size, inline event handlers, images and their size, data URLs, fonts and font faces, inline SVG, animations and keyframes, media queries, custom properties, nesting depth, widget runtimes such as reveal.js, document size and CSS rules. The score is the weighted sum, with every measure saturating at its reference.
+
+```sh
+node --test corpus/select.test.mjs
+node corpus/upstream.mjs --select
+```
+
+The first command checks the pinned list, hardness ordering, quotas, determinism and the cost cap without touching the network. The second rebuilds `selection.json` with the new tiers; it needs Quarto and the pinned release in `sources.json`, so it is run by a maintainer when the corpus or the weights change.
+
 ## Hand-written fixtures
 
 ```
