@@ -332,13 +332,12 @@ fn recompress_png(bytes: &[u8], pixels: u64, tuning: Tuning) -> Option<Vec<u8>> 
         ..PngOptions::from_preset(
             tuning
                 .png_preset
-                .map_or(preset_for(decoded.pixels), |preset| preset.min(6)),
+                .map_or(preset_for(pixels), |preset| preset.min(6)),
         )
     };
-    let smaller = oxipng::optimize_from_memory(&decoded.image.bytes, &options)
+    oxipng::optimize_from_memory(bytes, &options)
         .ok()
-        .filter(|better| better.len() < decoded.image.bytes.len())?;
-    Some(data::encode_base64(Mime::ImagePng, &smaller))
+        .filter(|better| better.len() < bytes.len())
 }
 
 fn encode(decoded: &Decoded, lossy: ImageEncoding) -> Option<String> {
