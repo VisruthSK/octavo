@@ -1,4 +1,4 @@
-use octavo::{ImageEncoding, ImageFormat, Tuning};
+use octavo::{ImageEncoding, ImageFormat, Options, Tuning};
 use std::process::Command;
 
 fn help() -> String {
@@ -42,6 +42,8 @@ fn the_help_quotes_the_defaults_the_library_uses() {
             Tuning::MAXIMUM.brotli_quality.expect("a maximum quality")
         ),
     ];
+    let memory = format!("[default: {}]", Options::DEFAULT_IMAGE_MEMORY / 1_048_576);
+    assert!(help.contains(&memory), "the help does not contain {memory}");
     for quoted in expected {
         assert!(help.contains(&quoted), "the help does not contain {quoted}");
     }
