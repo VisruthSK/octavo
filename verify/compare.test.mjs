@@ -66,6 +66,18 @@ test("a diagonal gradient is compared as written", () => {
   assert.deepEqual(missingFrom(diagonal, "background-image:linear-gradient(225deg, blue 0%, red 100%)"), [diagonal]);
 });
 
+test("a font family with its quotes removed is the same style", () => {
+  const quoted = "font-family:SFMono-Regular, Menlo, \"Liberation Mono\", \"Courier New\", monospace";
+  const bare = "font-family:SFMono-Regular, Menlo, Liberation Mono, Courier New, monospace";
+  assert.deepEqual(missingFrom(quoted, bare), []);
+  assert.deepEqual(missingFrom(bare, quoted), []);
+  assert.deepEqual(missingFrom("font-family:Menlo, monospace", "font-family:monospace"), ["font-family:Menlo, monospace"]);
+});
+
+test("quotes elsewhere in a declaration still matter", () => {
+  assert.deepEqual(missingFrom('content:"a"', "content:a"), ['content:"a"']);
+});
+
 test("declarations without gradients still compare exactly", () => {
   assert.deepEqual(missingFrom("color:red;width:10px", "width:10px"), ["color:red"]);
 });

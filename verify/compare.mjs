@@ -44,15 +44,18 @@ function canonicalGradient(body) {
   return `linear-gradient(180deg,${upright.map(([color, position]) => `${color} ${trimmed(position)}%`).join(",")})`;
 }
 
+const unquotedFamilies = (declaration) => declaration.replace(/font-family:(.*)$/, (_, value) => `font-family:${value.replace(/["']/g, "")}`);
+
 const canonical = (declaration) => {
+  const text = unquotedFamilies(declaration);
   const marker = "linear-gradient(";
-  const start = declaration.indexOf(marker);
-  if (start < 0) return declaration;
+  const start = text.indexOf(marker);
+  if (start < 0) return text;
   const open = start + marker.length - 1;
-  const end = closing(declaration, open);
-  if (end < 0) return declaration;
-  const replaced = canonicalGradient(declaration.slice(open + 1, end));
-  return replaced ? declaration.slice(0, start) + replaced + declaration.slice(end + 1) : declaration;
+  const end = closing(text, open);
+  if (end < 0) return text;
+  const replaced = canonicalGradient(text.slice(open + 1, end));
+  return replaced ? text.slice(0, start) + replaced + text.slice(end + 1) : text;
 };
 
 export const sameStyle = (left, right = "") =>
