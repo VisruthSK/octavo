@@ -14,14 +14,29 @@ export const canonicalFontFamily = (name) => {
 
 export const canonicalStyle = (style = "", writingMode = "horizontal-tb") => {
   const horizontal = writingMode.startsWith("horizontal");
-  return style.split(";").map((declaration) => {
+  const declarations = [];
+  const sizes = new Map();
+  for (const declaration of style.split(";")) {
     const colon = declaration.indexOf(":");
-    if (colon < 0) return declaration;
+    if (colon < 0) {
+      declarations.push(declaration);
+      continue;
+    }
     const name = declaration.slice(0, colon);
     const pseudo = ["::before", "::after", "::marker", "::placeholder"].find((prefix) => name.startsWith(prefix)) ?? "";
     const property = name.slice(pseudo.length);
     const physical = property === "inline-size" ? (horizontal ? "width" : "height") :
       property === "block-size" ? (horizontal ? "height" : "width") : property;
-    return `${pseudo}${physical}${declaration.slice(colon)}`;
-  }).join(";");
+    if (["width", "height"].includes(physical)) {
+      const key = `${pseudo}${physical}`;
+      const isPhysical = property === physical;
+      const existing = sizes.get(key);
+      if (!existing || isPhysical || !existing.isPhysical) {
+        sizes.set(key, { declaration: `${key}${declaration.slice(colon)}`, isPhysical });
+      }
+    } else {
+      declarations.push(`${pseudo}${physical}${declaration.slice(colon)}`);
+    }
+  }
+  return [...declarations, ...[...sizes.values()].map(({ declaration }) => declaration)].join(";");
 };
