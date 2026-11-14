@@ -5,6 +5,8 @@ import { basename, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { brotliCompressSync } from "node:zlib";
 import { documentPath, materialize } from "../corpus/build.mjs";
+import { readCosts } from "../corpus/costs.mjs";
+import { shardSlice } from "../corpus/sharding.mjs";
 import { readRendered, renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
 import { scenariosFor } from "./capture.mjs";
@@ -100,12 +102,13 @@ const binaryVersion = (await run(["--version", ...octavoArgs])).stdout.trim();
 const upstreamRows = upstream
   ? readRendered().map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }))
   : [];
+const costs = readCosts();
 const [shardPosition, shardCount] = flag("shard", "").split("/").map(Number);
-const ownHandWritten = (_, index) => !shardCount || index % shardCount === shardPosition - 1;
-const handWritten = (await materialize())
+const shard = shardCount ? { index: shardPosition - 1, count: shardCount } : undefined;
+const allHandWritten = (await materialize())
   .map((row) => ({ ...row, path: documentPath(row.id) }))
-  .filter((row) => tier === "full" || row.tier === "smoke")
-  .filter(ownHandWritten);
+  .filter((row) => tier === "full" || row.tier === "smoke");
+const handWritten = shardSlice(allHandWritten, shard, costs);
 const rows = [...handWritten, ...upstreamRows];
 const selected = rows.filter((row) => (tier === "full" || row.tier === "smoke") && filter.test(row.id));
 rmSync(outDirectory, { recursive: true, force: true });

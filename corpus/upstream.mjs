@@ -4,7 +4,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { cpus } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
 import { cacheDirectory } from "./build.mjs";
+import { readCosts } from "./costs.mjs";
 import { featuresOf, selectStratified } from "./select.mjs";
+import { shardSlice } from "./sharding.mjs";
 
 const quarto = process.env.QUARTO ?? "quarto";
 const downloads = join(cacheDirectory, "upstream");
@@ -220,14 +222,20 @@ export async function chooseUpstream({ jobs = 4 } = {}) {
   return { candidates: candidatesSeen, selected, skipped };
 }
 
-export const inShard = (index, shard) => !shard || index % shard.count === shard.index;
+export const inShard = (entry, shard, allEntries = [], costs = readCosts()) => {
+  if (!shard || !shard.count || shard.count <= 1) return true;
+  if (typeof entry === "number") return entry % shard.count === shard.index;
+  const slice = shardSlice(allEntries, shard, costs);
+  const id = typeof entry === "string" ? entry : entry?.id;
+  return slice.some((item) => (typeof item === "string" ? item : item?.id) === id);
+};
 
 export async function renderSelected({ jobs = 4, tier = "full", shard } = {}) {
   const sources = readJson(sourcesPath);
   mkdirSync(rendered, { recursive: true });
-  const entries = readJson(selectionPath)
-    .filter((entry) => tier === "full" || entry.tier === tier)
-    .filter((_, index) => inShard(index, shard));
+  const allEntries = readJson(selectionPath)
+    .filter((entry) => tier === "full" || entry.tier === tier);
+  const entries = shardSlice(allEntries, shard, readCosts());
   const done = [];
   const failures = [];
   for (const source of sources) {

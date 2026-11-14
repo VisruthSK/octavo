@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { brotliCompressSync, constants } from "node:zlib";
-import { inShard, readRendered, renderLinked, renderedPath } from "../corpus/upstream.mjs";
+import { readCosts } from "../corpus/costs.mjs";
+import { shardSlice } from "../corpus/sharding.mjs";
+import { readRendered, renderLinked, renderedPath } from "../corpus/upstream.mjs";
 import { formatHeartbeat, formatProgress } from "./progress.mjs";
 import { closeBrowser, verify } from "./verify.mjs";
 
@@ -17,11 +19,17 @@ const filter = new RegExp(flag("filter", "."));
 const browser = process.argv.includes("--browser");
 const binary = resolve(flag("binary", join(root, "target", "release", process.platform === "win32" ? "octavo.exe" : "octavo")));
 const outDirectory = resolve(flag("out", join(root, "out", "linked")));
+const costs = readCosts();
 const [position, count] = flag("shard", "").split("/").map(Number);
 const shard = count ? { index: position - 1, count } : undefined;
-const selected = readRendered()
-  .filter((entry) => (tier === "full" || entry.tier === tier) && filter.test(entry.id))
-  .filter((_, index) => inShard(index, shard));
+const rendered = readRendered()
+  .filter((entry) => (tier === "full" || entry.tier === tier) && filter.test(entry.id));
+const selectionPath = join(root, "corpus", "selection.json");
+const fullSelection = existsSync(selectionPath)
+  ? JSON.parse(readFileSync(selectionPath, "utf8")).filter((entry) => tier === "full" || entry.tier === tier)
+  : rendered;
+const targetIds = shard ? new Set(shardSlice(fullSelection, shard, costs).map((e) => e.id)) : null;
+const selected = rendered.filter((entry) => (!targetIds || targetIds.has(entry.id)));
 
 const wire = (path) =>
   brotliCompressSync(readFileSync(path), { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }).length;
