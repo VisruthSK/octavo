@@ -152,7 +152,7 @@ jobs:
           retention-days: 3
 
   engines:
-    name: ${{ matrix.browser }} (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
+    name: ${{ matrix.label }} checks (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
@@ -162,6 +162,13 @@ jobs:
       matrix:
         browser: [chromium, firefox, webkit]
         shard: ${{ fromJSON(needs.plan.outputs.engine_shards) }}
+        include:
+          - browser: chromium
+            label: Chromium
+          - browser: firefox
+            label: Firefox
+          - browser: webkit
+            label: WebKit
     env:
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
