@@ -3,9 +3,19 @@ import { join } from "node:path";
 
 const HEADER = /^Tier \w+, (\d+) documents/m;
 
+const reportIn = (directory) => {
+  const direct = join(directory, "report.md");
+  if (existsSync(direct)) return direct;
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const nested = join(directory, entry.name, "report.md");
+    if (entry.isDirectory() && existsSync(nested)) return nested;
+  }
+  return null;
+};
+
 const documentsIn = (directory) => {
-  const report = join(directory, "report.md");
-  if (!existsSync(report)) return null;
+  const report = reportIn(directory);
+  if (!report) return null;
   const match = HEADER.exec(readFileSync(report, "utf8"));
   return match ? Number(match[1]) : null;
 };

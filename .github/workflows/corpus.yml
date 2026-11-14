@@ -392,7 +392,7 @@ jobs:
       - name: Engine problems
         if: always()
         run: |
-          for report in engines/*/report.md; do
+          for report in engines/*/report.md engines/*/*/report.md; do
             [ -f "$report" ] || continue
             echo "### $(basename "$report")" >> "$GITHUB_STEP_SUMMARY"
             sed -n '/^## Problems/,/^## Browser/p' "$report" >> "$GITHUB_STEP_SUMMARY"
