@@ -183,6 +183,13 @@ async function renderDocument({ id, file }) {
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const sourcesPath = join(import.meta.dirname, "sources.json");
 export const selectionPath = join(import.meta.dirname, "selection.json");
+export const manifestPath = join(import.meta.dirname, "manifest.json");
+
+export function selectedCount(tier = "smoke") {
+  const manifest = readJson(manifestPath).filter((entry) => tier === "full" || entry.tier === tier);
+  const upstream = readJson(selectionPath).filter((entry) => tier === "full" || entry.tier === tier);
+  return manifest.length + upstream.length;
+}
 
 export async function chooseUpstream({ jobs = 4 } = {}) {
   const sources = readJson(sourcesPath);

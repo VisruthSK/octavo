@@ -35,6 +35,9 @@ on:
       diagnose_level:
         description: Which level of the document to capture
         default: packed
+      diagnose_browser:
+        description: Which browser to capture for the diagnosis
+        default: chromium
       octavo_args:
         description: Extra arguments passed to every octavo invocation
         default: ""
@@ -61,7 +64,14 @@ jobs:
       shard_count: ${{ steps.plan.outputs.shard_count }}
       engine_shards: ${{ steps.plan.outputs.engine_shards }}
       engine_count: ${{ steps.plan.outputs.engine_count }}
+      selected_count: ${{ steps.plan.outputs.selected_count }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
@@ -75,13 +85,21 @@ jobs:
           else
             tier=full
           fi
-          if [ "$tier" = full ]; then count=10; engine_count=10; else count=2; engine_count=4; fi
+          if [ "$tier" = full ]; then count=10; engine_count=10; else count=4; engine_count=4; fi
           list() { node -e 'console.log(JSON.stringify(Array.from({length: Number(process.argv[1])}, (_, i) => i + 1)))' "$1"; }
+          selected_count=$(node -e '
+            const fs = require("node:fs");
+            const tier = process.argv[1];
+            const manifest = JSON.parse(fs.readFileSync("corpus/manifest.json", "utf8")).filter(d => tier === "full" || d.tier === tier);
+            const selection = JSON.parse(fs.readFileSync("corpus/selection.json", "utf8")).filter(d => tier === "full" || d.tier === tier);
+            console.log(manifest.length + selection.length);
+          ' "$tier")
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "shards=$(list $count)" >> "$GITHUB_OUTPUT"
           echo "shard_count=$count" >> "$GITHUB_OUTPUT"
           echo "engine_shards=$(list $engine_count)" >> "$GITHUB_OUTPUT"
           echo "engine_count=$engine_count" >> "$GITHUB_OUTPUT"
+          echo "selected_count=$selected_count" >> "$GITHUB_OUTPUT"
 
   select:
     name: Select upstream documents
@@ -133,87 +151,6 @@ jobs:
           path: target/release/octavo
           retention-days: 3
 
-  corpus:
-    name: Corpus (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
-    needs: [plan, build]
-    if: needs.plan.outputs.tier != 'select'
-    runs-on: ubuntu-24.04
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 60 || 345 }}
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
-    env:
-      TIER: ${{ needs.plan.outputs.tier }}
-      SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.shard_count }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - uses: actions/download-artifact@v8
-        with:
-          name: octavo-binary
-          path: target/release
-      - run: chmod +x target/release/octavo
-      - run: npm ci
-        working-directory: verify
-      - run: |
-          for attempt in 1 2 3 4; do
-            npx playwright-core install --with-deps chromium && exit 0
-            sleep $((attempt * 20))
-          done
-          exit 1
-        working-directory: verify
-      - run: node corpus/build.mjs --check
-      - uses: quarto-dev/quarto-actions/setup@v2
-        with:
-          version: 1.11.9
-      - uses: actions/cache@v6
-        with:
-          path: corpus/.cache
-          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ needs.plan.outputs.shard_count }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
-      - uses: actions/cache/restore@v6
-        with:
-          path: corpus/.cache/verdicts
-          key: verdicts-${{ matrix.shard }}-${{ needs.plan.outputs.shard_count }}-${{ github.sha }}
-          restore-keys: |
-            verdicts-${{ matrix.shard }}-${{ needs.plan.outputs.shard_count }}-
-      - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}" --octavo-args "${{ inputs.octavo_args }}"
-        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
-      - uses: actions/cache/save@v6
-        if: always()
-        continue-on-error: true
-        with:
-          path: corpus/.cache/verdicts
-          key: verdicts-${{ matrix.shard }}-${{ needs.plan.outputs.shard_count }}-${{ github.sha }}
-      - name: Diagnose one document
-        if: always() && inputs.diagnose != ''
-        run: |
-          original="corpus/.cache/rendered/${{ inputs.diagnose }}.html"
-          [ -f "$original" ] || original="corpus/.cache/docs/${{ inputs.diagnose }}.html"
-          optimized="out/corpus/${{ inputs.diagnose }}.${{ inputs.diagnose_level }}.html"
-          if [ -f "$original" ] && [ -f "$optimized" ]; then
-            node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" out/diagnose/whole
-            target/release/octavo "$original" out/subset.html --level "${{ inputs.diagnose_level }}" --no-cache
-            node verify/screenshots.mjs "$PWD/$original" "$PWD/out/subset.html" "${{ inputs.diagnose_scenario }}" out/diagnose/subset
-          fi
-      - uses: actions/upload-artifact@v7
-        if: always() && inputs.diagnose != ''
-        with:
-          name: diagnose-${{ matrix.shard }}
-          path: out/diagnose
-          if-no-files-found: ignore
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: corpus-report-${{ matrix.shard }}
-          path: out/corpus
-          if-no-files-found: ignore
-
   engines:
     name: ${{ matrix.browser }} (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
     needs: [plan, build]
@@ -223,7 +160,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [firefox, webkit]
+        browser: [chromium, firefox, webkit]
         shard: ${{ fromJSON(needs.plan.outputs.engine_shards) }}
     env:
       TIER: ${{ needs.plan.outputs.tier }}
@@ -265,7 +202,7 @@ jobs:
           restore-keys: |
             verdicts-${{ matrix.browser }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}"
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}" --octavo-args "${{ inputs.octavo_args }}"
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
       - uses: actions/cache/save@v6
         if: always()
@@ -273,6 +210,23 @@ jobs:
         with:
           path: corpus/.cache/verdicts
           key: verdicts-${{ matrix.browser }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-${{ github.sha }}
+      - name: Diagnose one document
+        if: always() && inputs.diagnose != '' && (inputs.diagnose_browser == '' || inputs.diagnose_browser == matrix.browser)
+        run: |
+          original="corpus/.cache/rendered/${{ inputs.diagnose }}.html"
+          [ -f "$original" ] || original="corpus/.cache/docs/${{ inputs.diagnose }}.html"
+          optimized="out/engines-${{ matrix.browser }}-${{ matrix.shard }}/${{ inputs.diagnose }}.${{ inputs.diagnose_level }}.html"
+          if [ -f "$original" ] && [ -f "$optimized" ]; then
+            node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" out/diagnose/whole
+            target/release/octavo "$original" out/subset.html --level "${{ inputs.diagnose_level }}" --no-cache
+            node verify/screenshots.mjs "$PWD/$original" "$PWD/out/subset.html" "${{ inputs.diagnose_scenario }}" out/diagnose/subset
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always() && inputs.diagnose != '' && (inputs.diagnose_browser == '' || inputs.diagnose_browser == matrix.browser)
+        with:
+          name: diagnose-${{ matrix.browser }}-${{ matrix.shard }}
+          path: out/diagnose
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -321,10 +275,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+        shard: ${{ fromJSON(needs.plan.outputs.engine_shards) }}
     env:
       TIER: ${{ needs.plan.outputs.tier }}
-      SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.shard_count }}
+      SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -353,7 +307,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: corpus/.cache
-          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ needs.plan.outputs.shard_count }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
+          key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/linked.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}"
       - if: always()
@@ -367,7 +321,7 @@ jobs:
 
   totals:
     name: Totals
-    needs: [plan, corpus, engines]
+    needs: [plan, engines]
     if: always() && needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -380,7 +334,7 @@ jobs:
           node-version: 22
       - uses: actions/download-artifact@v8
         with:
-          pattern: corpus-report-*
+          pattern: engines-report-chromium-*
           path: reports
       - uses: actions/download-artifact@v8
         with:
@@ -388,7 +342,7 @@ jobs:
           path: engines
       - run: node verify/merge-reports.mjs reports
       - name: Every engine verified every document
-        run: node verify/coverage-check.mjs reports engines
+        run: node verify/coverage-check.mjs engines "${{ needs.plan.outputs.selected_count }}" "${{ needs.plan.outputs.engine_count }}"
       - name: Engine problems
         if: always()
         run: |

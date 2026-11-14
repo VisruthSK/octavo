@@ -1,54 +1,62 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import test from "node:test";
 import { coverage } from "./coverage-check.mjs";
 
-const layout = ({ corpus, engines }) => {
+const layout = (engines) => {
   const root = mkdtempSync(join(tmpdir(), "coverage-"));
-  const write = (directory, name, count) => {
-    mkdirSync(join(root, directory, name), { recursive: true });
-    writeFileSync(join(root, directory, name, "report.md"), count === null ? "no header\n" : `Tier smoke, ${count} documents, levels safe.\n`);
+  const write = (name, count) => {
+    mkdirSync(join(root, name), { recursive: true });
+    writeFileSync(join(root, name, "report.md"), count === null ? "no header\n" : `Tier smoke, ${count} documents, levels safe.\n`);
   };
-  corpus.forEach((count, at) => write("reports", `corpus-report-${at + 1}`, count));
-  for (const [browser, counts] of Object.entries(engines)) counts.forEach((count, at) => write("engines", `engines-report-${browser}-${at + 1}`, count));
-  return { reports: join(root, "reports"), engines: join(root, "engines") };
+  for (const [browser, counts] of Object.entries(engines)) {
+    counts.forEach((count, at) => write(`engines-report-${browser}-${at + 1}`, count));
+  }
+  return root;
 };
 
-test("every browser covering every document is accepted even with a different shard count", () => {
-  const { reports, engines } = layout({ corpus: [37, 37], engines: { alpha: [19, 18, 19, 18], bravo: [19, 18, 19, 18] } });
-  assert.deepEqual(coverage(reports, engines).problems, []);
+test("every browser covering every document across all shards is accepted", () => {
+  const engines = layout({ alpha: [19, 18, 19, 18], bravo: [19, 18, 19, 18] });
+  assert.deepEqual(coverage(engines, 74, 4).problems, []);
 });
 
-test("half the documents in a browser is reported", () => {
-  const { reports, engines } = layout({ corpus: [37, 37], engines: { alpha: [19, 18], bravo: [19, 18, 19, 18] } });
-  const { problems } = coverage(reports, engines);
-  assert.equal(problems.length, 1);
-  assert.match(problems[0], /alpha verified 37 documents but the corpus has 74/);
+test("browser short a shard is reported", () => {
+  const engines = layout({ alpha: [19, 18, 19], bravo: [19, 18, 19, 18] });
+  const { problems } = coverage(engines, 74, 4);
+  assert.ok(problems.some((problem) => problem.includes("alpha has 3 shard reports but expected 4")));
+});
+
+test("browser with a different total is reported", () => {
+  const engines = layout({ alpha: [18, 18, 18, 18], bravo: [19, 18, 19, 18] });
+  const { problems } = coverage(engines, 74, 4);
+  assert.ok(problems.some((problem) => problem.includes("alpha verified 72 documents but the plan selected 74")));
+  assert.ok(problems.some((problem) => problem.includes("every browser must report the same total number of documents")));
 });
 
 test("a shard report without a document count is reported", () => {
-  const { reports, engines } = layout({ corpus: [10], engines: { alpha: [5, null] } });
-  assert.ok(coverage(reports, engines).problems.some((problem) => problem.includes("have no document count")));
+  const engines = layout({ alpha: [19, 18, 19, null], bravo: [19, 18, 19, 18] });
+  assert.ok(coverage(engines, 74, 4).problems.some((problem) => problem.includes("have no document count")));
 });
 
-test("no engine reports at all is reported", () => {
-  const { reports, engines } = layout({ corpus: [10], engines: {} });
-  assert.ok(coverage(reports, engines).problems.some((problem) => problem.includes("no engine reports")));
-});
-
-test("reports one folder deeper, as the artifact upload lays them out, are counted", () => {
+test("nested report layout, as the artifact upload lays them out, is counted", () => {
   const root = mkdtempSync(join(tmpdir(), "coverage-"));
   const put = (path, count) => {
     mkdirSync(join(root, path), { recursive: true });
-    writeFileSync(join(root, path, "report.md"), `Tier smoke, ${count} documents, levels safe.
-`);
+    writeFileSync(join(root, path, "report.md"), `Tier smoke, ${count} documents, levels safe.\n`);
   };
-  put("reports/corpus-report-1", 10);
-  put("engines/engines-report-alpha-1/engines-alpha-1", 6);
-  put("engines/engines-report-alpha-2/engines-alpha-2", 4);
-  const { problems, byBrowser } = coverage(join(root, "reports"), join(root, "engines"));
+  put("engines-report-alpha-1/engines-alpha-1", 37);
+  put("engines-report-alpha-2/engines-alpha-2", 37);
+  put("engines-report-bravo-1/engines-bravo-1", 37);
+  put("engines-report-bravo-2/engines-bravo-2", 37);
+  const { problems, byBrowser } = coverage(root, 74, 2);
   assert.deepEqual(problems, []);
-  assert.equal(byBrowser.get("alpha").documents, 10);
+  assert.equal(byBrowser.get("alpha").documents, 74);
+  assert.equal(byBrowser.get("bravo").documents, 74);
+});
+
+test("no engine reports at all is reported", () => {
+  const root = mkdtempSync(join(tmpdir(), "coverage-"));
+  assert.ok(coverage(root, 74, 4).problems.some((problem) => problem.includes("no engine reports were found")));
 });
