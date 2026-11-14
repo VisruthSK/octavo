@@ -494,7 +494,7 @@ export default [
     id: "assets-png-as-a-css-background",
     category: "images",
     tier: "full",
-    expect: { outcome: "optimizes", retains: ["data:image/iVBORw0KGgo"] },
+    expect: { outcome: "optimizes", retains: ["data:image/png;base64,iVBORw0KGgo"] },
     build: () => {
       const uri = dataUri("image/png", png({ width: 16, height: 16 }));
       return pageWith(
