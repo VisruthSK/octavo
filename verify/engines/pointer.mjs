@@ -75,12 +75,31 @@ function noteUnreachable(checks, state, detail, unreachableStates) {
   if (unreachableStates.size === 1) checks.unreachable.elements += 1;
 }
 
-export async function focus(page, element) {
-  await page.evaluate(() => document.activeElement?.blur());
-  for (let attempt = 0; attempt < 60; attempt++) {
+const FOCUS_ATTEMPTS = 60;
+
+const walk = async (page, element) => {
+  for (let attempt = 0; attempt < FOCUS_ATTEMPTS; attempt++) {
     await page.keyboard.press("Tab");
     if (await element.evaluate((target) => document.activeElement === target).catch(() => false)) return true;
   }
+  return false;
+};
+
+const restartFromTop = (page) =>
+  page.evaluate(() => {
+    const start = document.createElement("span");
+    start.tabIndex = -1;
+    document.body.prepend(start);
+    start.focus();
+    start.remove();
+  });
+
+export async function focus(page, element) {
+  await page.evaluate(() => document.activeElement?.blur());
+  if (await walk(page, element)) return true;
+  await page.evaluate(() => document.activeElement?.blur());
+  await restartFromTop(page).catch(() => {});
+  if (await walk(page, element)) return true;
   await page.keyboard.down("Tab");
   await element.focus({ timeout: 1000 }).catch(() => {});
   await page.keyboard.up("Tab");
