@@ -349,7 +349,7 @@ jobs:
 
   totals:
     name: Totals
-    needs: [plan, corpus]
+    needs: [plan, corpus, engines]
     if: always() && needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
