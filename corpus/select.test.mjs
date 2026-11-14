@@ -101,7 +101,7 @@ test("the hardest documents take the hardness share first", () => {
     entry("hard-c", "g6", 1000, { scripts: 20, interactive: 40, customProperties: 60, markers: ["slides"] }),
   ];
   const ranked = [...pool].sort(
-    (a, b) => hardnessPerCost(b.features) - hardnessPerCost(a.features) || a.id.localeCompare(b.id),
+    (a, b) => hardnessPerCost(b.features) - hardnessPerCost(a.features) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
   assert.deepEqual(selectSmoke(pool, 5).slice(0, 3), ranked.slice(0, 3).map((item) => item.id));
 });

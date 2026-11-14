@@ -102,7 +102,7 @@ const dimensions = [
 const NEW_GROUP_BONUS = 0.5;
 const HARDNESS_SHARE = 0.6;
 
-const byId = (a, b) => a.id.localeCompare(b.id);
+const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 export function select(pool, count) {
   if (count >= pool.length) return pool.map((entry) => entry.id).sort();
@@ -111,7 +111,7 @@ export function select(pool, count) {
   const points = raw.map((row) => row.map((value, at) => value / scale[at]));
   const distance = (a, b) => Math.hypot(...a.map((value, at) => value - b[at]));
   const centroid = points[0].map((_, at) => points.reduce((total, row) => total + row[at], 0) / points.length);
-  const order = pool.map((_, at) => at).sort((a, b) => pool[a].id.localeCompare(pool[b].id));
+  const order = pool.map((_, at) => at).sort((a, b) => byId(pool[a], pool[b]));
   const nearest = new Array(pool.length).fill(Infinity);
   const groups = new Set();
   const chosen = [];
