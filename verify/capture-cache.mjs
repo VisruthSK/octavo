@@ -57,7 +57,11 @@ export const writeCapture = (key, result, folder = directory) => {
 
 const cacheable = (result) => {
   const screenshots = result.checks?.screenshots;
-  return result.checks?.settled !== false && (!screenshots || screenshots.taken === screenshots.total);
+  return (
+    result.checks?.settled !== false &&
+    result.requests.length === 0 &&
+    (!screenshots || screenshots.taken === screenshots.total)
+  );
 };
 
 export const cachedCapture = async ({ key, folder = directory, capture }) => {

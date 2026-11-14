@@ -194,9 +194,10 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
   const groups = [...Map.groupBy(plans, (plan) => plan.key ?? plan.path).values()];
   const reports = plans.map(() => []);
   const timing = { original: 0, optimized: 0, compare: 0, captureCache: { hits: 0, misses: 0 } };
-  const source = captureCache ? readFileSync(original) : null;
-  const identity = captureCache ? await captureIdentity() : "";
-  const verifier = captureCache ? verifierHash() : "";
+  const caching = captureCache && !linked;
+  const source = caching ? readFileSync(original) : null;
+  const identity = caching ? await captureIdentity() : "";
+  const verifier = caching ? verifierHash() : "";
   const interact = await slots.using(async () => {
     const held = await acquire();
     try {
@@ -254,7 +255,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
       break;
     }
     const startedOriginal = process.hrtime.bigint();
-    const before = await run(original, scenario, captureCache);
+    const before = await run(original, scenario, caching);
     timing.original += elapsed(startedOriginal);
     if (before.crashed?.includes("capture timed out")) {
       failRemainder(scenarioAt, before.crashed);

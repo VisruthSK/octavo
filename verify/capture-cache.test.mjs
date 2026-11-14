@@ -128,6 +128,33 @@ test("a capture that never settled is not cached", async () => {
   assert.deepEqual(readCapture(unsettled, folder).checks.settled, true);
 });
 
+test("a capture that fetched from the network is not cached", async () => {
+  const remote = join(folder, "remote.html");
+  writeFileSync(remote, '<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title><script src="http://127.0.0.1:9/x.js"></script></head><body><p>one</p></body></html>');
+  const key = captureKey({ ...parts, original: readFileSync(remote) });
+  const outcome = await cachedCapture({ key, folder, capture: () => capture(browser, remote, scenario, false, { interact: true }) });
+  assert.equal(outcome.cached, false);
+  assert.deepEqual(outcome.result.requests, ["http://127.0.0.1:9/x.js"]);
+  assert.equal(readCapture(key, folder), null);
+  assert.deepEqual((await fresh()).requests, []);
+});
+
+test("a linked verification ignores the capture cache", async () => {
+  process.env.OCTAVO_PAGES ??= "2";
+  const { closeBrowser, verifyLevels } = await import("./verify.mjs");
+  try {
+    const linked = join(folder, "linked.html");
+    writeFileSync(linked, html);
+    const { timing } = await verifyLevels(linked, [{ level: "scripts", path: linked, only: ["desktop-light"] }], {
+      captureCache: true,
+      linked: true,
+    });
+    assert.deepEqual(timing.captureCache, { hits: 0, misses: 0 });
+  } finally {
+    await closeBrowser();
+  }
+});
+
 test("a mismatched key in the file is ignored", async () => {
   const other = captureKey({ ...parts, scenario: "print" });
   writeCapture(other, await fresh(), folder);
