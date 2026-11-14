@@ -224,7 +224,16 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       return pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
     }),
     writingModes: elements.map((el) => getComputedStyle(el).writingMode),
-    fonts: [...document.fonts].filter((font) => font.status === "loaded").map((font) => font.family).sort(),
+    fonts: (() => {
+      const weights = { normal: "400", bold: "700" };
+      const faces = new Map();
+      for (const font of document.fonts) {
+        if (font.status !== "loaded") continue;
+        const stretch = font.stretch === "normal" ? "100%" : font.stretch;
+        faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch, font.unicodeRange].join("|"), font.family);
+      }
+      return [...faces.values()].sort();
+    })(),
     sheets: document.styleSheets.length,
     scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
   };
