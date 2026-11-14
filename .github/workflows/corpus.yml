@@ -325,36 +325,3 @@ jobs:
           name: linked-report-${{ matrix.shard }}
           path: out/linked/report.md
           if-no-files-found: ignore
-
-  totals:
-    name: Totals
-    needs: [plan, engines]
-    if: always() && needs.plan.outputs.tier != 'select'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: engines-report-chromium-*
-          path: reports
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: engines-report-*
-          path: engines
-      - run: node verify/merge-reports.mjs reports
-      - name: Every engine verified every document
-        run: node verify/coverage-check.mjs engines "${{ needs.plan.outputs.selected_count }}" "${{ needs.plan.outputs.engine_count }}"
-      - name: Engine problems
-        if: always()
-        run: |
-          for report in engines/*/report.md engines/*/*/report.md; do
-            [ -f "$report" ] || continue
-            echo "### $(basename "$report")" >> "$GITHUB_STEP_SUMMARY"
-            sed -n '/^## Problems/,/^## Browser/p' "$report" >> "$GITHUB_STEP_SUMMARY"
-          done

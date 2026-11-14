@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -11,6 +11,7 @@ import { readRendered, renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
 import { scenariosFor } from "./capture.mjs";
 import { engine, engineNotice, checksOf } from "./engines/index.mjs";
+import { checkShardCoverage, expectedShardDocuments } from "./shard-coverage.mjs";
 
 const SLOWDOWN_LIMIT = 100;
 const RATE_FLOOR_BYTES = 256 * 1024;
@@ -111,6 +112,17 @@ const allHandWritten = (await materialize())
 const handWritten = shardSlice(allHandWritten, shard, costs);
 const rows = [...handWritten, ...upstreamRows];
 const selected = rows.filter((row) => (tier === "full" || row.tier === "smoke") && filter.test(row.id));
+const selectionFile = join(root, "corpus", "selection.json");
+const upstreamSelection = existsSync(selectionFile) ? JSON.parse(readFileSync(selectionFile, "utf8")) : [];
+const expectedDocuments = expectedShardDocuments({
+  manifest: allHandWritten,
+  selection: upstreamSelection,
+  tier,
+  shard,
+  costs,
+  filter,
+  upstream,
+});
 rmSync(outDirectory, { recursive: true, force: true });
 mkdirSync(outDirectory, { recursive: true });
 
@@ -418,6 +430,22 @@ if (browser) {
     ...browserChecks.unreachableDetails.map((entry) => `- ${entry.id} (${entry.scenario}, ${entry.side}): ${entry.details.join("; ")}`),
   );
 }
+
+const coverage = checkShardCoverage({
+  expected: expectedDocuments,
+  results,
+  shard: { position: shardPosition || 1, count: shardCount || 1 },
+  browser,
+});
+
+if (!coverage.ok) {
+  for (const problem of coverage.problems) {
+    console.error(`Coverage failure: ${problem}`);
+    failures.push({ id: `shard-${shardPosition || 1}`, level: "coverage", problems: [problem] });
+  }
+}
+
+lines.push(coverage.message);
 
 writeFileSync(join(outDirectory, "report.md"), `${lines.join("\n")}\n`);
 writeFileSync(join(outDirectory, "report.json"), `${JSON.stringify(results.map(({ input, output, ...rest }) => rest), null, 2)}\n`);
