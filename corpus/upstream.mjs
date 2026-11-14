@@ -2,7 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
-import { dirname, join, posix, relative } from "node:path";
+import { basename, dirname, join, posix, relative } from "node:path";
 import { cacheDirectory } from "./build.mjs";
 import { featuresOf, selectStratified } from "./select.mjs";
 
@@ -101,7 +101,7 @@ export const featureOf = (path) => {
 
 const render = (file, outputDirectory, embed = true) =>
   new Promise((done) => {
-    const child = spawn(quarto, ["render", file, ...(embed ? ["-M", "embed-resources:true"] : []), "--output-dir", outputDirectory, "--quiet"], {
+    const child = spawn(quarto, ["render", file, ...(embed ? ["-M", "embed-resources:true"] : []), ...(outputDirectory ? ["--output-dir", outputDirectory] : []), "--quiet"], {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
@@ -251,15 +251,21 @@ export async function renderSelected({ jobs = 4, tier = "full", shard } = {}) {
   return done;
 }
 
-export async function renderLinked(entry, outputDirectory) {
+export async function renderLinked(entry) {
   const source = readJson(sourcesPath).find((candidate) => candidate.name === entry.source.name);
   const file = join(extract(source, await download(source)), entry.source.path);
-  return inDirectory(dirname(file), async () => {
-    rmSync(outputDirectory, { recursive: true, force: true });
-    mkdirSync(outputDirectory, { recursive: true });
-    const outcome = await render(file, outputDirectory, false);
-    const page = readdirSync(outputDirectory).find((name) => name.endsWith(".html"));
-    return { ...outcome, page: page ? join(outputDirectory, page) : null };
+  const home = dirname(file);
+  const stem = basename(file, ".qmd");
+  const page = join(home, `${stem}.html`);
+  const files = join(home, `${stem}_files`);
+  const discard = () => {
+    rmSync(page, { force: true });
+    rmSync(files, { recursive: true, force: true });
+  };
+  return inDirectory(home, async () => {
+    discard();
+    const outcome = await render(file, undefined, false);
+    return { ...outcome, page: existsSync(page) ? page : null, directory: home, discard };
   });
 }
 
