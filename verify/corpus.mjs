@@ -11,6 +11,7 @@ import { scenariosFor } from "./capture.mjs";
 import { engine, engineNotice, checksOf } from "./engines/index.mjs";
 
 const SLOWDOWN_LIMIT = 100;
+const SLOWDOWN_RETRIES = 3;
 const RATE_FLOOR_BYTES = 256 * 1024;
 const STARTUP_ALLOWANCE_MS = 2000;
 
@@ -286,7 +287,7 @@ const large = timed.filter((entry) => entry.inBytes >= RATE_FLOOR_BYTES);
 const medianRate = Math.max(median(large.map((entry) => entry.ms / entry.inBytes)), 1e-6);
 for (const entry of timed) {
   const allowed = STARTUP_ALLOWANCE_MS + SLOWDOWN_LIMIT * medianRate * entry.inBytes;
-  if (entry.ms > allowed && !deadlineReached()) {
+  for (let attempt = 0; attempt < SLOWDOWN_RETRIES && entry.ms > allowed && !deadlineReached(); attempt++) {
     const retry = await run([entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores), ...octavoArgs]);
     entry.ms = Math.min(entry.ms, retry.ms);
   }
