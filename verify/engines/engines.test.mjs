@@ -137,6 +137,9 @@ test("webkit error comparison keeps the error kind and ignores the source snippe
   assert.equal(firefox.normalizeError("can't access property \"querySelector\", ev.currentSlide is undefined"), "can't access property \"querySelector\", <value> is undefined");
   assert.equal(firefox.normalizeError("can't access property \"querySelector\", e.currentSlide is undefined"), firefox.normalizeError("can't access property \"querySelector\", ev.currentSlide is undefined"));
   assert.notEqual(firefox.normalizeError("can't access property \"querySelector\", e.x is undefined"), firefox.normalizeError("can't access property \"classList\", e.x is undefined"));
+  const deep = (file) => `[JavaScript Error: "The document tree is too deep. The tree will be flattened to be 513 elements deep." {file: "${file}" line: 1}]`;
+  assert.equal(firefox.normalizeError(deep("file:///a/original/page.html")), firefox.normalizeError(deep("file:///b/optimized/other.html")));
+  assert.notEqual(firefox.normalizeError(deep("file:///a/lib.js")), firefox.normalizeError(deep("file:///a/other.js")));
 });
 
 test("a timed out capture closes its own browser context", async () => {

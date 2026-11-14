@@ -22,4 +22,6 @@ export const identity = (browser, { channel = "" } = {}) => {
 export const settle = (page, settlePage, options) => settlePage(page, options);
 const PROPERTY_ACCESS_ON_VALUE = /(can't access property "[^"]*", )\S+( is (?:undefined|null))/g;
 
-export const normalizeError = (message) => message.replace(PROPERTY_ACCESS_ON_VALUE, "$1<value>$2");
+const OWN_PAGE_FILE = /({file: ")[^"]*.html(")/g;
+
+export const normalizeError = (message) => message.replace(PROPERTY_ACCESS_ON_VALUE, "$1<value>$2").replace(OWN_PAGE_FILE, "$1<page>$2");
