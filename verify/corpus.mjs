@@ -32,6 +32,7 @@ const jobs = Number(flag("jobs", Math.max(1, Math.floor(cores / 2))));
 const threads = Math.max(1, Math.floor(cores / jobs));
 const browser = process.argv.includes("--browser");
 const verdictCache = !process.argv.includes("--no-verdict-cache");
+const captureCache = !process.argv.includes("--no-capture-cache");
 const upstream = !process.argv.includes("--no-upstream");
 const octavoArgs = flag("octavo-args", "").split(/\s+/).filter(Boolean);
 const outDirectory = resolve(flag("out", join(root, "out", "corpus")));
@@ -160,7 +161,7 @@ const results = await pool(work, jobs, async ({ row, level }) => {
   };
 }, deadlineFailure);
 
-const timing = { original: 0, optimized: 0, compare: 0, cached: 0 };
+const timing = { original: 0, optimized: 0, compare: 0, cached: 0, captureCache: { hits: 0, misses: 0 } };
 const browserCache = { hits: 0, misses: 0 };
 let browserName = "";
 const engineTag = engine.tag;
@@ -209,10 +210,12 @@ if (browser) {
       plans.push({ level: entry.level, path: entry.output, key, optimized });
     }
     if (!plans.length) return;
-    const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })), { deadlineReached });
+    const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })), { deadlineReached, captureCache });
     timing.original += measured.timing.original;
     timing.optimized += measured.timing.optimized;
     timing.compare += measured.timing.compare;
+    timing.captureCache.hits += measured.timing.captureCache.hits;
+    timing.captureCache.misses += measured.timing.captureCache.misses;
     for (const [at, plan] of plans.entries()) {
       const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
       const report = measured.reports[at];
@@ -323,6 +326,7 @@ if (browser) {
     `| cached | ${(timing.cached / 1000).toFixed(1)} |`,
     ``,
     `Verdict cache: ${browserCache.hits} of ${browserCache.hits + browserCache.misses} comparisons served from the cache by ${browserName}.`,
+    `Capture cache: ${timing.captureCache.hits} of ${timing.captureCache.hits + timing.captureCache.misses} original captures served from the cache.`,
     ``,
   );
 }
