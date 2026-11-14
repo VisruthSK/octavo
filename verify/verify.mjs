@@ -1,8 +1,11 @@
 import { cpus } from "node:os";
+import { readFileSync } from "node:fs";
+import { captureKey, cachedCapture } from "./capture-cache.mjs";
 import { capture, hasInteractions, scenariosFor } from "./capture.mjs";
 import { compare, signature } from "./compare.mjs";
 import { checksOf, engine, engineNotice, launch, withIncompleteCheckIssues } from "./engines/index.mjs";
 import { worthRetrying } from "./transient.mjs";
+import { verifierHash } from "./verdicts.mjs";
 
 const wanted = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
 const isolated = engine.isolated;
@@ -86,6 +89,9 @@ export async function browserIdentity() {
 }
 
 const crashed = (error) => ({ crashed: error.message.slice(0, 200), states: [] });
+
+let engineIdentity;
+const captureIdentity = () => (engineIdentity ??= browserIdentity());
 
 const RECAPTURES = 3;
 const COMPARISON_TIMEOUT_MS = 660_000;
@@ -181,13 +187,16 @@ const unionOf = (plans) => {
 
 const orderOf = (plans) => unionOf(plans).map((scenario) => scenario.name);
 
-export async function verifyLevels(original, entries, { lossy = false, deadlineReached = () => false, roots, linked = false } = {}) {
+export async function verifyLevels(original, entries, { lossy = false, deadlineReached = () => false, roots, linked = false, captureCache = false } = {}) {
   const rootFor = (file) => (roots ? (file === original ? roots.original : roots.optimized) : undefined);
   const plans = entries.map((entry) => ({ ...entry, set: scenariosFor(entry.level).filter(({ name }) => !entry.only || entry.only.includes(name)) }));
   const planIndex = new Map(plans.map((plan, index) => [plan, index]));
   const groups = [...Map.groupBy(plans, (plan) => plan.key ?? plan.path).values()];
   const reports = plans.map(() => []);
-  const timing = { original: 0, optimized: 0, compare: 0 };
+  const timing = { original: 0, optimized: 0, compare: 0, captureCache: { hits: 0, misses: 0 } };
+  const source = captureCache ? readFileSync(original) : null;
+  const identity = captureCache ? await captureIdentity() : "";
+  const verifier = captureCache ? verifierHash() : "";
   const interact = await slots.using(async () => {
     const held = await acquire();
     try {
@@ -196,11 +205,32 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
       await held.release();
     }
   }).catch(() => true);
-  const run = (file, scenario) =>
+  const keyFor = (scenario) =>
+    captureKey({
+      original: source,
+      scenario: scenario.name,
+      engine: identity,
+      verifier,
+      interactions: JSON.stringify({
+        interact,
+        linked,
+        linkedOriginal: linked,
+        lossy,
+        root: rootFor(original) ?? null,
+        sweep: Boolean(scenario.sweep),
+      }),
+    });
+  const run = (file, scenario, cache = false) =>
     slots.using(async () => {
+      const options = { interact, root: rootFor(file), linked, linkedOriginal: linked && file === original };
       try {
         return await withTimeout(
-          () => take(file, scenario, lossy, { interact, root: rootFor(file), linked, linkedOriginal: linked && file === original }),
+          async () => {
+            if (!cache) return await take(file, scenario, lossy, options);
+            const outcome = await cachedCapture({ key: keyFor(scenario), capture: () => take(file, scenario, lossy, options) });
+            timing.captureCache[outcome.cached ? "hits" : "misses"] += 1;
+            return outcome.result;
+          },
           COMPARISON_TIMEOUT_MS,
           closeBrowser,
         );
@@ -224,7 +254,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
       break;
     }
     const startedOriginal = process.hrtime.bigint();
-    const before = await run(original, scenario);
+    const before = await run(original, scenario, captureCache);
     timing.original += elapsed(startedOriginal);
     if (before.crashed?.includes("capture timed out")) {
       failRemainder(scenarioAt, before.crashed);
@@ -294,12 +324,12 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
   return { reports, timing };
 }
 
-export async function verify(original, optimized, { lossy = false, level = "safe", only, roots, linked = false } = {}) {
+export async function verify(original, optimized, { lossy = false, level = "safe", only, roots, linked = false, captureCache = false } = {}) {
   const files = [optimized].flat();
   const { reports } = await verifyLevels(
     original,
     files.map((path) => ({ level, path, only })),
-    { lossy, roots, linked },
+    { lossy, roots, linked, captureCache },
   );
   return Array.isArray(optimized) ? reports : reports[0];
 }
@@ -307,7 +337,7 @@ export async function verify(original, optimized, { lossy = false, level = "safe
 if (process.argv[1].endsWith("verify.mjs")) {
   const flags = process.argv.slice(2).filter((arg) => arg.startsWith("--"));
   const [original, optimized] = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
-  const report = (await verify(original, optimized, { lossy: flags.includes("--lossy") })).filter(
+  const report = (await verify(original, optimized, { lossy: flags.includes("--lossy"), captureCache: !flags.includes("--no-capture-cache") })).filter(
     ({ scenario }) => !(flags.includes("--allow-js-required") && scenario === "no-js"),
   );
   await closeBrowser();
