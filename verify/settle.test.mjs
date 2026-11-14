@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { launch } from "./browser.mjs";
+import { launch } from "./engines/index.mjs";
 import { capture, scenariosFor, settle, trackTimers } from "./capture.mjs";
 
 const directory = mkdtempSync(join(tmpdir(), "octavo-settle-"));

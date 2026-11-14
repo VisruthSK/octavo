@@ -9,6 +9,21 @@ const generated = (count, seed) => {
 
 export default [
   {
+    id: "css-modern-selectors-and-at-rules-survive",
+    category: "css",
+    tier: "smoke",
+    expect: {
+      outcome: "optimizes",
+      retains: [".card:has(", "@layer base", "@container", ":is(.a,.b)"],
+      removes: [".nowhere{"],
+    },
+    build: () =>
+      page(
+        `<style>@layer base{.card{display:block;container-type:inline-size}}.card:has(>img){border:2px solid green}:is(.a,.b) p{color:red}.card{& span{color:blue}}@container (min-width:100px){.card p{font-weight:700}}.nowhere{margin-left:2px}</style>`,
+        '<div class="card a"><img alt="" width="4" height="4" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><p>text <span>nested</span></p></div>',
+      ),
+  },
+  {
     id: "css-class-reachable-only-from-markup",
     category: "css",
     tier: "smoke",

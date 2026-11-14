@@ -11,10 +11,11 @@ ci = "github"
 installers = ["shell", "powershell"]
 # Files to include in each archive besides the licenses and README
 include = ["THIRD-PARTY-LICENSES.txt"]
+
 github-attestations = true
-publish-prereleases = true
 # The gates run after the builds and before the GitHub Release is created. A failed gate stops the release.
-publish-jobs = ["./ci", "./corpus"]
+pr-run-mode = "skip"
+plan-jobs = ["./ci", "./corpus"]
 github-build-setup = "../build-setup.yml"
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = [

@@ -1,6 +1,6 @@
 # Octavo corpus
 
-The corpus is 783 documents that Octavo is tested against: 318 hand-written fixtures and 465 documents from Quarto's own test suite. Each one states what Octavo should do with it, and the runner checks that outcome at every level and, with `--browser`, that the optimized page renders the same as the original in Chromium.
+The corpus is 783 documents that Octavo is tested against: 318 hand-written fixtures and 465 documents from Quarto's own test suite. Each one states what Octavo should do with it, and the runner checks that outcome at every level and, with `--browser`, that the optimized page renders the same as the original in Chromium, Firefox or WebKit.
 
 | Source | Documents | Purpose |
 |---|---|---|
@@ -32,6 +32,8 @@ node corpus/upstream.mjs --select
 ```
 
 The first command checks the pinned list, hardness ordering, quotas, determinism and the cost cap without touching the network. The second rebuilds `selection.json` with the new tiers; it needs Quarto and the pinned release in `sources.json`, so it is run by a maintainer when the corpus or the weights change.
+
+The `engines` job repeats the browser comparison in Chromium, Firefox and WebKit over the whole tier, split across the same shards as the other jobs, with `OCTAVO_BROWSER` set to the engine. Every engine runs the same scenarios and the same checks, and failures are prefixed with the engine name.
 
 ## Hand-written fixtures
 
@@ -108,7 +110,7 @@ node verify/corpus.mjs --tier full --browser --filter '^css-'
 |---|---|
 | `--tier smoke\|full` | Which tier to run. The default is `smoke` |
 | `--levels safe,scripts,packed` | Which levels to run. The default is `safe,packed` for `smoke` and all three for `full` |
-| `--browser` | Compare each optimized page with the original in Chromium |
+| `--browser` | Compare each optimized page with the original in the engine named by `OCTAVO_BROWSER` |
 | `--filter <regex>` | Run only documents whose id matches |
 | `--jobs <n>` | Documents processed at once |
 | `--shard K/N` | One share of the documents, matching the flag on `upstream.mjs` |

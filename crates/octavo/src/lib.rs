@@ -3,7 +3,8 @@
 //!
 //! A document goes through a fixed series of stages: dead Quarto runtime
 //! libraries are removed, scripts and stylesheets are minified and pruned,
-//! fonts are converted to WOFF2 (icon fonts are subsetted to the glyphs the
+//! fonts are converted to WOFF2 (text fonts are subsetted, hinted static
+//! fonts are kept whole, and icon fonts are subsetted to the glyphs the
 //! CSS can reach), and images are recompressed.
 //! Each stage reads the document and returns edits to byte ranges, so
 //! anything Octavo does not understand stays exactly as it was.
@@ -27,6 +28,7 @@ mod check;
 mod css;
 mod data;
 mod doc;
+mod embed;
 mod fonts;
 mod html;
 mod images;
@@ -36,6 +38,7 @@ mod quarto;
 mod words;
 
 pub use check::Url;
+pub use embed::{Embedded, Loaded, Resources, embed_resources};
 
 use doc::{Doc, Edit, Edits};
 use std::{
@@ -58,6 +61,7 @@ use std::{
 /// # Ok::<(), octavo::Error>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Mode {
     /// Minify and prune. The output needs nothing the original did not.
     Safe,
@@ -99,16 +103,19 @@ impl FromStr for Mode {
 
 /// Settings for [`simplify`].
 ///
-/// The default keeps images lossless, keeps text fonts whole and keeps license
-/// notices.
+/// The default keeps images lossless, subsets text fonts to the characters
+/// the document uses (keeping hinted static fonts whole, because Chromium
+/// draws them with slightly different strokes on Linux after subsetting)
+/// and keeps license notices.
 ///
 /// ```
 /// use octavo::{simplify, Options};
 ///
 /// let options = Options::default();
-/// assert!(options.images.is_none() && !options.subset_text_fonts && !options.strip_licenses);
+/// assert!(options.images.is_none() && options.subset_text_fonts && !options.strip_licenses);
 /// ```
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Options {
     /// Re-encode embedded PNG and JPEG images when that makes them smaller.
     /// `None` keeps them as they are, recompressed losslessly.
@@ -116,12 +123,15 @@ pub struct Options {
     /// Subset embedded text fonts to the characters in the document plus
     /// the Latin letters, digits and punctuation, keeping every layout
     /// feature and all kerning. This is often the largest saving in a themed
-    /// document, but it is off by default: on Linux, Chromium draws some
-    /// hinted fonts, such as Fira Sans, with slightly different strokes after
-    /// subsetting, so the output is not pixel-exact everywhere. Text that
-    /// JavaScript adds later with characters outside that set falls back to a
-    /// system font. Icon fonts are always subsetted to the glyphs the CSS can
-    /// reach.
+    /// document, and it is on by default. Hinted static fonts, those with
+    /// `fpgm`, `prep` and `cvt ` tables, are kept whole instead, because
+    /// Chromium on Linux draws them with slightly different strokes after
+    /// subsetting; variable fonts and fonts without hinting programs are
+    /// subsetted. When a font is kept whole for this reason, an entry with
+    /// [`Transform::FontKeptWhole`] appears in [`Applied`], so audits show
+    /// it. Text that JavaScript adds later with characters outside that set
+    /// falls back to a system font. Icon fonts are always subsetted to the
+    /// glyphs the CSS can reach.
     pub subset_text_fonts: bool,
     /// Drop the license and copyright notices of bundled libraries and
     /// fonts. Most open-source licenses require them to stay with copies,
@@ -130,6 +140,19 @@ pub struct Options {
     /// and the copyright and license fields of a subsetted font move into a
     /// comment beside its `@font-face`.
     pub strip_licenses: bool,
+    /// Keep PNG images as PNG. By default an 8-bit PNG without colour
+    /// profile, gamma or animation chunks is re-encoded as lossless WebP when
+    /// that is smaller, which decodes to the same pixels. Every current
+    /// browser reads WebP, and on screenshots and charts it is often a third
+    /// of the PNG's size.
+    pub keep_png: bool,
+    /// The most memory, in bytes, that the lossless WebP encoder may use at
+    /// once across all images, or `None` for [`Options::DEFAULT_IMAGE_MEMORY`].
+    /// The encoder needs about 20 bytes per pixel, so an 81 megapixel image
+    /// needs about 1.6 GB. Images that need more than the limit stay PNG, and
+    /// the others wait for memory, so a lower limit costs time and a higher one
+    /// costs memory.
+    pub image_memory: Option<u64>,
     /// The root of the cache that remembers work between runs, with one
     /// subfolder per kind of entry. Today that is `fonts`: fonts converted
     /// whole, which are the slowest step in most documents and repeat across
@@ -143,6 +166,27 @@ pub struct Options {
     pub compression: Compression,
 }
 
+impl Options {
+    /// The memory limit for the lossless WebP encoder when
+    /// [`Options::image_memory`] is `None`: 2.5 GiB, which fits one 81
+    /// megapixel image at a time.
+    pub const DEFAULT_IMAGE_MEMORY: u64 = 2_684_354_560;
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            images: None,
+            subset_text_fonts: true,
+            strip_licenses: false,
+            keep_png: false,
+            image_memory: None,
+            cache_directory: None,
+            compression: Compression::default(),
+        }
+    }
+}
+
 /// How much time to spend compressing.
 ///
 /// ```
@@ -150,10 +194,13 @@ pub struct Options {
 ///
 /// assert_eq!(Compression::default(), Compression::Balanced);
 /// assert!(Compression::Maximum.tuning().woff2_quality > Compression::Balanced.tuning().woff2_quality);
-/// let custom = Compression::Custom(Tuning { png_preset: Some(0), ..Tuning::BALANCED });
+/// let mut tuning = Tuning::BALANCED;
+/// tuning.png_preset = Some(0);
+/// let custom = Compression::Custom(tuning);
 /// assert_eq!(custom.tuning().png_preset, Some(0));
 /// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Compression {
     /// A good balance: output a few percent larger than the smallest
     /// possible, in a fraction of the time.
@@ -182,6 +229,7 @@ impl Compression {
 /// The compressor settings behind a [`Compression`]. Values above a
 /// setting's range count as its maximum.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Tuning {
     /// The Brotli quality of re-encoded WOFF2 fonts, 0 to 11.
     pub woff2_quality: u8,
@@ -267,6 +315,7 @@ impl Quality {
 /// assert_eq!("webp".parse::<ImageFormat>(), Ok(ImageFormat::Webp));
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ImageFormat {
     /// AVIF: the smallest, and decoded by every current browser.
     Avif,
@@ -309,6 +358,7 @@ impl FromStr for ImageFormat {
 /// assert_eq!(encoding.max_side.map(|side| side.get()), Some(3840));
 /// ```
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct ImageEncoding {
     /// The format to encode to.
     pub format: ImageFormat,
@@ -352,6 +402,7 @@ impl ImageEncoding {
 /// assert_eq!(Transform::DeadLibrary.to_string(), "dead-library");
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum Transform {
     /// A Quarto runtime library the document never uses was removed.
     DeadLibrary,
@@ -363,6 +414,10 @@ pub enum Transform {
     RecompressedPng,
     /// An image was re-encoded in a lossy format.
     ReencodedImage,
+    /// An hinted static text font was kept whole instead of subsetted,
+    /// because Chromium draws hinted static fonts differently on Linux
+    /// after subsetting.
+    FontKeptWhole,
     /// Resources were compressed into one blob.
     Packed,
 }
@@ -375,6 +430,7 @@ impl fmt::Display for Transform {
             Transform::PrunedStylesheet => "stylesheet-pruned",
             Transform::RecompressedPng => "png-recompressed",
             Transform::ReencodedImage => "image-reencoded",
+            Transform::FontKeptWhole => "font-kept-whole",
             Transform::Packed => "packed",
         })
     }
@@ -388,6 +444,7 @@ impl fmt::Display for Transform {
 /// assert_eq!(Target::Library(Library::Clipboard).to_string(), "ClipboardJS");
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum Library {
     /// `tippy.js`, bundled with Quarto to power footnote, citation and
     /// cross-reference popups.
@@ -438,6 +495,7 @@ impl fmt::Display for Library {
 /// assert_eq!(Target::Resources(NonZeroUsize::new(3).expect("non-zero")).to_string(), "3 resources");
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Target {
     /// A bundled library, named by the global it defined.
     Library(Library),
@@ -468,6 +526,7 @@ impl fmt::Display for Target {
 /// # Ok::<(), octavo::Error>(())
 /// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Applied {
     /// What kind of change this was.
     pub transform: Transform,
@@ -477,6 +536,22 @@ pub struct Applied {
     pub before: usize,
     /// Size after, in bytes.
     pub after: usize,
+}
+
+/// One edit the engine rejected because another edit claimed the same bytes.
+///
+/// Skipped edits are not applied and their sizes do not contribute to the
+/// byte accounting: the `after` minus `before` deltas of the [`Applied`]
+/// entries sum to the difference between the output and input sizes.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct Skipped {
+    /// The transformation that lost.
+    pub transform: Transform,
+    /// What it would have changed.
+    pub target: Target,
+    /// The transformation whose edit kept the contested bytes.
+    pub winner: Transform,
 }
 
 /// Something worth knowing about a document that does not stop optimization.
@@ -522,11 +597,18 @@ impl fmt::Display for Warning {
 /// # Ok::<(), octavo::Error>(())
 /// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Output {
     /// The optimized HTML.
     pub html: String,
     /// Every transformation applied, in order.
     pub applied: Vec<Applied>,
+    /// Every edit rejected because another edit claimed the same bytes, with
+    /// the transform that lost and the one that won.
+    ///
+    /// The `after` minus `before` deltas of `applied` sum to `html.len()`
+    /// minus the input length; skipped edits change nothing.
+    pub skipped: Vec<Skipped>,
     /// Things worth knowing about the input, such as resources it loads from
     /// the network and therefore cannot work without one.
     pub warnings: Vec<Warning>,
@@ -540,6 +622,7 @@ pub struct Output {
 /// assert_eq!(optimize("just some words", Mode::Safe).unwrap_err(), Error::NotHtml);
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Error {
     /// The input has no `<html>` element.
     NotHtml,
@@ -578,6 +661,21 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// Whether `src` links no local file, which is what [`optimize`] and
+/// [`simplify`] require. A document that fails this check can be passed
+/// through [`embed_resources`] first.
+///
+/// ```
+/// use octavo::is_self_contained;
+///
+/// assert!(is_self_contained("<html><head><style>a{}</style></head></html>"));
+/// assert!(!is_self_contained("<html><head><script src=\"app.js\"></script></head></html>"));
+/// ```
+#[must_use]
+pub fn is_self_contained(src: &str) -> bool {
+    check::links(&Doc::new(src)).is_self_contained()
+}
 
 /// Optimizes `src` in the given mode with the default [`Options`].
 ///
@@ -630,14 +728,25 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     } else {
         Licenses::Keep
     };
-    let (images, (removals, scripts, styles)) = rayon::join(
-        || images::stage(&doc, options.images, options.compression.tuning()),
+    let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
+        || {
+            images::stage(
+                &doc,
+                options.images,
+                options.compression.tuning(),
+                (!options.keep_png).then(|| {
+                    options
+                        .image_memory
+                        .unwrap_or(Options::DEFAULT_IMAGE_MEMORY)
+                }),
+            )
+        },
         || {
             let (markup, parts) = rayon::join(|| doc.markup(), || doc.word_parts());
             let removals = quarto::stage(&doc, &markup);
             let removed: Vec<Range<usize>> =
                 removals.iter().map(|edit| edit.span.clone()).collect();
-            let (scripts, styles) = rayon::join(
+            let (scripts, (styles, kept_whole)) = rayon::join(
                 || js::stage(&doc, &removed, licenses),
                 || {
                     let words = doc.words(markup, parts, &removed);
@@ -651,7 +760,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
                     )
                 },
             );
-            (removals, scripts, styles)
+            (removals, scripts, styles, kept_whole)
         },
     );
     let edits: Vec<Edit> = removals
@@ -661,7 +770,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         .chain(images)
         .collect();
     let edits = Edits::new(edits);
-    let applied = edits
+    let mut applied: Vec<Applied> = edits
         .kept()
         .iter()
         .map(|edit| Applied {
@@ -671,11 +780,27 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             after: edit.text.len(),
         })
         .collect();
+    applied.extend(kept_whole.into_iter().map(|(family, bytes)| Applied {
+        transform: Transform::FontKeptWhole,
+        target: Target::Resource(family),
+        before: bytes,
+        after: bytes,
+    }));
+    let skipped: Vec<Skipped> = edits
+        .skipped()
+        .iter()
+        .map(|edit| Skipped {
+            transform: edit.transform,
+            target: edit.target.clone(),
+            winner: edit.winner,
+        })
+        .collect();
     let html = edits.apply(src);
     Ok(Simplified {
         scanned: html::Scanned::new(html),
         compression: options.compression,
         applied,
+        skipped,
         warnings: links
             .remote()
             .cloned()
@@ -699,9 +824,11 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
 /// # Ok::<(), octavo::Error>(())
 /// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Simplified {
     scanned: html::Scanned,
     applied: Vec<Applied>,
+    skipped: Vec<Skipped>,
     warnings: Vec<Warning>,
     compression: Compression,
 }
@@ -722,6 +849,21 @@ impl Simplified {
         &self.warnings
     }
 
+    /// The edits that were rejected because another edit claimed the same
+    /// bytes. Each names the transform that lost and the one that won.
+    ///
+    /// ```
+    /// use octavo::{simplify, Options};
+    ///
+    /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
+    /// assert!(simplified.skipped().is_empty());
+    /// # Ok::<(), octavo::Error>(())
+    /// ```
+    #[must_use]
+    pub fn skipped(&self) -> &[Skipped] {
+        &self.skipped
+    }
+
     /// Produces the final document for `mode`, keeping the unpacked document
     /// when packing would not make it smaller.
     ///
@@ -738,6 +880,7 @@ impl Simplified {
         let unpacked = || Output {
             html: self.scanned.html().to_string(),
             applied: self.applied.clone(),
+            skipped: self.skipped.clone(),
             warnings: self.warnings.clone(),
         };
         if mode == Mode::Safe {
@@ -758,6 +901,7 @@ impl Simplified {
         Output {
             html: packed.html,
             applied,
+            skipped: self.skipped.clone(),
             warnings: self.warnings.clone(),
         }
     }

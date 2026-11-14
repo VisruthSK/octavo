@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
-import { launch } from "./browser.mjs";
+import { launch } from "./engines/index.mjs";
 import { capture, scenarios } from "./capture.mjs";
 import { differences } from "./compare.mjs";
 

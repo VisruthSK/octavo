@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { launch } from "./browser.mjs";
+import { launch } from "./engines/index.mjs";
 
 const binary = new URL(`../target/release/octavo${process.platform === "win32" ? ".exe" : ""}`, import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
 const dir = mkdtempSync(join(tmpdir(), "octavo-"));

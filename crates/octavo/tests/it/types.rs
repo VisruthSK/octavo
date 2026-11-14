@@ -84,6 +84,7 @@ fn each_transform_has_a_name() {
     assert_eq!(Transform::PrunedStylesheet.to_string(), "stylesheet-pruned");
     assert_eq!(Transform::RecompressedPng.to_string(), "png-recompressed");
     assert_eq!(Transform::ReencodedImage.to_string(), "image-reencoded");
+    assert_eq!(Transform::FontKeptWhole.to_string(), "font-kept-whole");
     assert_eq!(Transform::Packed.to_string(), "packed");
 }
 
@@ -109,9 +110,9 @@ fn a_remote_resource_warning_carries_the_url() {
 }
 
 #[test]
-fn defaults_are_lossless_and_keep_text_fonts_whole() {
+fn defaults_are_lossless_and_subset_text_fonts() {
     let options = Options::default();
     assert!(options.images.is_none());
-    assert!(!options.subset_text_fonts);
+    assert!(options.subset_text_fonts);
     assert!(!options.strip_licenses);
 }

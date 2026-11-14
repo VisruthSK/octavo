@@ -4,9 +4,20 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-13
+
 ### Changed
 
-- Fonts: `--subset-fonts` cuts text fonts with [skera](https://crates.io/crates/skera) instead of HarfBuzz, so the build no longer compiles C++ for font subsetting. The same characters are kept, every layout feature survives, and the axes of a variable font are unchanged.
+- Fonts are re-encoded to WOFF2 with [`ttf2woff2`](https://crates.io/crates/ttf2woff2), a pure Rust encoder, instead of `woofwoof`, which wraps Google's C++ WOFF2 library. `Tuning::woff2_quality` still controls the Brotli quality of the output. The `glyf`/`loca` transformation is applied only when the font's `glyf` table is at most 131070 bytes, so the rebuilt short `loca` table cannot overflow when `glyf` exceeds what the short format can address.
+- The public enums, `Options`, `Tuning`, `ImageEncoding` and the result types `Applied`, `Output` and `Simplified` are `#[non_exhaustive]`, so adding variants or fields later is not a breaking change.
+- The optimizer reports the edits it skipped because another edit claimed the same bytes (`Output::skipped`, `Simplified::skipped()`), naming the transform that lost and the one that won. The `after` minus `before` deltas in `applied` add up to the change in output size.
+- Fonts: text fonts are subsetted by default, with [skera](https://crates.io/crates/skera) instead of HarfBuzz, so the build no longer compiles C++ for font subsetting. The same characters are kept, every layout feature survives, and the axes of a variable font are unchanged. Hinted static fonts, those with `fpgm`, `prep` and `cvt ` tables, are kept whole because Chromium on Linux draws them with slightly different stroke shading after subsetting; variable fonts and fonts without hinting programs are subsetted. A font kept whole for this reason is listed by `--audit` as a `font-kept-whole` row with a `0 B` saving. `--subset-fonts` is replaced by `--no-subset-fonts`.
+- The `--audit` output now applies the same options as a normal run, instead of only the defaults.
+
+### Added
+
+- Embedding: `octavo page.html` embeds the files a page links before optimizing it, so `embed-resources: true` is no longer required and the output is always one self-contained file. Octavo looks next to the page, in each `--resource-path <DIR>`, in parent directories (which finds `/site_libs/...`), and in `site_libs` or `<name>_files` directories beside the page or a parent. Files linked from the web are downloaded unless `--no-fetch` is given. Plain scripts are inlined, `@import` is flattened into the stylesheet and relative imports in module scripts become data URLs. The library has `embed_resources`, the `Resources` trait, `Loaded`, `Embedded` and `is_self_contained`. `verify/linked.mjs` and a job in the corpus workflow compare Octavo on linked renders with embedded renders of the same Quarto documents.
+- Lossless WebP: an 8-bit PNG without a colour profile, gamma, chromaticity, cICP, EXIF or animation chunk, and with only fully opaque or fully transparent pixels, becomes lossless WebP when that is smaller than the best PNG, with identical pixels. `--keep-png` (`Options::keep_png`) turns it off. `--image-memory <MIB>` (`Options::image_memory`, default `Options::DEFAULT_IMAGE_MEMORY`, 2560 MiB) caps the memory the encoder uses at once, at about 20 bytes per pixel. libwebp is added under the BSD-3-Clause license, and `ureq` with the CDLA-Permissive-2.0 root certificate data is added for downloads.
 
 ## [0.1.0-alpha.1]
 

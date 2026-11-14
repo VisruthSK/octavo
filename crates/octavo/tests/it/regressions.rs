@@ -376,13 +376,11 @@ fn a_css_banner_is_printed_exactly_once_unless_licenses_are_stripped() {
     let kept = safe(&src);
     assert_eq!(kept.matches("Bootstrap v5.3.3").count(), 1, "{kept}");
     assert!(!kept.contains(".dead-0"), "{kept}");
-    let stripped = simplified(
-        &src,
-        Options {
-            strip_licenses: true,
-            ..Options::default()
-        },
-    )
+    let stripped = simplified(&src, {
+        let mut options = Options::default();
+        options.strip_licenses = true;
+        options
+    })
     .pack(Mode::Safe);
     assert!(
         !stripped.html.contains("Bootstrap v5.3.3"),
@@ -443,11 +441,10 @@ fn font_page(text: &str) -> String {
 }
 
 fn cache_options(directory: &std::path::Path) -> Options {
-    Options {
-        subset_text_fonts: false,
-        cache_directory: Some(directory.to_path_buf()),
-        ..Options::default()
-    }
+    let mut options = Options::default();
+    options.subset_text_fonts = false;
+    options.cache_directory = Some(directory.to_path_buf());
+    options
 }
 
 fn scratch(name: &str) -> std::path::PathBuf {
@@ -460,10 +457,8 @@ fn scratch(name: &str) -> std::path::PathBuf {
 fn a_cached_font_gives_exactly_the_same_output_as_a_converted_one() {
     let directory = scratch("font-cache-same");
     let html = font_page("A");
-    let whole = Options {
-        subset_text_fonts: false,
-        ..Options::default()
-    };
+    let mut whole = Options::default();
+    whole.subset_text_fonts = false;
     let uncached = simplify(&html, whole)
         .expect("supported")
         .pack(Mode::Safe)
@@ -492,10 +487,8 @@ fn a_cached_font_gives_exactly_the_same_output_as_a_converted_one() {
 fn only_whole_fonts_are_cached_and_subsets_never_add_entries() {
     let directory = scratch("font-cache-whole-only");
     let html = font_page("A");
-    let subset = Options {
-        subset_text_fonts: true,
-        ..cache_options(&directory)
-    };
+    let mut subset = cache_options(&directory);
+    subset.subset_text_fonts = true;
     simplify(&font_page("A"), subset.clone()).expect("supported");
     simplify(&font_page("B"), subset).expect("supported");
     assert!(!directory.join("fonts").exists());
@@ -530,10 +523,8 @@ fn a_damaged_cache_entry_is_ignored_and_replaced() {
 }
 
 fn packed_size(html: &str, compression: Compression) -> usize {
-    let options = Options {
-        compression,
-        ..Options::default()
-    };
+    let mut options = Options::default();
+    options.compression = compression;
     simplify(html, options)
         .expect("supported")
         .pack(Mode::Packed)
@@ -544,11 +535,11 @@ fn packed_size(html: &str, compression: Compression) -> usize {
 #[test]
 fn stronger_compression_is_never_larger() {
     let html = font_page("A");
-    let weakest = Compression::Custom(Tuning {
-        woff2_quality: 0,
-        png_preset: Some(0),
-        brotli_quality: Some(0),
-    });
+    let mut tuning = Tuning::BALANCED;
+    tuning.woff2_quality = 0;
+    tuning.png_preset = Some(0);
+    tuning.brotli_quality = Some(0);
+    let weakest = Compression::Custom(tuning);
     let sizes =
         [Compression::Maximum, Compression::Balanced, weakest].map(|c| packed_size(&html, c));
     assert!(sizes[0] <= sizes[1] && sizes[1] <= sizes[2], "{sizes:?}");
@@ -559,13 +550,10 @@ fn custom_font_quality_has_its_own_cache_entry() {
     let directory = scratch("font-cache-quality");
     let html = font_page("A");
     for woff2_quality in [3, 9, 9, 11] {
-        let options = Options {
-            compression: Compression::Custom(Tuning {
-                woff2_quality,
-                ..Tuning::BALANCED
-            }),
-            ..cache_options(&directory)
-        };
+        let mut options = cache_options(&directory);
+        let mut tuning = Tuning::BALANCED;
+        tuning.woff2_quality = woff2_quality;
+        options.compression = Compression::Custom(tuning);
         simplify(&html, options).expect("supported");
     }
     assert_eq!(

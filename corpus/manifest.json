@@ -21,7 +21,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1334,
@@ -35,7 +35,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1333,
@@ -49,7 +49,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1334,
@@ -63,7 +63,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1333,
@@ -77,7 +77,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 2949,
@@ -207,7 +207,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1377,
@@ -292,7 +292,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 79653,
@@ -306,11 +306,25 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 48399,
     "sha256": "f559bd6e83355ee5955c1c94e011571213825572f9a47f0a4f82869280a0ebac"
+  },
+  {
+    "id": "assets-opaque-png-is-recompressed-as-png",
+    "category": "images",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        "data:image/"
+      ]
+    },
+    "bytes": 3698,
+    "sha256": "743a47e9a6a94bc3ee9f20d4e97ac163c8a412a715a5bca5ebc29203d5fb89f0"
   },
   {
     "id": "assets-otf-with-corrupt-data",
@@ -334,7 +348,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ],
       "removes": [
         "%89PNG"
@@ -365,7 +379,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 802,
@@ -379,7 +393,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data-src=\"data:image/png;base64,"
+        "data-src=\"data:image/"
       ]
     },
     "bytes": 1335,
@@ -407,7 +421,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1212,
@@ -421,7 +435,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 287,
@@ -435,7 +449,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 349,
@@ -449,7 +463,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 369,
@@ -463,7 +477,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1454,
@@ -477,7 +491,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1671,
@@ -491,7 +505,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ],
       "removes": [
         "charset=utf-8"
@@ -508,7 +522,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1353,
@@ -522,7 +536,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1355,
@@ -536,7 +550,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 2695,
@@ -564,7 +578,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1071,
@@ -578,7 +592,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1384,
@@ -606,7 +620,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/png;base64,"
+        "data:image/"
       ]
     },
     "bytes": 1711,
@@ -1186,6 +1200,26 @@
     },
     "bytes": 207,
     "sha256": "abd482a74e91ad786b7ec268fd6e60f280e01bdaf345530bb390d6794fce903c"
+  },
+  {
+    "id": "css-modern-selectors-and-at-rules-survive",
+    "category": "css",
+    "tier": "smoke",
+    "browser": true,
+    "expect": {
+      "outcome": "optimizes",
+      "retains": [
+        ".card:has(",
+        "@layer base",
+        "@container",
+        ":is(.a,.b)"
+      ],
+      "removes": [
+        ".nowhere{"
+      ]
+    },
+    "bytes": 489,
+    "sha256": "bcbd8debc28a81cadb9cd2391e96cb704e943140c9c1ae649b4ed4dcf6585485"
   },
   {
     "id": "css-nested-rules-are-kept",

@@ -1,7 +1,9 @@
 mod common;
+mod embed;
 mod images;
 mod invariants;
 mod pipeline;
 mod regressions;
 mod types;
 mod validation;
+mod woff2;

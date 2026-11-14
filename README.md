@@ -1,11 +1,12 @@
 # Octavo
 
-Octavo makes Quarto HTML files smaller. Give it a document rendered with `embed-resources: true` and it writes one self-contained file that opens offline and renders the same. A plain article shrinks 25 times (1.2 MB to 48 KB). Across Quarto's own 465 test documents the median shrinks 12.8 times. Documents whose weight is mostly images shrink about 2 times, because the images are most of the file.
+Octavo makes Quarto HTML files smaller. Give it a rendered page and it writes one self-contained file that opens offline and renders the same. The page can come from `embed-resources: true` or from an ordinary render that links `site_libs` and `<name>_files`, which Octavo embeds first. A plain article shrinks 25 times (1.2 MB to 48 KB). Across Quarto's own 465 test documents the median shrinks 12.8 times. Documents whose weight is mostly images shrink about 2 times, because the images are most of the file.
 
 ```sh
 octavo report.html                          # writes report.min.html
 octavo deck.html small.html --lossy-images  # AVIF, much smaller, not pixel-exact
 octavo report.html --maximum                # slowest, smallest output. Not reccomended.
+octavo report.html --resource-path assets   # also look for linked files in assets
 octavo --audit report.html                  # what each step would save
 ```
 
@@ -23,7 +24,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/VisruthSK/octavo/r
 
 ### Build
 
-To build from source, run `cargo install octavo-cli`. The WOFF2 encoder is C++, so you need a C++ compiler. Font subsetting is pure Rust and needs nothing else.
+To build from source, run `cargo install octavo-cli`. Compression links libdeflate, so you need a C compiler. Font subsetting and WOFF2 encoding are pure Rust.
 
 ```powershell
 cargo install octavo-cli
@@ -115,7 +116,7 @@ flowchart TD
     Q --> W[Complete the word index]
     S --> W
     W --> C[css: parse once, prune, minify]
-    C --> F[fonts: rewrite @font-face, subset icon fonts]
+    C --> F[fonts: rewrite @font-face, subset fonts]
     I --> E[Merge edits]
     J --> E
     F --> E
@@ -131,8 +132,8 @@ flowchart TD
 | `quarto` | Removes Bootstrap JavaScript, Popper, Tippy, Clipboard.js and Anchor.js when the markup never uses them, and stubs the globals that Quarto's own runtime calls regardless | The markup uses the library, or another script mentions it |
 | `js` | Minifies scripts and turns data-URI module scripts into inline modules | The script does not parse, or is already minified |
 | `css` | Deletes rules that need a class, id or tag found nowhere in the markup or any script, then minifies. Custom property values are kept verbatim | A rule the parser rejects, or whose `calc()` arithmetic would lose precision, is kept as written and the rest of the sheet is still optimized |
-| `fonts` | Keeps the one source browsers use (the last `src`, preferring WOFF2, then WOFF, then TrueType and OpenType), converts it to WOFF2, drops legacy EOT and SVG copies, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. Text fonts stay whole unless you pass `--subset-fonts` | The family name is written with escapes |
-| `images` | Recompresses embedded PNGs losslessly. With `--lossy-images`, re-encodes PNG and JPEG as AVIF or WebP and shrinks anything wider than 3840 px | Lossless recompression skips images over 40 megapixels |
+| `fonts` | Keeps the one source browsers use (the last `src`, preferring WOFF2, then WOFF, then TrueType and OpenType), converts it to WOFF2, drops legacy EOT and SVG copies, subsets icon fonts to the glyphs the CSS can reach, and drops fonts nothing mentions. Text fonts are subsetted, except hinted static fonts, which are kept whole | The family name is written with escapes |
+| `images` | Recompresses embedded PNGs losslessly, and converts an 8-bit PNG to lossless WebP when that is smaller. With `--lossy-images`, re-encodes PNG and JPEG as AVIF or WebP and shrinks anything wider than 3840 px | PNG recompression skips images over 40 megapixels. WebP conversion skips PNGs that carry colour, gamma or animation data, and images that need more than `--image-memory` |
 | `pack` | Gathers scripts, styles, stylesheet links, inline SVG, images and data blocks into one compressed blob, restored in place by a synchronous loader. The blob uses DEFLATE or Brotli, whichever gives the smaller page | A Content-Security-Policy meta tag. Modules and import maps are never packed |
 
 ### What Octavo knows about Quarto
@@ -167,7 +168,7 @@ packed                 1  751.1 KiB  458.1 KiB  293.0 KiB
 packed level: 2.8 MiB -> 458.1 KiB (6.3x smaller)
 ```
 
-Each row covers only the part of the file that step changed, and the steps run in the order shown.
+Each row covers only the part of the file that step changed, and the steps run in the order shown. When a hinted static font is kept whole, a `font-kept-whole` row appears with a `0 B` saving, because those fonts are not subsetted.
 
 ### Compression effort
 
@@ -181,31 +182,61 @@ The level decides what the output depends on. The effort decides how hard the co
 
 On a 288 KB font, WOFF2 quality 9 takes 26 ms and quality 11 takes 293 ms for 9 percent more bytes.
 
+### Lossless WebP
+
+An 8-bit PNG is re-encoded as lossless WebP when the result is smaller than the best PNG Octavo can write. The decoded pixels are identical, including the colour hidden under transparent pixels. A PNG stays a PNG when it is 16-bit, has an ICC profile, gamma, chromaticity, cICP, EXIF or animation chunk (WebP would drop or reinterpret that data), or has any partly transparent pixel (browsers premultiply those differently for WebP, which shifts their colour by a few levels). Fully opaque and fully transparent pixels convert. `--keep-png` turns the conversion off.
+
+The encoder needs about 20 bytes of memory per pixel. `--image-memory <MIB>` caps the memory used at once across all images (default 2560). An image that needs more than the cap stays a PNG, and the others wait for memory, so a lower cap costs time and a higher one costs memory.
+
+| Document | PNG only | Lossless WebP | `--lossy-images` (AVIF) |
+|---|---|---|---|
+| eCOTS 2026 deck, `packed` | 3.20 MiB | 2.56 MiB | 1.51 MiB |
+| CSURC 2026 deck, `packed` | 6.93 MiB | 4.43 MiB | |
+
+Lossy AVIF is about 40% smaller than lossless WebP on the eCOTS deck, but it changes pixels. Lossless WebP does not.
+
 ### Fonts
 
 Fonts converted whole are remembered in your user cache directory (`~/.cache/octavo` on Linux, `~/Library/Caches/octavo` on macOS, `%LOCALAPPDATA%\octavo` on Windows), in a `fonts` subfolder with one file per distinct font, named by a hash of its bytes and quality. Documents from the same theme embed the same fonts, so later runs skip the slowest step. Subsetted fonts are never stored. `--cache-dir <directory>` chooses another place and `--no-cache` turns the cache off.
 
-Text fonts stay whole by default. `--subset-fonts` cuts them to the characters the document uses plus the Latin letters, digits and punctuation, which is often the largest saving in a themed document, because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [skera](https://crates.io/crates/skera) and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive and layout is identical. Chromium on Linux draws some hinted static fonts, Fira Sans among them, with slightly different stroke shading after subsetting, and the checker reports that as pixel differences. Text that JavaScript adds later with characters outside the kept set falls back to a system font. Icon fonts are always subsetted to the glyphs the CSS can reach.
+Text fonts are subsetted by default. Octavo cuts them to the characters the document uses plus the Latin letters, digits and punctuation, which is often the largest saving in a themed document, because Quarto themes embed whole fonts such as Source Sans. Subsetting uses [skera](https://crates.io/crates/skera) and keeps every layout feature the font has, so kerning, tabular and old-style numbers, small caps and stylistic sets all survive and layout is identical. Hinted static fonts, those with `fpgm`, `prep` and `cvt ` tables, are kept whole instead, because Chromium on Linux draws them with slightly different stroke shading after subsetting. Variable fonts and fonts without hinting programs are subsetted. `--no-subset-fonts` keeps the text fonts whole instead, and a font kept whole for this reason shows up in `--audit` as a `font-kept-whole` row. Text that JavaScript adds later with characters outside the kept set falls back to a system font. Icon fonts are always subsetted to the glyphs the CSS can reach.
 
 ### Licenses
 
 Bundled libraries carry license banners, and the MIT, BSD and Apache licenses require them to travel with copies. Octavo keeps them by default, which costs 400 bytes to 2 KB per document. Subsetting a font discards the copyright and license fields in its name table, so Octavo copies those fields (copyright line, license description, license URL) into a comment beside the font's `@font-face`, which the SIL Open Font License allows. `--strip-licenses` removes all of these notices for people who ship them another way.
+
+### Pages that link files
+
+A page does not need `embed-resources: true`. When it links files, Octavo reads them and embeds them before it optimizes, so the output is always one self-contained file. For each link it looks, in order:
+
+1. Relative to the page, or to the stylesheet that names the file.
+2. In each `--resource-path <DIR>`, in the order given.
+3. In the page's directory and its parent directories, which finds root-relative links such as `/site_libs/bootstrap/bootstrap.min.css`.
+4. For a path that contains `site_libs` or a `<name>_files` directory, in that directory beside the page or beside any parent.
+
+Files linked from the web (a Google Fonts stylesheet, a remote image) are downloaded and embedded, up to 64 MiB and 30 seconds each. Scripts from the web stay as links, as in Quarto, because a script such as MathJax loads more code relative to its own address. `--no-fetch` skips the download and leaves those links as written, so the page keeps needing the network.
+
+Embedding follows what Quarto does. A script that runs in place (no `defer`, `async` or `type="module"`) becomes inline text. An `@import` without a media condition is replaced by the stylesheet it names. Relative `import` specifiers inside a module script become data URLs. Everything else becomes a base64 data URL. Stylesheet links, icons, images and the `url()` values inside stylesheets are handled the same way, to a depth of 8.
+
+The library has the same step as `embed_resources`. It takes a `Resources` implementation that finds the files, so the library does no file or network access of its own, and returns the new HTML, a count of embedded files and the references it could not find. `is_self_contained` reports whether a document links local files.
 
 ### What Octavo refuses
 
 Octavo stops with an error when the input is not what it expects:
 
 - A file with no `<html>` element is not an HTML document.
-- A document that links to local files (`site_libs/bootstrap.min.css`, `figure.png`) was not rendered with `embed-resources: true`. The error lists the files.
+- A page that still links to a local file after embedding (`site_libs/bootstrap.min.css`, `figure.png`), because Octavo could not find it. The error lists the files. Use `--resource-path <DIR>` to name another directory to search.
 
-Resources loaded from the network (a CDN script, a web font) do not stop the run. They are reported as warnings, because the page cannot work offline.
+A web file that cannot be downloaded does not stop the run. It is reported as a warning and the link stays, so the page needs the network for that file. With `--no-fetch`, every web link stays and is reported the same way.
 
 ## Limits
 
 - `packed` rebuilds stylesheets with JavaScript while the page is parsed, so it needs JavaScript.
 - The Brotli decoder runs through `new Function`, and `packed` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` header that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, allow `unsafe-eval` for the packed pages or use `--level scripts`, which never needs it.
 - Modules, import maps and elements whose attributes contain character references are never packed.
-- `--subset-fonts` can change how some hinted fonts are drawn on Linux, as described under [Fonts](#fonts).
+- Downloads trust Mozilla's root certificates. A web file that needs a login cannot be embedded.
+- Text fonts that are hinted static fonts are kept whole instead of subsetted, so subsetting saves nothing for them, as described under [Fonts](#fonts).
+- Octavo rounds CSS numbers to six significant digits and the verifier compares them at that precision.
 
 ## The libraries doing the real work
 
@@ -214,19 +245,21 @@ Resources loaded from the network (a CDN script, a web font) do not stop the run
 | Parse, prune and minify CSS | [`lightningcss`](https://crates.io/crates/lightningcss) |
 | Parse, mangle and minify JavaScript | [`oxc`](https://crates.io/crates/oxc) |
 | Subset fonts | [`skera`](https://crates.io/crates/skera) |
-| Write WOFF2 | [`woofwoof`](https://crates.io/crates/woofwoof), which wraps Google's WOFF2 encoder |
+| Write WOFF2 | [`ttf2woff2`](https://crates.io/crates/ttf2woff2), a pure Rust encoder |
 | Decode WOFF and WOFF2 input | [`wuff`](https://crates.io/crates/wuff) |
 | Recompress PNG losslessly | [`oxipng`](https://crates.io/crates/oxipng) |
 | Decode PNG and JPEG | [`image`](https://crates.io/crates/image) |
 | Encode lossy AVIF | [`ravif`](https://crates.io/crates/ravif), built on rav1e |
 | Encode lossy WebP | [`gamut-webp`](https://crates.io/crates/gamut-webp) |
+| Encode lossless WebP | [libwebp](https://chromium.googlesource.com/webm/libwebp), through [`webp`](https://crates.io/crates/webp) |
+| Download linked web files | [`ureq`](https://crates.io/crates/ureq), with rustls |
 | Resize images | [`fast_image_resize`](https://crates.io/crates/fast_image_resize) |
 | Deflate the packed blob | [`libdeflater`](https://crates.io/crates/libdeflater), level 12 |
 | Brotli for the packed blob | [`brotli`](https://crates.io/crates/brotli) |
 | Text-safe encoding of the blob | [`base91`](https://crates.io/crates/base91) |
 | Name cached fonts | [`blake3`](https://crates.io/crates/blake3) |
 
-Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The non-Rust code in the build is the WOFF2 encoder behind `woofwoof` and libdeflate behind `oxipng` and `libdeflater`.
+Apart from a small tag scanner that records byte ranges and two tiny CSS helpers (one splits a stylesheet into top-level rules, one masks license comments), Octavo parses and encodes no format by hand. The non-Rust code in the build is libdeflate behind `oxipng` and `libdeflater`.
 
 ## As a library
 
@@ -264,7 +297,7 @@ let out = simplify(&html, options)?.pack(Mode::Packed);
 
 ## Verification
 
-`verify/` opens the original and the optimized file in Chromium and compares them. A browser is found automatically (Chrome, Chromium or Edge, or Playwright's own build). Set `CHROME_PATH` to choose one. It compares:
+`verify/` opens the original and the optimized file in a browser and compares them. The engine is Chromium by default: a browser is found automatically (Chrome, Chromium or Edge, or Playwright's own build), and `CHROME_PATH` chooses one. Set `OCTAVO_BROWSER=firefox` or `OCTAVO_BROWSER=webkit` to run the same comparison in Playwright's Firefox or WebKit build (`npx playwright-core install firefox webkit`). The original and the optimized page always run in the same engine. Every engine runs the same scenarios and the same checks: the hover, focus and active states of the first forty interactive elements are applied with a real pointer, a real focus and a real mouse press, so no engine needs a path of its own. Firefox shares one cursor and one focused document across the pages of a browser, so there every capture gets a browser of its own, which keeps the states from being taken away by a page that is being captured at the same time. The report lists the scenarios that ran and the checks that could not be applied. It compares:
 
 - console errors and network requests
 - the serialized DOM and the accessibility tree
@@ -272,17 +305,21 @@ let out = simplify(&html, options)?.pack(Mode::Packed);
 - loaded fonts and full-page screenshots
 - every running animation: its target, timing and keyframes, so a pruned `@keyframes` rule is caught
 
-Screenshots must match pixel for pixel. The checker allows one level out of 255 in a colour channel for rendering rounding, and up to twelve isolated pixels off by at most eight levels for antialiasing noise. Computed styles and layout boxes are always compared exactly, and every tolerated pixel is counted in the report. A linear gradient and its mirror image compare as equal, because they paint the same pixels.
+Screenshots must match pixel for pixel. The checker allows one level out of 255 in a colour channel for rendering rounding, and up to twelve isolated pixels off by at most eight levels for antialiasing noise. The tolerance comes from measurement: rendering the same pages twice in the same engine and counting the pixels that differ. Chromium differed in 0 of 275,589,552 pixels, Firefox in 0 of 10,383,312 and WebKit in 0 of 10,383,312, and no colour channel moved at all, so all three engines keep that tolerance. `node verify/noise.mjs` repeats the measurement and writes the numbers to `out/noise/noise.json`. Computed styles and layout boxes are always compared exactly, and every tolerated pixel is counted in the report. A linear gradient and its mirror image compare as equal, because they paint the same pixels.
 
 This runs in desktop light, desktop dark, mobile, tablet, print, JavaScript-off and animations-on scenarios, followed by an interaction sweep: colour-scheme toggle, tabs, collapses, hovers, key presses and scrolling. `Math.random` is seeded so widget ids repeat, and transitions are switched off (except in the animations-on scenario) so timing does not leak into the comparison.
 
-When a comparison finds a difference, both pages are captured up to three more times, with the later captures waiting longer. A difference counts only if it appears in every capture and neither page ever disagrees with its own recaptures. A page that settles into different stable states on different loads is therefore not reported as a difference, and a real change always is. `verify/verifier.test.mjs` checks the checker: it breaks a page in a dozen specific ways (a dropped keyframes, hover, dark, print or media rule, a colour off by one, a 0.02 px layout shift) and each must be caught.
+Firefox keeps one cursor and one focus for all its pages, so two pages loaded at once would take the hover and the focus from each other. Every capture therefore gets a browser of its own in Firefox, and the pages run one after another up to four at a time.
+
+When a comparison finds a difference, both pages are captured up to three more times, with the later captures waiting longer. A difference counts only if it appears in every capture and neither page ever disagrees with its own recaptures. A page that settles into different stable states on different loads is therefore not reported as a difference, and a real change always is. `verify/verifier.test.mjs` checks the checker: it breaks a page in a dozen specific ways (a dropped keyframes, hover, focus, active, dark, print or media rule, a colour off by one, a 0.02 px layout shift) and each must be caught. The same test runs on every engine, and it fails when a forced state could not be applied to the page at all.
 
 With `--lossy-images`, pass `--lossy` to the checker. Image bytes are then not compared, dimensions still are, and screenshots may differ by up to 2% of pixels.
 
 ```sh
 cargo test
 cd verify && npm install && node --test
+OCTAVO_BROWSER=firefox node --test
+OCTAVO_BROWSER=webkit node --test
 node verify.mjs original.html optimized.html [--allow-js-required]
 node bench.mjs packed ../corpus/html/train ../corpus/html/test
 ```
