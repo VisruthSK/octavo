@@ -256,6 +256,23 @@ jobs:
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}"
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
+      - name: Diagnose one document
+        if: always() && inputs.diagnose != ''
+        run: |
+          for id in ${{ inputs.diagnose }}; do
+            original="corpus/.cache/rendered/$id.html"
+            [ -f "$original" ] || original="corpus/.cache/docs/$id.html"
+            optimized="out/engines-${{ matrix.browser }}-${{ matrix.shard }}/$id.${{ inputs.diagnose_level }}.html"
+            if [ -f "$original" ] && [ -f "$optimized" ]; then
+              node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" "out/diagnose-${{ matrix.browser }}-${{ matrix.shard }}/$id"
+            fi
+          done
+      - uses: actions/upload-artifact@v7
+        if: always() && inputs.diagnose != ''
+        with:
+          name: diagnose-${{ matrix.browser }}-${{ matrix.shard }}
+          path: out/diagnose-*
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         if: always()
         with:
