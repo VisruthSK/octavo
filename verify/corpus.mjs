@@ -5,6 +5,8 @@ import { basename, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { brotliCompressSync } from "node:zlib";
 import { documentPath, materialize } from "../corpus/build.mjs";
+import { readCosts } from "../corpus/costs.mjs";
+import { shardSlice } from "../corpus/sharding.mjs";
 import { readRendered, renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
 import { scenariosFor } from "./capture.mjs";
@@ -100,12 +102,13 @@ const binaryVersion = (await run(["--version", ...octavoArgs])).stdout.trim();
 const upstreamRows = upstream
   ? readRendered().map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }))
   : [];
+const costs = readCosts();
 const [shardPosition, shardCount] = flag("shard", "").split("/").map(Number);
-const ownHandWritten = (_, index) => !shardCount || index % shardCount === shardPosition - 1;
-const handWritten = (await materialize())
+const shard = shardCount ? { index: shardPosition - 1, count: shardCount } : undefined;
+const allHandWritten = (await materialize())
   .map((row) => ({ ...row, path: documentPath(row.id) }))
-  .filter((row) => tier === "full" || row.tier === "smoke")
-  .filter(ownHandWritten);
+  .filter((row) => tier === "full" || row.tier === "smoke");
+const handWritten = shardSlice(allHandWritten, shard, costs);
 const rows = [...handWritten, ...upstreamRows];
 const selected = rows.filter((row) => (tier === "full" || row.tier === "smoke") && filter.test(row.id));
 rmSync(outDirectory, { recursive: true, force: true });
@@ -180,15 +183,30 @@ if (browser) {
   const { closeBrowser, pages, verifyLevels } = await import("./verify.mjs");
   const { browserIdentity } = await import("./verify.mjs");
   const { readVerdict, revalidateVerdict, shouldRevalidate, verdictKey, verifierHash, writeVerdict } = await import("./verdicts.mjs");
+  const { formatHeartbeat, formatProgress } = await import("./progress.mjs");
   const verifier = verifierHash();
   console.log(`browser: ${engineNotice()}`);
   const identity = await browserIdentity();
   const documents = [...Map.groupBy(results.filter((entry) => entry.browser), (entry) => entry.input).values()];
+  const totalLevels = documents.reduce((acc, entries) => acc + entries.length, 0);
+  let doneLevels = 0;
+  const inFlight = new Map();
+  const heartbeat = setInterval(() => {
+    if (inFlight.size === 0) return;
+    const items = [...inFlight.values()].map((item) => ({
+      id: item.id,
+      level: item.level,
+      seconds: Math.round((Date.now() - item.startedAt) / 1000),
+    }));
+    console.log(formatHeartbeat(items, documents.length));
+  }, 60_000);
+  heartbeat.unref?.();
   const cache = { hits: 0, misses: 0 };
   await pool(documents, pages, async (entries) => {
     const original = entries[0].input;
     const originalBytes = readFileSync(original);
     const plans = [];
+    const cachedEntries = [];
     for (const entry of entries) {
       const optimized = sha256(readFileSync(entry.output));
       const key = verdictKey({ original: originalBytes, optimized, level: entry.level, verifier, browser: identity, scenarios: scenarioHash, version: binaryVersion });
@@ -199,6 +217,7 @@ if (browser) {
         if (!shouldRevalidate(key, revalidatePercent)) {
           entry.cached = true;
           cache.hits += 1;
+          cachedEntries.push(entry);
           continue;
         }
         plans.push({ level: entry.level, path: entry.output, key, optimized, revalidate: true });
@@ -208,72 +227,91 @@ if (browser) {
       cache.misses += 1;
       plans.push({ level: entry.level, path: entry.output, key, optimized });
     }
+    for (const entry of cachedEntries) {
+      doneLevels += 1;
+      console.log(formatProgress(doneLevels, totalLevels, entry.id, entry.level, 0, true));
+    }
     if (!plans.length) return;
-    const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })), { deadlineReached });
-    timing.original += measured.timing.original;
-    timing.optimized += measured.timing.optimized;
-    timing.compare += measured.timing.compare;
-    for (const [at, plan] of plans.entries()) {
-      const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
-      const report = measured.reports[at];
-      for (const { scenario, checks, optimizedChecks } of report) {
-        if (!checks) continue;
-        browserChecks.scenarios.add(scenario);
-        for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) browserChecks.totals[state] += checks[state] ?? 0;
-        for (const [side, captureChecks] of [["original", checks], ["optimized", optimizedChecks]]) {
-          if (!captureChecks) continue;
-          for (const limit of captureChecks.screenshots?.limits ?? []) {
-            browserChecks.screenshotLimits.push({ id: entry.id, scenario, side, ...limit });
+    const docId = entries[0].id;
+    const docStarted = Date.now();
+    inFlight.set(docId, { id: docId, level: plans.map((p) => p.level).join(","), startedAt: docStarted });
+    try {
+      const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })), { deadlineReached });
+      timing.original += measured.timing.original;
+      timing.optimized += measured.timing.optimized;
+      timing.compare += measured.timing.compare;
+      const elapsed = Math.round((Date.now() - docStarted) / 1000);
+      for (const [at, plan] of plans.entries()) {
+        const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
+        const report = measured.reports[at];
+        for (const { scenario, checks, optimizedChecks } of report) {
+          if (!checks) continue;
+          browserChecks.scenarios.add(scenario);
+          for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) browserChecks.totals[state] += checks[state] ?? 0;
+          for (const [side, captureChecks] of [["original", checks], ["optimized", optimizedChecks]]) {
+            if (!captureChecks) continue;
+            for (const limit of captureChecks.screenshots?.limits ?? []) {
+              browserChecks.screenshotLimits.push({ id: entry.id, scenario, side, ...limit });
+            }
+            for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) {
+              browserChecks.unreachable[side][state] += captureChecks.unreachable?.[state] ?? 0;
+            }
+            if (captureChecks.unreachable?.details.length) {
+              browserChecks.unreachableDetails.push({ id: entry.id, scenario, side, details: captureChecks.unreachable.details });
+            }
+            const missing = checksOf(captureChecks);
+            if (missing.length) browserChecks.degraded.push({ id: entry.id, scenario, side, missing });
           }
-          for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) {
-            browserChecks.unreachable[side][state] += captureChecks.unreachable?.[state] ?? 0;
+        }
+        const unfinished = report.some(({ issues }) => issues.some((issue) => issue.includes("verification deadline reached")));
+        if (plan.revalidate && !unfinished) {
+          try {
+            await revalidateVerdict(
+              plan.key,
+              true,
+              async () => report.every(({ scenario, issues }) =>
+                plan.level === "packed" && scenario === "no-js"
+                  ? !issues.some((issue) => issue.startsWith("check incomplete:") || issue.includes("screenshot missing"))
+                  : !issues.length,
+              ),
+            );
+          } catch (error) {
+            entry.problems.push(error.message);
           }
-          if (captureChecks.unreachable?.details.length) {
-            browserChecks.unreachableDetails.push({ id: entry.id, scenario, side, details: captureChecks.unreachable.details });
+        }
+        entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
+        const issues = [];
+        for (const { scenario, issues: found } of report) {
+          for (const issue of found) {
+            if (entry.level === "packed" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
+            issues.push(`${engineTag}${scenario}: ${issue}`);
           }
-          const missing = checksOf(captureChecks);
-          if (missing.length) browserChecks.degraded.push({ id: entry.id, scenario, side, missing });
         }
-      }
-      const unfinished = report.some(({ issues }) => issues.some((issue) => issue.includes("verification deadline reached")));
-      if (plan.revalidate && !unfinished) {
-        try {
-          await revalidateVerdict(
-            plan.key,
-            true,
-            async () => report.every(({ scenario, issues }) =>
-              plan.level === "packed" && scenario === "no-js"
-                ? !issues.some((issue) => issue.startsWith("check incomplete:") || issue.includes("screenshot missing"))
-                : !issues.length,
-            ),
-          );
-        } catch (error) {
-          entry.problems.push(error.message);
+        entry.problems.push(...issues);
+        if (!issues.length && verdictCache) {
+          writeVerdict(plan.key, {
+            level: plan.level,
+            original: sha256(originalBytes),
+            optimized: plan.optimized,
+            verifier,
+            browser: identity,
+          });
         }
+        doneLevels += 1;
+        console.log(formatProgress(doneLevels, totalLevels, entry.id, plan.level, elapsed, false));
       }
-      entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
-      const issues = [];
-      for (const { scenario, issues: found } of report) {
-        for (const issue of found) {
-          if (entry.level === "packed" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
-          issues.push(`${engineTag}${scenario}: ${issue}`);
-        }
-      }
-      entry.problems.push(...issues);
-      if (!issues.length && verdictCache) {
-        writeVerdict(plan.key, {
-          level: plan.level,
-          original: sha256(originalBytes),
-          optimized: plan.optimized,
-          verifier,
-          browser: identity,
-        });
-      }
+    } finally {
+      inFlight.delete(docId);
     }
   }, (entries) => {
     cache.misses += entries.length;
-    for (const entry of entries) entry.problems.push(`browser comparison not started because the ${deadlineMinutes}-minute verification deadline was reached`);
+    for (const entry of entries) {
+      entry.problems.push(`browser comparison not started because the ${deadlineMinutes}-minute verification deadline was reached`);
+      doneLevels += 1;
+      console.log(formatProgress(doneLevels, totalLevels, entry.id, entry.level, 0, false));
+    }
   });
+  clearInterval(heartbeat);
   await closeBrowser();
   browserName = identity;
   browserCache.hits = cache.hits;

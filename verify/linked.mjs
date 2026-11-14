@@ -1,8 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { brotliCompressSync, constants } from "node:zlib";
-import { inShard, readRendered, renderLinked, renderedPath } from "../corpus/upstream.mjs";
+import { readCosts } from "../corpus/costs.mjs";
+import { shardSlice } from "../corpus/sharding.mjs";
+import { readRendered, renderLinked, renderedPath } from "../corpus/upstream.mjs";
+import { formatHeartbeat, formatProgress } from "./progress.mjs";
 import { closeBrowser, verify } from "./verify.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -16,11 +19,17 @@ const filter = new RegExp(flag("filter", "."));
 const browser = process.argv.includes("--browser");
 const binary = resolve(flag("binary", join(root, "target", "release", process.platform === "win32" ? "octavo.exe" : "octavo")));
 const outDirectory = resolve(flag("out", join(root, "out", "linked")));
+const costs = readCosts();
 const [position, count] = flag("shard", "").split("/").map(Number);
 const shard = count ? { index: position - 1, count } : undefined;
-const selected = readRendered()
-  .filter((entry) => (tier === "full" || entry.tier === tier) && filter.test(entry.id))
-  .filter((_, index) => inShard(index, shard));
+const rendered = readRendered()
+  .filter((entry) => (tier === "full" || entry.tier === tier) && filter.test(entry.id));
+const selectionPath = join(root, "corpus", "selection.json");
+const fullSelection = existsSync(selectionPath)
+  ? JSON.parse(readFileSync(selectionPath, "utf8")).filter((entry) => tier === "full" || entry.tier === tier)
+  : rendered;
+const targetIds = shard ? new Set(shardSlice(fullSelection, shard, costs).map((e) => e.id)) : null;
+const selected = rendered.filter((entry) => (!targetIds || targetIds.has(entry.id)));
 
 const wire = (path) =>
   brotliCompressSync(readFileSync(path), { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }).length;
@@ -31,11 +40,26 @@ const octavo = (input, output) => {
 
 mkdirSync(outDirectory, { recursive: true });
 const rows = [];
-for (const entry of selected) {
+const inFlight = new Map();
+const heartbeat = setInterval(() => {
+  if (inFlight.size === 0) return;
+  const items = [...inFlight.values()].map((item) => ({
+    id: item.id,
+    level: item.level,
+    seconds: Math.round((Date.now() - item.startedAt) / 1000),
+  }));
+  console.log(formatHeartbeat(items, selected.length));
+}, 60_000);
+heartbeat.unref?.();
+
+for (const [index, entry] of selected.entries()) {
   const directory = join(outDirectory, entry.id);
   const row = { id: entry.id };
+  const docStarted = Date.now();
+  inFlight.set(entry.id, { id: entry.id, level, startedAt: docStarted });
   const linked = await renderLinked(entry, directory);
   if (!linked.page) {
+    inFlight.delete(entry.id);
     rows.push({ ...row, note: "the linked render failed" });
     continue;
   }
@@ -50,10 +74,14 @@ for (const entry of selected) {
     row.issues = issues;
   }
   rmSync(directory, { recursive: true, force: true });
+  inFlight.delete(entry.id);
   rows.push(row);
+  const elapsed = Math.round((Date.now() - docStarted) / 1000);
+  console.log(formatProgress(index + 1, selected.length, entry.id, level, elapsed));
   const ratio = row.linkedRoute.size ? (row.linkedRoute.size / row.embeddedRoute.size).toFixed(3) : "-";
   console.log(entry.id.padEnd(64), row.note ? `REFUSED ${row.note}` : `linked/embedded size ${ratio}${row.issues ? (row.issues.length ? `  FAIL ${row.issues[0].slice(0, 100)}` : "  browser ok") : ""}`);
 }
+clearInterval(heartbeat);
 if (browser) await closeBrowser();
 
 const worked = rows.filter((row) => row.linkedRoute && !row.note && row.embeddedRoute?.size);
