@@ -30,16 +30,18 @@ test("balanced assignment is deterministic", () => {
 });
 
 test("the union of all shards equals the input with no duplicates for counts 2, 4 and 10", () => {
-  for (const count of [2, 4, 10]) {
-    const shards = assign(smokeUpstream, costs, count);
-    assert.equal(shards.length, count);
-    const flattened = shards.flat();
-    assert.equal(flattened.length, smokeUpstream.length);
-    const ids = flattened.map((item) => item.id);
-    const uniqueIds = new Set(ids);
-    assert.equal(uniqueIds.size, smokeUpstream.length);
-    for (const item of smokeUpstream) {
-      assert.ok(uniqueIds.has(item.id));
+  for (const input of [smokeUpstream, selection]) {
+    for (const count of [2, 4, 10]) {
+      const shards = assign(input, costs, count);
+      assert.equal(shards.length, count);
+      const flattened = shards.flat();
+      assert.equal(flattened.length, input.length);
+      const ids = flattened.map((item) => item.id);
+      const uniqueIds = new Set(ids);
+      assert.equal(uniqueIds.size, input.length);
+      for (const item of input) {
+        assert.ok(uniqueIds.has(item.id));
+      }
     }
   }
 });

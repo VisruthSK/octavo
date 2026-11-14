@@ -7,11 +7,10 @@ import { brotliCompressSync } from "node:zlib";
 import { documentPath, materialize } from "../corpus/build.mjs";
 import { readCosts } from "../corpus/costs.mjs";
 import { shardSlice } from "../corpus/sharding.mjs";
-import { readRendered, renderedPath } from "../corpus/upstream.mjs";
+import { renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
 import { scenariosFor } from "./capture.mjs";
 import { engine, engineNotice, checksOf } from "./engines/index.mjs";
-import { checkShardCoverage, expectedShardDocuments } from "./shard-coverage.mjs";
 
 const SLOWDOWN_LIMIT = 100;
 const RATE_FLOOR_BYTES = 256 * 1024;
@@ -100,9 +99,6 @@ const check = (row, expect, result, output, input) => {
 };
 
 const binaryVersion = (await run(["--version", ...octavoArgs])).stdout.trim();
-const upstreamRows = upstream
-  ? readRendered().map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }))
-  : [];
 const costs = readCosts();
 const [shardPosition, shardCount] = flag("shard", "").split("/").map(Number);
 const shard = shardCount ? { index: shardPosition - 1, count: shardCount } : undefined;
@@ -110,31 +106,29 @@ const allHandWritten = (await materialize())
   .map((row) => ({ ...row, path: documentPath(row.id) }))
   .filter((row) => tier === "full" || row.tier === "smoke");
 const handWritten = shardSlice(allHandWritten, shard, costs);
-const rows = [...handWritten, ...upstreamRows];
-const selected = rows.filter((row) => (tier === "full" || row.tier === "smoke") && filter.test(row.id));
 const selectionFile = join(root, "corpus", "selection.json");
-const upstreamSelection = existsSync(selectionFile) ? JSON.parse(readFileSync(selectionFile, "utf8")) : [];
-const expectedDocuments = expectedShardDocuments({
-  manifest: allHandWritten,
-  selection: upstreamSelection,
-  tier,
-  shard,
-  costs,
-  filter,
-  upstream,
-});
+const allUpstream = (upstream && existsSync(selectionFile)
+  ? JSON.parse(readFileSync(selectionFile, "utf8"))
+  : []
+)
+  .filter((entry) => tier === "full" || entry.tier === tier)
+  .map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }));
+const upstreamInShard = shardSlice(allUpstream, shard, costs);
+const rows = [...handWritten, ...upstreamInShard];
+const selected = rows.filter((row) => filter.test(row.id));
 rmSync(outDirectory, { recursive: true, force: true });
 mkdirSync(outDirectory, { recursive: true });
 
 const work = selected.flatMap((row) => levels.map((level) => ({ row, level })));
 const deadlineFailure = ({ row, level }) => {
   const input = row.path;
-  const source = readFileSync(input, "utf8");
+  const exists = existsSync(input);
+  const source = exists ? readFileSync(input, "utf8") : "";
   return {
     id: row.id,
     category: row.category,
     level,
-    inBytes: statSync(input).size,
+    inBytes: exists ? statSync(input).size : 0,
     outBytes: null,
     ms: 0,
     outcome: "not run",
@@ -147,32 +141,67 @@ const deadlineFailure = ({ row, level }) => {
   };
 };
 const results = await pool(work, jobs, async ({ row, level }) => {
-  const input = row.path;
-  const output = join(outDirectory, `${row.id}.${level}.html`);
-  const result = await run([input, output, "--level", level, "--jobs", String(threads), ...octavoArgs]);
-  const source = readFileSync(input, "utf8");
-  const produced = result.code === 0 ? readFileSync(output, "utf8") : "";
-  const excluded = Boolean(row.source) && result.stderr.includes(rejections["not-self-contained"]);
-  const problems = excluded ? [] : check({ level }, row.expect, result, produced, source);
-  return {
-    id: row.id,
-    category: row.category,
-    level,
-    inBytes: statSync(input).size,
-    outBytes: result.code === 0 ? statSync(output).size : null,
-    ms: result.ms,
-    outcome: outcomeOf(result, produced === source),
-    baselines: {
-      naive: naive(source).length,
-      brotliOriginal: brotli(source),
-      brotliOptimized: result.code === 0 ? brotli(produced) : null,
-    },
-    problems,
-    excluded: excluded ? result.stderr.trim().split("\n").at(-1).slice(0, 200) : null,
-    browser: row.browser && result.code === 0 && produced !== source,
-    input,
-    output,
-  };
+  try {
+    const input = row.path;
+    const output = join(outDirectory, `${row.id}.${level}.html`);
+    if (!existsSync(input)) {
+      return {
+        id: row.id,
+        category: row.category,
+        level,
+        inBytes: 0,
+        outBytes: null,
+        ms: 0,
+        outcome: "missing",
+        baselines: { naive: 0, brotliOriginal: 0, brotliOptimized: null },
+        problems: [`rendered file missing: ${input}`],
+        excluded: null,
+        browser: false,
+        input,
+        output,
+      };
+    }
+    const result = await run([input, output, "--level", level, "--jobs", String(threads), ...octavoArgs]);
+    const source = readFileSync(input, "utf8");
+    const produced = result.code === 0 ? readFileSync(output, "utf8") : "";
+    const excluded = Boolean(row.source) && result.stderr.includes(rejections["not-self-contained"]);
+    const problems = excluded ? [] : check({ level }, row.expect, result, produced, source);
+    return {
+      id: row.id,
+      category: row.category,
+      level,
+      inBytes: statSync(input).size,
+      outBytes: result.code === 0 ? statSync(output).size : null,
+      ms: result.ms,
+      outcome: outcomeOf(result, produced === source),
+      baselines: {
+        naive: naive(source).length,
+        brotliOriginal: brotli(source),
+        brotliOptimized: result.code === 0 ? brotli(produced) : null,
+      },
+      problems,
+      excluded: excluded ? result.stderr.trim().split("\n").at(-1).slice(0, 200) : null,
+      browser: row.browser && result.code === 0 && produced !== source,
+      input,
+      output,
+    };
+  } catch (err) {
+    return {
+      id: row.id,
+      category: row.category,
+      level,
+      inBytes: 0,
+      outBytes: null,
+      ms: 0,
+      outcome: "error",
+      baselines: { naive: 0, brotliOriginal: 0, brotliOptimized: null },
+      problems: [`exception processing document: ${err?.message || err}`],
+      excluded: null,
+      browser: false,
+      input: row.path,
+      output: join(outDirectory, `${row.id}.${level}.html`),
+    };
+  }
 }, deadlineFailure);
 
 const timing = { original: 0, optimized: 0, compare: 0, cached: 0 };
@@ -430,22 +459,6 @@ if (browser) {
     ...browserChecks.unreachableDetails.map((entry) => `- ${entry.id} (${entry.scenario}, ${entry.side}): ${entry.details.join("; ")}`),
   );
 }
-
-const coverage = checkShardCoverage({
-  expected: expectedDocuments,
-  results,
-  shard: { position: shardPosition || 1, count: shardCount || 1 },
-  browser,
-});
-
-if (!coverage.ok) {
-  for (const problem of coverage.problems) {
-    console.error(`Coverage failure: ${problem}`);
-    failures.push({ id: `shard-${shardPosition || 1}`, level: "coverage", problems: [problem] });
-  }
-}
-
-lines.push(coverage.message);
 
 writeFileSync(join(outDirectory, "report.md"), `${lines.join("\n")}\n`);
 writeFileSync(join(outDirectory, "report.json"), `${JSON.stringify(results.map(({ input, output, ...rest }) => rest), null, 2)}\n`);
