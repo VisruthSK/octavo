@@ -119,3 +119,45 @@ test("the settle waits for the MathJax 3 startup promise", async () => {
     await browser.close();
   }
 });
+
+test("the settle waits for a request that starts during its own final animation frames", async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext();
+    await context.addInitScript(trackTimers);
+    const page = await context.newPage();
+    const { network, seen } = requests(page);
+    let answered = false;
+    await page.route("http://octavo.test/**", async (route) => {
+      const url = route.request().url();
+      if (url.endsWith("late.css")) {
+        await new Promise((done) => setTimeout(done, 600));
+        answered = true;
+        await route.fulfill({ status: 200, contentType: "text/css", body: "body{}" });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `<!DOCTYPE html><html><head><meta charset="utf-8"><title>frames</title></head><body><p>text</p><script>
+const frame = window.requestAnimationFrame.bind(window);
+let sent = false;
+window.requestAnimationFrame = (callback) => frame((time) => {
+  if (!sent && globalThis[Symbol.for("octavo.quiet")]) {
+    sent = true;
+    new Image().src = "http://octavo.test/late.css";
+  }
+  callback(time);
+});
+</script></body></html>`,
+      });
+    });
+    await page.goto("http://octavo.test/", { waitUntil: "load" });
+    await settle(page, { network });
+    assert.equal(seen.length, 1, JSON.stringify(seen));
+    assert.equal(answered, true);
+    assert.equal(network.pending, 0);
+  } finally {
+    await browser.close();
+  }
+});
