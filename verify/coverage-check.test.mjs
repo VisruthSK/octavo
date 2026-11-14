@@ -37,3 +37,18 @@ test("no engine reports at all is reported", () => {
   const { reports, engines } = layout({ corpus: [10], engines: {} });
   assert.ok(coverage(reports, engines).problems.some((problem) => problem.includes("no engine reports")));
 });
+
+test("reports one folder deeper, as the artifact upload lays them out, are counted", () => {
+  const root = mkdtempSync(join(tmpdir(), "coverage-"));
+  const put = (path, count) => {
+    mkdirSync(join(root, path), { recursive: true });
+    writeFileSync(join(root, path, "report.md"), `Tier smoke, ${count} documents, levels safe.
+`);
+  };
+  put("reports/corpus-report-1", 10);
+  put("engines/engines-report-alpha-1/engines-alpha-1", 6);
+  put("engines/engines-report-alpha-2/engines-alpha-2", 4);
+  const { problems, byBrowser } = coverage(join(root, "reports"), join(root, "engines"));
+  assert.deepEqual(problems, []);
+  assert.equal(byBrowser.get("alpha").documents, 10);
+});

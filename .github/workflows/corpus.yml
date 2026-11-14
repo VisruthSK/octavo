@@ -349,7 +349,7 @@ jobs:
 
   totals:
     name: Totals
-    needs: [plan, corpus]
+    needs: [plan, corpus, engines]
     if: always() && needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -374,7 +374,7 @@ jobs:
       - name: Engine problems
         if: always()
         run: |
-          for report in engines/*/report.md; do
+          for report in engines/*/report.md engines/*/*/report.md; do
             [ -f "$report" ] || continue
             echo "### $(basename "$report")" >> "$GITHUB_STEP_SUMMARY"
             sed -n '/^## Problems/,/^## Browser/p' "$report" >> "$GITHUB_STEP_SUMMARY"
