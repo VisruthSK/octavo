@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { brotliCompressSync, constants } from "node:zlib";
-import { inShard, readRendered, renderLinked, renderedPath } from "../corpus/upstream.mjs";
+import { readRendered, renderLinked, renderedPath } from "../corpus/upstream.mjs";
 import { closeBrowser, verify } from "./verify.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -16,11 +16,7 @@ const filter = new RegExp(flag("filter", "."));
 const browser = process.argv.includes("--browser");
 const binary = resolve(flag("binary", join(root, "target", "release", process.platform === "win32" ? "octavo.exe" : "octavo")));
 const outDirectory = resolve(flag("out", join(root, "out", "linked")));
-const [position, count] = flag("shard", "").split("/").map(Number);
-const shard = count ? { index: position - 1, count } : undefined;
-const selected = readRendered()
-  .filter((entry) => (tier === "full" || entry.tier === tier) && filter.test(entry.id))
-  .filter((_, index) => inShard(index, shard));
+const selected = readRendered().filter((entry) => (tier === "full" || entry.tier === tier) && filter.test(entry.id));
 
 const wire = (path) =>
   brotliCompressSync(readFileSync(path), { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }).length;
