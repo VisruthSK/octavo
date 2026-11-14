@@ -224,7 +224,16 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       return pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
     }),
     writingModes: elements.map((el) => getComputedStyle(el).writingMode),
-    fonts: [...document.fonts].filter((font) => font.status === "loaded").map((font) => font.family).sort(),
+    fonts: (() => {
+      const weights = { normal: "400", bold: "700" };
+      const faces = new Map();
+      for (const font of document.fonts) {
+        if (font.status !== "loaded") continue;
+        const stretch = font.stretch === "normal" ? "100%" : font.stretch;
+        faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch, font.unicodeRange].join("|"), font.family);
+      }
+      return [...faces.values()].sort();
+    })(),
     sheets: document.styleSheets.length,
     scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
   };
@@ -262,6 +271,9 @@ const probe = () => {
   } catch {
     indices = "";
   }
+  const hub = window.MathJax?.Hub;
+  const mathjax =
+    Boolean(hub?.queue) && (Boolean(hub.queue.running) || Boolean(hub.queue.pending));
   return {
     due,
     running: running.length,
@@ -269,6 +281,8 @@ const probe = () => {
     transitioning,
     indices,
     reveal: typeof window.Reveal?.isReady === "function",
+    mathjax,
+    mathjax3: Boolean(window.MathJax?.startup?.promise),
   };
 };
 
@@ -332,6 +346,28 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {
       await page.waitForTimeout(100);
       continue;
     }
+    if (state.mathjax) {
+      await page.waitForTimeout(100);
+      continue;
+    }
+    if (state.mathjax3) {
+      const idle = await page
+        .evaluate(() =>
+          new Promise((done) => {
+            const promise = window.MathJax?.startup?.promise;
+            if (!promise) return done(true);
+            Promise.resolve(promise).then(() => done(true), () => done(true));
+            let left = 16;
+            const tick = () => (left-- <= 0 ? done(false) : requestAnimationFrame(tick));
+            requestAnimationFrame(tick);
+          }),
+        )
+        .catch(() => true);
+      if (!idle) {
+        await page.waitForTimeout(100);
+        continue;
+      }
+    }
     const changed = await page.evaluate(() => globalThis[Symbol.for("octavo.quiet")]?.changed ?? Date.now()).catch(() => Date.now());
     if (Date.now() - changed < quiet) {
       await page.waitForTimeout(25);
@@ -339,6 +375,7 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {
     }
     await frames(page);
     const settled = await page.evaluate(() => globalThis[Symbol.for("octavo.quiet")]?.changed ?? Date.now()).catch(() => 0);
+    if (network && (network.pending || Date.now() - network.last < quiet)) continue;
     if (Date.now() - settled >= quiet) return;
   }
 }
