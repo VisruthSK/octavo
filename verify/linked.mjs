@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { brotliCompressSync, constants } from "node:zlib";
-import { inShard, readRendered, renderLinked, renderedPath } from "../corpus/upstream.mjs";
+import { readRendered, renderLinked, renderedPath } from "../corpus/upstream.mjs";
 import { closeBrowser, verify } from "./verify.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -16,26 +16,22 @@ const filter = new RegExp(flag("filter", "."));
 const browser = process.argv.includes("--browser");
 const binary = resolve(flag("binary", join(root, "target", "release", process.platform === "win32" ? "octavo.exe" : "octavo")));
 const outDirectory = resolve(flag("out", join(root, "out", "linked")));
-const [position, count] = flag("shard", "").split("/").map(Number);
-const shard = count ? { index: position - 1, count } : undefined;
-const selected = readRendered()
-  .filter((entry) => (tier === "full" || entry.tier === tier) && filter.test(entry.id))
-  .filter((_, index) => inShard(index, shard));
+const selected = readRendered().filter((entry) => (tier === "full" || entry.tier === tier) && filter.test(entry.id));
 
 const wire = (path) =>
   brotliCompressSync(readFileSync(path), { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }).length;
 const octavo = (input, output) => {
-  const run = spawnSync(binary, [input, output, "--level", level], { encoding: "utf8" });
-  return run.status === 0 ? { size: statSync(output).size, wire: wire(output) } : { error: (run.stderr.trim().split("\n")[0] ?? "").slice(0, 160) };
+  const run = spawnSync(binary, [input, output, "--level", level, "--no-fetch"], { encoding: "utf8" });
+  return run.status === 0 ? { size: statSync(output).size, wire: wire(output) } : { error: (run.stderr.trim().split("\n")[0] ?? "").slice(0, 2000) };
 };
 
 mkdirSync(outDirectory, { recursive: true });
 const rows = [];
 for (const entry of selected) {
-  const directory = join(outDirectory, entry.id);
-  const row = { id: entry.id };
-  const linked = await renderLinked(entry, directory);
+    const row = { id: entry.id };
+  const linked = await renderLinked(entry);
   if (!linked.page) {
+    linked.discard();
     rows.push({ ...row, note: "the linked render failed" });
     continue;
   }
@@ -45,14 +41,14 @@ for (const entry of selected) {
   Object.assign(row, { embeddedRoute, linkedRoute });
   if (linkedRoute.error) row.note = linkedRoute.error;
   else if (browser) {
-    const report = await verify(linked.page, linkedOutput, { linked: true, roots: { original: directory, optimized: outDirectory } });
+    const report = await verify(linked.page, linkedOutput, { linked: true, roots: { original: linked.directory, optimized: outDirectory } });
     const issues = report.flatMap(({ scenario, issues: found }) => found.map((issue) => `${scenario}: ${issue}`));
     row.issues = issues;
   }
-  rmSync(directory, { recursive: true, force: true });
+  linked.discard();
   rows.push(row);
   const ratio = row.linkedRoute.size ? (row.linkedRoute.size / row.embeddedRoute.size).toFixed(3) : "-";
-  console.log(entry.id.padEnd(64), row.note ? `REFUSED ${row.note}` : `linked/embedded size ${ratio}${row.issues ? (row.issues.length ? `  FAIL ${row.issues[0].slice(0, 100)}` : "  browser ok") : ""}`);
+  console.log(entry.id.padEnd(64), row.note ? `REFUSED ${row.note}` : `linked/embedded size ${ratio}${row.issues ? (row.issues.length ? `  FAIL ${row.issues[0].slice(0, 1500)}` : "  browser ok") : ""}`);
 }
 if (browser) await closeBrowser();
 
