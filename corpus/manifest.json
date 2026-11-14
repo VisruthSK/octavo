@@ -365,7 +365,7 @@
     "expect": {
       "outcome": "optimizes",
       "retains": [
-        "data:image/iVBORw0KGgo"
+        "data:image/png;base64,iVBORw0KGgo"
       ]
     },
     "bytes": 1428,

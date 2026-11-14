@@ -375,6 +375,7 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {
     }
     await frames(page);
     const settled = await page.evaluate(() => globalThis[Symbol.for("octavo.quiet")]?.changed ?? Date.now()).catch(() => 0);
+    if (network && (network.pending || Date.now() - network.last < quiet)) continue;
     if (Date.now() - settled >= quiet) return;
   }
 }
