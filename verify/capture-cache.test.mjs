@@ -117,6 +117,17 @@ test("a capture without every screenshot is not cached", async () => {
   assert.equal(calls, 2);
 });
 
+test("a capture that never settled is not cached", async () => {
+  const unsettled = captureKey({ ...parts, scenario: "desktop-dark" });
+  const state = { label: "load", screenshot: null };
+  const result = (settled) => ({ states: [state], errors: [], requests: [], checks: { settled, screenshots: { taken: 0, total: 0, limits: [] } } });
+  const outcome = await cachedCapture({ key: unsettled, folder, capture: async () => result(false) });
+  assert.equal(outcome.cached, false);
+  assert.equal(readCapture(unsettled, folder), null);
+  await cachedCapture({ key: unsettled, folder, capture: async () => result(true) });
+  assert.deepEqual(readCapture(unsettled, folder).checks.settled, true);
+});
+
 test("a mismatched key in the file is ignored", async () => {
   const other = captureKey({ ...parts, scenario: "print" });
   writeCapture(other, await fresh(), folder);

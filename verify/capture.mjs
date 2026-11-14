@@ -366,8 +366,9 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {
     }
     await frames(page);
     const settled = await page.evaluate(() => globalThis[Symbol.for("octavo.quiet")]?.changed ?? Date.now()).catch(() => 0);
-    if (Date.now() - settled >= quiet) return;
+    if (Date.now() - settled >= quiet) return true;
   }
+  return false;
 }
 
 async function settledAccessibilityTree(page) {
@@ -545,9 +546,10 @@ export async function capture(
     };
     page.on("requestfinished", finished);
     page.on("requestfailed", finished);
+    const waits = [];
     const wait = async (name, options = {}) => {
       phase = `settle ${name}`;
-      await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: (options.limit ?? LIMIT) * pace, network });
+      waits.push(await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: (options.limit ?? LIMIT) * pace, network }));
     };
     phase = "goto";
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
@@ -619,6 +621,7 @@ export async function capture(
       base,
       checks: {
         ...forced.checks,
+        settled: waits.every((outcome) => outcome !== false),
         screenshots: {
           taken: recorded.filter((state) => state.screenshot).length,
           total: recorded.length,

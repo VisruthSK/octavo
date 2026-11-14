@@ -55,15 +55,15 @@ export const writeCapture = (key, result, folder = directory) => {
   writeFileSync(join(folder, `${key}.json.br`), brotliCompressSync(Buffer.from(JSON.stringify({ key, ...payloadOf(result) })), quality));
 };
 
-const complete = (result) => {
+const cacheable = (result) => {
   const screenshots = result.checks?.screenshots;
-  return !screenshots || screenshots.taken === screenshots.total;
+  return result.checks?.settled !== false && (!screenshots || screenshots.taken === screenshots.total);
 };
 
 export const cachedCapture = async ({ key, folder = directory, capture }) => {
   const hit = readCapture(key, folder);
   if (hit) return { cached: true, result: hit };
   const result = await capture();
-  if (complete(result)) writeCapture(key, result, folder);
+  if (cacheable(result)) writeCapture(key, result, folder);
   return { cached: false, result };
 };
