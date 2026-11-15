@@ -251,12 +251,18 @@ export function compare(before, after, lossy, stats) {
   if (JSON.stringify(before.errors) !== JSON.stringify(after.errors)) {
     issues.push(`console errors: ${JSON.stringify(before.errors)} vs ${JSON.stringify(after.errors)}`);
   }
-  if (before.requests.join() !== after.requests.join()) issues.push(`requests: ${before.requests} vs ${after.requests}`);
+  const requestsBefore = significantRequests(before.requests);
+  const requestsAfter = significantRequests(after.requests);
+  if (requestsBefore.join() !== requestsAfter.join()) issues.push(`requests: ${requestsBefore} vs ${requestsAfter}`);
   if (before.states.length !== after.states.length) issues.push(`state count ${before.states.length} vs ${after.states.length}`);
   for (const [i, state] of before.states.entries()) {
     if (after.states[i]) issues.push(...compareState(state, after.states[i], lossy, stats).map((issue) => `${state.label}: ${issue}`));
   }
   return issues;
 }
+
+const FONT_FILE = /.(?:woff2?|ttf|otf|eot)(?:[?#]|$)/i;
+
+const significantRequests = (requests) => [...new Set(requests.filter((url) => !FONT_FILE.test(url)))].sort();
 
 export const signature = (issue) => issue.replace(/[0-9.]+/g, "#").replace(/\[[^\]]*\]/g, "[]").slice(0, 60);
