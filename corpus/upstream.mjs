@@ -275,14 +275,16 @@ export async function renderLinked(entry) {
   const stem = basename(file, ".qmd");
   const page = join(home, `${stem}.html`);
   const files = join(home, `${stem}_files`);
+  const octavoPage = join(home, `${stem}.octavo.html`);
   const discard = () => {
     rmSync(page, { force: true });
     rmSync(files, { recursive: true, force: true });
+    rmSync(octavoPage, { force: true });
   };
   return inDirectory(home, async () => {
     discard();
     const outcome = await render(file, undefined, false);
-    return { ...outcome, page: existsSync(page) ? page : null, directory: home, discard };
+    return { ...outcome, page: existsSync(page) ? page : null, directory: home, stem, discard };
   });
 }
 

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { brotliCompressSync, constants } from "node:zlib";
 import { readCosts } from "../corpus/costs.mjs";
 import { shardSlice } from "../corpus/sharding.mjs";
@@ -51,15 +51,17 @@ for (const entry of selected) {
       continue;
     }
     const embeddedRoute = octavo(embeddedFile, join(outDirectory, `${entry.id}.from-embedded.html`));
-    const linkedOutput = join(outDirectory, `${entry.id}.from-linked.html`);
+    const stem = linked.stem ?? basename(linked.page, ".html");
+    const linkedOutput = join(linked.directory, `${stem}.octavo.html`);
     const linkedRoute = octavo(linked.page, linkedOutput);
     Object.assign(row, { embeddedRoute, linkedRoute });
     if (linkedRoute.error) row.note = linkedRoute.error;
     else if (browser) {
-      const report = await verify(linked.page, linkedOutput, { linked: true, roots: { original: linked.directory, optimized: outDirectory } });
+      const report = await verify(linked.page, linkedOutput, { linked: true, roots: { original: linked.directory, optimized: linked.directory } });
       const issues = report.flatMap(({ scenario, issues: found }) => found.map((issue) => `${scenario}: ${issue}`));
       row.issues = issues;
     }
+    rmSync(linkedOutput, { force: true });
     linked.discard?.();
     rows.push(row);
     const ratio = row.linkedRoute.size ? (row.linkedRoute.size / row.embeddedRoute.size).toFixed(3) : "-";
