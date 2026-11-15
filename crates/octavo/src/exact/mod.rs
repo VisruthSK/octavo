@@ -55,6 +55,46 @@ fn urls<'i>(parser: &mut Parser<'i, '_>, in_font: bool, found: &mut Vec<(Range<u
     Ok(())
 }
 
+fn comments<'i>(parser: &mut Parser<'i, '_>, strip_licenses: bool, found: &mut Vec<Range<usize>>) -> Result<(), ParseError<'i, ()>> {
+    loop {
+        let start = parser.position().byte_index();
+        let Ok(token) = parser.next_including_whitespace_and_comments().cloned() else { break };
+        if token.is_parse_error() { return Err(parser.new_custom_error(())); }
+        match token {
+            Token::Comment(text) => {
+                if strip_licenses || !(text.starts_with('!') || text.contains("@license") || text.contains("@preserve")) {
+                    found.push(start..parser.position().byte_index());
+                }
+            }
+            Token::Function(_) | Token::ParenthesisBlock | Token::SquareBracketBlock | Token::CurlyBracketBlock => {
+                parser.parse_nested_block(|inner| comments(inner, strip_licenses, found))?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn stylesheet(doc: &Doc, span: Range<usize>, target: Target, options: &Options, edits: &mut Vec<Edit>, warnings: &mut Vec<Warning>) {
+    let source = &doc.src()[span.clone()];
+    if source.contains("--") { return; }
+    let mut input = ParserInput::new(source);
+    let mut parser = Parser::new(&mut input);
+    let mut found = Vec::new();
+    if comments(&mut parser, options.strip_licenses, &mut found).is_err() || found.is_empty() { return; }
+    let mut candidate = source.to_string();
+    for range in found.iter().rev() { candidate.replace_range(range.clone(), ""); }
+    let proven = adopt(source.to_string(), candidate, &oracle::Css);
+    if proven.rejected() {
+        warnings.push(Warning::OracleRejected { transform: Transform::MinifiedStylesheet, target });
+        return;
+    }
+    let _ = proven.into_inner();
+    for range in found {
+        edits.push(Edit { span: span.start + range.start..span.start + range.end, text: String::new(), transform: Transform::MinifiedStylesheet, target: target.clone() });
+    }
+}
+
 fn consider(doc: &Doc, span: Range<usize>, target: Target, in_font: bool, unhinted: bool, image: bool, options: &Options, edits: &mut Vec<Edit>, warnings: &mut Vec<Warning>) {
     let tuning = options.compression.tuning();
     let cache = options.cache_directory.as_deref();
@@ -118,6 +158,7 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
         for attr in &tag.attrs {
             if matches!(&attr.name, AttrName::Other(name) if name == "style") && !attr.value.contains('&') {
                 if let Some(span) = &attr.value_span {
+                    stylesheet(doc, span.clone(), Target::Resource(tag.label().to_string()), options, &mut edits, &mut warnings);
                     let mut input = ParserInput::new(&attr.value);
                     let mut parser = Parser::new(&mut input);
                     let mut found = Vec::new();
@@ -137,6 +178,7 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
         }
         if tag.element == Element::Style {
             if let Some(body) = &tag.body {
+                stylesheet(doc, body.clone(), Target::Resource(tag.label().to_string()), options, &mut edits, &mut warnings);
                 let mut input = ParserInput::new(&doc.src()[body.clone()]);
                 let mut parser = Parser::new(&mut input);
                 let mut found = Vec::new();
@@ -261,6 +303,18 @@ mod tests {
         let input = "<html><img style=\"background:url('data:image/png;base64,Y Q==')\"></html>";
         let output = optimize(input, Mode::Exact).unwrap();
         assert_eq!(output.html, "<html><img style=\"background:url('data:image/png;base64,YQ==')\"></html>");
+    }
+
+    #[test]
+    fn exact_removes_only_safe_css_comments() {
+        let html = "<html><style>/*x*/a{content:'/*text*/';color:red}</style></html>";
+        let output = optimize(html, Mode::Exact).unwrap();
+        assert_eq!(output.html, "<html><style>a{content:'/*text*/';color:red}</style></html>");
+        assert_eq!(optimize(&output.html, Mode::Exact).unwrap().html, output.html);
+        let unsafe_css = "<html><style>a/**/b{color:red}</style></html>";
+        let output = optimize(unsafe_css, Mode::Exact).unwrap();
+        assert_eq!(output.html, unsafe_css);
+        assert!(output.warnings.iter().any(|warning| matches!(warning, crate::Warning::OracleRejected { transform: Transform::MinifiedStylesheet, .. })));
     }
 
     #[test]

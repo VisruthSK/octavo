@@ -276,9 +276,6 @@ pub fn css(input: &str, output: &str) -> bool {
     if input.contains("--") || output.contains("--") {
         return false;
     }
-    let Some((reduced_input, _)) = reduce_css_rules(input) else { return false };
-    let Some((reduced_output, output_reductions)) = reduce_css_rules(output) else { return false };
-    if output_reductions != 0 { return false; }
     let tokenize = |s: &str| {
         let mut input = ParserInput::new(s);
         let mut parser = Parser::new(&mut input);
@@ -286,6 +283,12 @@ pub fn css(input: &str, output: &str) -> bool {
         css_tokens(&mut parser, &mut tokens).ok()?;
         Some(normalize_css_tokens(&tokens))
     };
+    if matches!((tokenize(input), tokenize(output)), (Some(a), Some(b)) if a == b && !a.iter().any(|token| token.starts_with("custom:"))) {
+        return true;
+    }
+    let Some((reduced_input, _)) = reduce_css_rules(input) else { return false };
+    let Some((reduced_output, output_reductions)) = reduce_css_rules(output) else { return false };
+    if output_reductions != 0 { return false; }
     matches!((tokenize(&reduced_input), tokenize(&reduced_output)), (Some(a), Some(b)) if a == b && !a.iter().any(|token| token.starts_with("custom:")))
 }
 
