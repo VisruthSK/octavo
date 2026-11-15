@@ -1,11 +1,13 @@
 import { spawn } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { brotliCompressSync } from "node:zlib";
 import { documentPath, materialize } from "../corpus/build.mjs";
-import { readRendered, renderedPath } from "../corpus/upstream.mjs";
+import { readCosts } from "../corpus/costs.mjs";
+import { shardSlice } from "../corpus/sharding.mjs";
+import { renderedPath } from "../corpus/upstream.mjs";
 import { rejections } from "../corpus/spec.mjs";
 import { scenariosFor } from "./capture.mjs";
 import { engine, engineNotice, checksOf } from "./engines/index.mjs";
@@ -99,29 +101,36 @@ const check = (row, expect, result, output, input) => {
 };
 
 const binaryVersion = (await run(["--version", ...octavoArgs])).stdout.trim();
-const upstreamRows = upstream
-  ? readRendered().map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }))
-  : [];
+const costs = readCosts();
 const [shardPosition, shardCount] = flag("shard", "").split("/").map(Number);
-const ownHandWritten = (_, index) => !shardCount || index % shardCount === shardPosition - 1;
-const handWritten = (await materialize())
+const shard = shardCount ? { index: shardPosition - 1, count: shardCount } : undefined;
+const allHandWritten = (await materialize())
   .map((row) => ({ ...row, path: documentPath(row.id) }))
-  .filter((row) => tier === "full" || row.tier === "smoke")
-  .filter(ownHandWritten);
-const rows = [...handWritten, ...upstreamRows];
-const selected = rows.filter((row) => (tier === "full" || row.tier === "smoke") && filter.test(row.id));
+  .filter((row) => tier === "full" || row.tier === "smoke");
+const handWritten = shardSlice(allHandWritten, shard, costs);
+const selectionFile = join(root, "corpus", "selection.json");
+const allUpstream = (upstream && existsSync(selectionFile)
+  ? JSON.parse(readFileSync(selectionFile, "utf8"))
+  : []
+)
+  .filter((entry) => tier === "full" || entry.tier === tier)
+  .map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }));
+const upstreamInShard = shardSlice(allUpstream, shard, costs);
+const rows = [...handWritten, ...upstreamInShard];
+const selected = rows.filter((row) => filter.test(row.id));
 rmSync(outDirectory, { recursive: true, force: true });
 mkdirSync(outDirectory, { recursive: true });
 
 const work = selected.flatMap((row) => levels.map((level) => ({ row, level })));
 const deadlineFailure = ({ row, level }) => {
   const input = row.path;
-  const source = readFileSync(input, "utf8");
+  const exists = existsSync(input);
+  const source = exists ? readFileSync(input, "utf8") : "";
   return {
     id: row.id,
     category: row.category,
     level,
-    inBytes: statSync(input).size,
+    inBytes: exists ? statSync(input).size : 0,
     outBytes: null,
     ms: 0,
     outcome: "not run",
@@ -134,32 +143,67 @@ const deadlineFailure = ({ row, level }) => {
   };
 };
 const results = await pool(work, jobs, async ({ row, level }) => {
-  const input = row.path;
-  const output = join(outDirectory, `${row.id}.${level}.html`);
-  const result = await run([input, output, "--level", level, "--jobs", String(threads), ...octavoArgs]);
-  const source = readFileSync(input, "utf8");
-  const produced = result.code === 0 ? readFileSync(output, "utf8") : "";
-  const excluded = Boolean(row.source) && result.stderr.includes(rejections["not-self-contained"]);
-  const problems = excluded ? [] : check({ level }, row.expect, result, produced, source);
-  return {
-    id: row.id,
-    category: row.category,
-    level,
-    inBytes: statSync(input).size,
-    outBytes: result.code === 0 ? statSync(output).size : null,
-    ms: result.ms,
-    outcome: outcomeOf(result, produced === source),
-    baselines: {
-      naive: naive(source).length,
-      brotliOriginal: brotli(source),
-      brotliOptimized: result.code === 0 ? brotli(produced) : null,
-    },
-    problems,
-    excluded: excluded ? result.stderr.trim().split("\n").at(-1).slice(0, 200) : null,
-    browser: row.browser && result.code === 0 && produced !== source,
-    input,
-    output,
-  };
+  try {
+    const input = row.path;
+    const output = join(outDirectory, `${row.id}.${level}.html`);
+    if (!existsSync(input)) {
+      return {
+        id: row.id,
+        category: row.category,
+        level,
+        inBytes: 0,
+        outBytes: null,
+        ms: 0,
+        outcome: "missing",
+        baselines: { naive: 0, brotliOriginal: 0, brotliOptimized: null },
+        problems: [`rendered file missing: ${input}`],
+        excluded: null,
+        browser: false,
+        input,
+        output,
+      };
+    }
+    const result = await run([input, output, "--level", level, "--jobs", String(threads), ...octavoArgs]);
+    const source = readFileSync(input, "utf8");
+    const produced = result.code === 0 ? readFileSync(output, "utf8") : "";
+    const excluded = Boolean(row.source) && result.stderr.includes(rejections["not-self-contained"]);
+    const problems = excluded ? [] : check({ level }, row.expect, result, produced, source);
+    return {
+      id: row.id,
+      category: row.category,
+      level,
+      inBytes: statSync(input).size,
+      outBytes: result.code === 0 ? statSync(output).size : null,
+      ms: result.ms,
+      outcome: outcomeOf(result, produced === source),
+      baselines: {
+        naive: naive(source).length,
+        brotliOriginal: brotli(source),
+        brotliOptimized: result.code === 0 ? brotli(produced) : null,
+      },
+      problems,
+      excluded: excluded ? result.stderr.trim().split("\n").at(-1).slice(0, 200) : null,
+      browser: row.browser && result.code === 0 && produced !== source,
+      input,
+      output,
+    };
+  } catch (err) {
+    return {
+      id: row.id,
+      category: row.category,
+      level,
+      inBytes: 0,
+      outBytes: null,
+      ms: 0,
+      outcome: "error",
+      baselines: { naive: 0, brotliOriginal: 0, brotliOptimized: null },
+      problems: [`exception processing document: ${err?.message || err}`],
+      excluded: null,
+      browser: false,
+      input: row.path,
+      output: join(outDirectory, `${row.id}.${level}.html`),
+    };
+  }
 }, deadlineFailure);
 
 const timing = { original: 0, optimized: 0, compare: 0, cached: 0, captureCache: { hits: 0, misses: 0 } };
@@ -182,15 +226,30 @@ if (browser) {
   const { closeBrowser, pages, verifyLevels } = await import("./verify.mjs");
   const { browserIdentity } = await import("./verify.mjs");
   const { readVerdict, revalidateVerdict, shouldRevalidate, verdictKey, verifierHash, writeVerdict } = await import("./verdicts.mjs");
+  const { formatHeartbeat, formatProgress } = await import("./progress.mjs");
   const verifier = verifierHash();
   console.log(`browser: ${engineNotice()}`);
   const identity = await browserIdentity();
   const documents = [...Map.groupBy(results.filter((entry) => entry.browser), (entry) => entry.input).values()];
+  const totalLevels = documents.reduce((acc, entries) => acc + entries.length, 0);
+  let doneLevels = 0;
+  const inFlight = new Map();
+  const heartbeat = setInterval(() => {
+    if (inFlight.size === 0) return;
+    const items = [...inFlight.values()].map((item) => ({
+      id: item.id,
+      level: item.level,
+      seconds: Math.round((Date.now() - item.startedAt) / 1000),
+    }));
+    console.log(formatHeartbeat(items, documents.length));
+  }, 60_000);
+  heartbeat.unref?.();
   const cache = { hits: 0, misses: 0 };
   await pool(documents, pages, async (entries) => {
     const original = entries[0].input;
     const originalBytes = readFileSync(original);
     const plans = [];
+    const cachedEntries = [];
     for (const entry of entries) {
       const optimized = sha256(readFileSync(entry.output));
       const key = verdictKey({ original: originalBytes, optimized, level: entry.level, verifier, browser: identity, scenarios: scenarioHash, version: binaryVersion });
@@ -201,6 +260,7 @@ if (browser) {
         if (!shouldRevalidate(key, revalidatePercent)) {
           entry.cached = true;
           cache.hits += 1;
+          cachedEntries.push(entry);
           continue;
         }
         plans.push({ level: entry.level, path: entry.output, key, optimized, revalidate: true });
@@ -210,74 +270,93 @@ if (browser) {
       cache.misses += 1;
       plans.push({ level: entry.level, path: entry.output, key, optimized });
     }
+    for (const entry of cachedEntries) {
+      doneLevels += 1;
+      console.log(formatProgress(doneLevels, totalLevels, entry.id, entry.level, 0, true));
+    }
     if (!plans.length) return;
-    const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })), { deadlineReached, captureCache });
-    timing.original += measured.timing.original;
-    timing.optimized += measured.timing.optimized;
-    timing.compare += measured.timing.compare;
-    timing.captureCache.hits += measured.timing.captureCache.hits;
-    timing.captureCache.misses += measured.timing.captureCache.misses;
-    for (const [at, plan] of plans.entries()) {
-      const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
-      const report = measured.reports[at];
-      for (const { scenario, checks, optimizedChecks } of report) {
-        if (!checks) continue;
-        browserChecks.scenarios.add(scenario);
-        for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) browserChecks.totals[state] += checks[state] ?? 0;
-        for (const [side, captureChecks] of [["original", checks], ["optimized", optimizedChecks]]) {
-          if (!captureChecks) continue;
-          for (const limit of captureChecks.screenshots?.limits ?? []) {
-            browserChecks.screenshotLimits.push({ id: entry.id, scenario, side, ...limit });
+    const docId = entries[0].id;
+    const docStarted = Date.now();
+    inFlight.set(docId, { id: docId, level: plans.map((p) => p.level).join(","), startedAt: docStarted });
+    try {
+      const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })), { deadlineReached, captureCache });
+      timing.original += measured.timing.original;
+      timing.optimized += measured.timing.optimized;
+      timing.compare += measured.timing.compare;
+      timing.captureCache.hits += measured.timing.captureCache.hits;
+      timing.captureCache.misses += measured.timing.captureCache.misses;
+      const elapsed = Math.round((Date.now() - docStarted) / 1000);
+      for (const [at, plan] of plans.entries()) {
+        const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
+        const report = measured.reports[at];
+        for (const { scenario, checks, optimizedChecks } of report) {
+          if (!checks) continue;
+          browserChecks.scenarios.add(scenario);
+          for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) browserChecks.totals[state] += checks[state] ?? 0;
+          for (const [side, captureChecks] of [["original", checks], ["optimized", optimizedChecks]]) {
+            if (!captureChecks) continue;
+            for (const limit of captureChecks.screenshots?.limits ?? []) {
+              browserChecks.screenshotLimits.push({ id: entry.id, scenario, side, ...limit });
+            }
+            for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) {
+              browserChecks.unreachable[side][state] += captureChecks.unreachable?.[state] ?? 0;
+            }
+            if (captureChecks.unreachable?.details.length) {
+              browserChecks.unreachableDetails.push({ id: entry.id, scenario, side, details: captureChecks.unreachable.details });
+            }
+            const missing = checksOf(captureChecks);
+            if (missing.length) browserChecks.degraded.push({ id: entry.id, scenario, side, missing });
           }
-          for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) {
-            browserChecks.unreachable[side][state] += captureChecks.unreachable?.[state] ?? 0;
+        }
+        const unfinished = report.some(({ issues }) => issues.some((issue) => issue.includes("verification deadline reached")));
+        if (plan.revalidate && !unfinished) {
+          try {
+            await revalidateVerdict(
+              plan.key,
+              true,
+              async () => report.every(({ scenario, issues }) =>
+                plan.level === "packed" && scenario === "no-js"
+                  ? !issues.some((issue) => issue.startsWith("check incomplete:") || issue.includes("screenshot missing"))
+                  : !issues.length,
+              ),
+            );
+          } catch (error) {
+            entry.problems.push(error.message);
           }
-          if (captureChecks.unreachable?.details.length) {
-            browserChecks.unreachableDetails.push({ id: entry.id, scenario, side, details: captureChecks.unreachable.details });
+        }
+        entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
+        const issues = [];
+        for (const { scenario, issues: found } of report) {
+          for (const issue of found) {
+            if (entry.level === "packed" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
+            issues.push(`${engineTag}${scenario}: ${issue}`);
           }
-          const missing = checksOf(captureChecks);
-          if (missing.length) browserChecks.degraded.push({ id: entry.id, scenario, side, missing });
         }
-      }
-      const unfinished = report.some(({ issues }) => issues.some((issue) => issue.includes("verification deadline reached")));
-      if (plan.revalidate && !unfinished) {
-        try {
-          await revalidateVerdict(
-            plan.key,
-            true,
-            async () => report.every(({ scenario, issues }) =>
-              plan.level === "packed" && scenario === "no-js"
-                ? !issues.some((issue) => issue.startsWith("check incomplete:") || issue.includes("screenshot missing"))
-                : !issues.length,
-            ),
-          );
-        } catch (error) {
-          entry.problems.push(error.message);
+        entry.problems.push(...issues);
+        if (!issues.length && verdictCache) {
+          writeVerdict(plan.key, {
+            level: plan.level,
+            original: sha256(originalBytes),
+            optimized: plan.optimized,
+            verifier,
+            browser: identity,
+          });
         }
+        doneLevels += 1;
+        console.log(formatProgress(doneLevels, totalLevels, entry.id, plan.level, elapsed, false));
       }
-      entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
-      const issues = [];
-      for (const { scenario, issues: found } of report) {
-        for (const issue of found) {
-          if (entry.level === "packed" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
-          issues.push(`${engineTag}${scenario}: ${issue}`);
-        }
-      }
-      entry.problems.push(...issues);
-      if (!issues.length && verdictCache) {
-        writeVerdict(plan.key, {
-          level: plan.level,
-          original: sha256(originalBytes),
-          optimized: plan.optimized,
-          verifier,
-          browser: identity,
-        });
-      }
+    } finally {
+      inFlight.delete(docId);
     }
   }, (entries) => {
     cache.misses += entries.length;
-    for (const entry of entries) entry.problems.push(`browser comparison not started because the ${deadlineMinutes}-minute verification deadline was reached`);
+    for (const entry of entries) {
+      entry.problems.push(`browser comparison not started because the ${deadlineMinutes}-minute verification deadline was reached`);
+      doneLevels += 1;
+      console.log(formatProgress(doneLevels, totalLevels, entry.id, entry.level, 0, false));
+    }
   });
+  clearInterval(heartbeat);
   await closeBrowser();
   browserName = identity;
   browserCache.hits = cache.hits;

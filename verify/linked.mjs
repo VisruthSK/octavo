@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { brotliCompressSync, constants } from "node:zlib";
-import { readRendered, renderLinked, renderedPath } from "../corpus/upstream.mjs";
+import { readCosts } from "../corpus/costs.mjs";
+import { shardSlice } from "../corpus/sharding.mjs";
+import { renderLinked, renderedPath } from "../corpus/upstream.mjs";
 import { closeBrowser, verify } from "./verify.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -16,7 +18,14 @@ const filter = new RegExp(flag("filter", "."));
 const browser = process.argv.includes("--browser");
 const binary = resolve(flag("binary", join(root, "target", "release", process.platform === "win32" ? "octavo.exe" : "octavo")));
 const outDirectory = resolve(flag("out", join(root, "out", "linked")));
-const selected = readRendered().filter((entry) => (tier === "full" || entry.tier === tier) && filter.test(entry.id));
+const [position, count] = flag("shard", "").split("/").map(Number);
+const shard = count ? { index: position - 1, count } : undefined;
+const selectionPath = join(root, "corpus", "selection.json");
+const allEntries = existsSync(selectionPath)
+  ? JSON.parse(readFileSync(selectionPath, "utf8")).filter((entry) => tier === "full" || entry.tier === tier)
+  : [];
+const costs = readCosts();
+const selected = shardSlice(allEntries, shard, costs).filter((entry) => filter.test(entry.id));
 
 const wire = (path) =>
   brotliCompressSync(readFileSync(path), { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }).length;
@@ -28,27 +37,39 @@ const octavo = (input, output) => {
 mkdirSync(outDirectory, { recursive: true });
 const rows = [];
 for (const entry of selected) {
-    const row = { id: entry.id };
-  const linked = await renderLinked(entry);
-  if (!linked.page) {
-    linked.discard();
-    rows.push({ ...row, note: "the linked render failed" });
-    continue;
+  const row = { id: entry.id };
+  try {
+    const embeddedFile = renderedPath(entry.id);
+    if (!existsSync(embeddedFile)) {
+      rows.push({ ...row, note: `missing rendered embedded file: ${embeddedFile}` });
+      continue;
+    }
+    const linked = await renderLinked(entry);
+    if (!linked.page) {
+      linked.discard?.();
+      rows.push({ ...row, note: "the linked render failed" });
+      continue;
+    }
+    const embeddedRoute = octavo(embeddedFile, join(outDirectory, `${entry.id}.from-embedded.html`));
+    const stem = linked.stem ?? basename(linked.page, ".html");
+    const linkedOutput = join(linked.directory, `${stem}.octavo.html`);
+    const linkedRoute = octavo(linked.page, linkedOutput);
+    Object.assign(row, { embeddedRoute, linkedRoute });
+    if (linkedRoute.error) row.note = linkedRoute.error;
+    else if (browser) {
+      const report = await verify(linked.page, linkedOutput, { linked: true, roots: { original: linked.directory, optimized: linked.directory } });
+      const issues = report.flatMap(({ scenario, issues: found }) => found.map((issue) => `${scenario}: ${issue}`));
+      row.issues = issues;
+    }
+    rmSync(linkedOutput, { force: true });
+    linked.discard?.();
+    rows.push(row);
+    const ratio = row.linkedRoute.size ? (row.linkedRoute.size / row.embeddedRoute.size).toFixed(3) : "-";
+    console.log(entry.id.padEnd(64), row.note ? `REFUSED ${row.note}` : `linked/embedded size ${ratio}${row.issues ? (row.issues.length ? `  FAIL ${row.issues[0].slice(0, 1500)}` : "  browser ok") : ""}`);
+  } catch (err) {
+    rows.push({ ...row, note: `exception: ${err?.message || err}` });
+    console.log(entry.id.padEnd(64), `ERROR ${err?.message || err}`);
   }
-  const embeddedRoute = octavo(renderedPath(entry.id), join(outDirectory, `${entry.id}.from-embedded.html`));
-  const linkedOutput = join(outDirectory, `${entry.id}.from-linked.html`);
-  const linkedRoute = octavo(linked.page, linkedOutput);
-  Object.assign(row, { embeddedRoute, linkedRoute });
-  if (linkedRoute.error) row.note = linkedRoute.error;
-  else if (browser) {
-    const report = await verify(linked.page, linkedOutput, { linked: true, roots: { original: linked.directory, optimized: outDirectory } });
-    const issues = report.flatMap(({ scenario, issues: found }) => found.map((issue) => `${scenario}: ${issue}`));
-    row.issues = issues;
-  }
-  linked.discard();
-  rows.push(row);
-  const ratio = row.linkedRoute.size ? (row.linkedRoute.size / row.embeddedRoute.size).toFixed(3) : "-";
-  console.log(entry.id.padEnd(64), row.note ? `REFUSED ${row.note}` : `linked/embedded size ${ratio}${row.issues ? (row.issues.length ? `  FAIL ${row.issues[0].slice(0, 1500)}` : "  browser ok") : ""}`);
 }
 if (browser) await closeBrowser();
 
