@@ -17,7 +17,6 @@ const SLOWDOWN_RETRIES = 3;
 const RATE_FLOOR_BYTES = 256 * 1024;
 const STARTUP_ALLOWANCE_MS = 2000;
 
-export const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 export const naive = (html) => html.replace(/<!--[\s\S]*?-->/g, "").replace(/>\s+</g, "><").replace(/\s{2,}/g, " ");
 export const gzip = (buf) => gzipSync(typeof buf === "string" ? Buffer.from(buf) : buf, { level: 9 }).length;
 export const brotli = (buf, quality = 11) => {
@@ -101,7 +100,8 @@ export function computeWireSizes(results, jobMs = Infinity) {
   return quality;
 }
 
-export function generateReport(results, options = {}) {
+export const generateReport = formatReport;
+export function formatReport(results, options = {}) {
   const {
     tier = "smoke",
     selectedCount = results.length,
@@ -136,29 +136,16 @@ export function generateReport(results, options = {}) {
   )].map(([level, entries]) => {
     const input = entries.reduce((total, entry) => total + entry.inBytes, 0);
     const output = entries.reduce((total, entry) => total + entry.outBytes, 0);
-    const brotliSize = entries.reduce((total, entry) => total + (entry.baselines?.brotliOptimized ?? 0), 0);
-    const gzipSize = entries.reduce((total, entry) => total + (entry.baselines?.gzipOptimized ?? 0), 0);
+    const br = entries.reduce((total, entry) => total + (entry.baselines?.brotliOptimized ?? 0), 0);
+    const gz = entries.reduce((total, entry) => total + (entry.baselines?.gzipOptimized ?? 0), 0);
     const seconds = entries.reduce((total, entry) => total + entry.ms, 0) / 1000;
-    const mibPerSec = seconds > 0 ? (input / 1048576 / seconds).toFixed(2) : "0.00";
-    return `| ${level} | ${entries.length} | ${(input / 1048576).toFixed(1)} | ${(output / 1048576).toFixed(1)} | ${(brotliSize / 1048576).toFixed(1)} | ${(gzipSize / 1048576).toFixed(1)} | ${input > 0 ? ((output / input) * 100).toFixed(1) : "0.0"}% | ${seconds.toFixed(1)} | ${mibPerSec} |`;
+    return `| ${level} | ${entries.length} | ${(input / 1048576).toFixed(1)} | ${(output / 1048576).toFixed(1)} | ${(br / 1048576).toFixed(1)} | ${(gz / 1048576).toFixed(1)} | ${((output / input) * 100).toFixed(1)}% | ${seconds.toFixed(1)} | ${(input / 1048576 / seconds).toFixed(2)} |`;
   });
 
   const categories = Map.groupBy(measured, (entry) => `${entry.category} / ${entry.level}`);
   const kib = (bytes) => (bytes / 1024).toFixed(1);
-  const lines = [
-    `# Corpus report`,
-    ``,
-    `Tier ${tier}, ${selectedCount} documents, levels ${levels.join(", ")}, browser ${browser ? engineNoticeText : "off"}. ${jobs} documents at a time, ${threads} threads each.`,
-    ``,
-  ];
-  lines.push(
-    `## Overall by level`,
-    ``,
-    `| Level | Docs | Input MiB | Output MiB | Brotli ${brotliLabel} MiB | Gzip 9 MiB | Output as % of input | Octavo seconds | MiB/s |`,
-    `|---|---|---|---|---|---|---|---|---|`,
-    ...overall,
-    ``,
-  );
+  const lines = [`# Corpus report`, ``, `Tier ${tier}, ${selectedCount} documents, levels ${levels.join(", ")}, browser ${browser ? engineNoticeText : "off"}. ${jobs} documents at a time, ${threads} threads each.`, ``];
+  lines.push(`## Overall by level`, ``, `| Level | Docs | Input MiB | Output MiB | Brotli ${brotliLabel} MiB | Gzip 9 MiB | Output as % of input | Octavo seconds | MiB/s |`, `|---|---|---|---|---|---|---|---|---|`, ...overall, ``);
   if (browser) {
     lines.push(
       `## Browser verification`,
@@ -181,11 +168,11 @@ export function generateReport(results, options = {}) {
   lines.push(`|---|---|---|---|---|---|---|---|---|---|---|`);
   for (const [name, entries] of [...categories].sort(([a], [b]) => a.localeCompare(b))) {
     const produced = entries.filter((entry) => entry.outBytes !== null);
-    const ratios = produced.map((entry) => (entry.outBytes > 0 ? entry.inBytes / entry.outBytes : 1));
+    const ratios = produced.map((entry) => entry.inBytes / entry.outBytes);
     const times = entries.map((entry) => entry.ms).sort((a, b) => a - b);
     const sum = (list, pick) => list.reduce((total, entry) => total + pick(entry), 0);
     lines.push(
-      `| ${name} | ${entries.length} | ${kib(sum(entries, (e) => e.inBytes))} | ${kib(sum(produced, (e) => e.outBytes))} | ${kib(sum(produced, (e) => e.baselines?.brotliOptimized ?? 0))} | ${kib(sum(produced, (e) => e.baselines?.gzipOptimized ?? 0))} | ${median(ratios).toFixed(2)} | ${percentile(times, 0.5).toFixed(0)} | ${percentile(times, 0.95).toFixed(0)} | ${kib(sum(entries, (e) => e.baselines?.naive ?? 0))} | ${kib(sum(entries, (e) => e.baselines?.brotliOriginal ?? 0))} |`,
+      `| ${name} | ${entries.length} | ${kib(sum(entries, (e) => e.inBytes))} | ${kib(sum(produced, (e) => e.outBytes))} | ${kib(sum(produced, (e) => e.baselines?.brotliOptimized ?? 0))} | ${kib(sum(produced, (e) => e.baselines?.gzipOptimized ?? 0))} | ${median(ratios).toFixed(2)} | ${percentile(times, 0.5).toFixed(0)} | ${percentile(times, 0.95).toFixed(0)} | ${kib(sum(entries, (e) => e.baselines.naive))} | ${kib(sum(entries, (e) => e.baselines.brotliOriginal))} |`,
     );
   }
   const slowest = [...results].sort((a, b) => b.ms - a.ms).slice(0, 5);
@@ -289,6 +276,9 @@ export async function runCorpus() {
     );
     return results;
   };
+
+  const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  const scenarioHash = sha256(Buffer.concat(readdirSync(join(root, "corpus")).filter((name) => name.endsWith(".mjs")).sort().flatMap((name) => [Buffer.from(name), readFileSync(join(root, "corpus", name))])));
 
   const binaryVersion = (await run(["--version", ...octavoArgs])).stdout.trim();
   const costs = readCosts();
@@ -439,69 +429,105 @@ export async function runCorpus() {
     await pool(documents, pages, async (entries) => {
       const original = entries[0].input;
       const originalBytes = readFileSync(original);
-      const levels = entries.map((entry) => entry.level);
-      const verdicts = new Map();
-      if (verdictCache) {
-        for (const entry of entries) {
-          const key = verdictKey({ verifier, scenarioHash, engineTag, identity, id: entry.id, level: entry.level, original: originalBytes, optimized: readFileSync(entry.output) });
-          const verdict = readVerdict(key);
-          if (verdict) {
-            if (shouldRevalidate(revalidatePercent)) {
-              verdicts.set(entry.level, { key, revalidate: true, verdict });
-            } else {
-              verdicts.set(entry.level, { key, verdict });
+      const plans = [];
+      const cachedEntries = [];
+      for (const entry of entries) {
+        const optimized = sha256(readFileSync(entry.output));
+        const key = verdictKey({ original: originalBytes, optimized, level: entry.level, verifier, browser: identity, scenarios: scenarioHash, version: binaryVersion });
+        const started = process.hrtime.bigint();
+        const verdict = verdictCache ? readVerdict(key) : null;
+        timing.cached += Number(process.hrtime.bigint() - started) / 1e6;
+        if (verdict) {
+          if (!shouldRevalidate(key, revalidatePercent)) {
+            entry.cached = true;
+            cache.hits += 1;
+            cachedEntries.push(entry);
+            continue;
+          }
+          plans.push({ level: entry.level, path: entry.output, key, optimized, revalidate: true });
+          cache.hits += 1;
+          continue;
+        }
+        cache.misses += 1;
+        plans.push({ level: entry.level, path: entry.output, key, optimized });
+      }
+      for (const entry of cachedEntries) {
+        doneLevels += 1;
+        console.log(formatProgress(doneLevels, totalLevels, entry.id, entry.level, 0, true));
+      }
+      if (!plans.length) return;
+      const docId = entries[0].id;
+      const docStarted = Date.now();
+      inFlight.set(docId, { id: docId, level: plans.map((p) => p.level).join(","), startedAt: docStarted });
+      try {
+        const measured = await verifyLevels(original, plans.map(({ level, path, optimized }) => ({ level, path, key: optimized })), { deadlineReached, captureCache });
+        timing.original += measured.timing.original;
+        timing.optimized += measured.timing.optimized;
+        timing.compare += measured.timing.compare;
+        timing.captureCache.hits += measured.timing.captureCache.hits;
+        timing.captureCache.misses += measured.timing.captureCache.misses;
+        const elapsed = Math.round((Date.now() - docStarted) / 1000);
+        for (const [at, plan] of plans.entries()) {
+          const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
+          const report = measured.reports[at];
+          for (const { scenario, checks, optimizedChecks } of report) {
+            if (!checks) continue;
+            browserChecks.scenarios.add(scenario);
+            for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) browserChecks.totals[state] += checks[state] ?? 0;
+            for (const [side, captureChecks] of [["original", checks], ["optimized", optimizedChecks]]) {
+              if (!captureChecks) continue;
+              for (const limit of captureChecks.screenshots?.limits ?? []) {
+                browserChecks.screenshotLimits.push({ id: entry.id, scenario, side, ...limit });
+              }
+              for (const state of ["elements", "hover", "focus", "focusVisible", "active"]) {
+                browserChecks.unreachable[side][state] += captureChecks.unreachable?.[state] ?? 0;
+              }
+              if (captureChecks.unreachable?.details.length) {
+                browserChecks.unreachableDetails.push({ id: entry.id, scenario, side, details: captureChecks.unreachable.details });
+              }
+              const missing = checksOf(captureChecks);
+              if (missing.length) browserChecks.degraded.push({ id: entry.id, scenario, side, missing });
             }
           }
-        }
-      }
-      const needed = entries.filter((entry) => !verdicts.get(entry.level) || verdicts.get(entry.level)?.revalidate);
-      for (const entry of entries) {
-        const cached = verdicts.get(entry.level);
-        if (cached && !cached.revalidate) {
-          entry.cached = true;
-          for (const problem of cached.verdict.problems) entry.problems.push(problem);
+          const unfinished = report.some(({ issues }) => issues.some((issue) => issue.includes("verification deadline reached")));
+          if (plan.revalidate && !unfinished) {
+            try {
+              await revalidateVerdict(
+                plan.key,
+                true,
+                async () => report.every(({ scenario, issues }) =>
+                  plan.level === "packed" && scenario === "no-js"
+                    ? !issues.some((issue) => issue.startsWith("check incomplete:") || issue.includes("screenshot missing"))
+                    : !issues.length,
+                ),
+              );
+            } catch (error) {
+              entry.problems.push(error.message);
+            }
+          }
+          entry.roundedPixels = report.reduce((total, item) => total + item.rounded, 0);
+          const issues = [];
+          for (const { scenario, issues: found } of report) {
+            for (const issue of found) {
+              if (entry.level === "packed" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
+              issues.push(`${engineTag}${scenario}: ${issue}`);
+            }
+          }
+          entry.problems.push(...issues);
+          if (!issues.length && verdictCache) {
+            writeVerdict(plan.key, {
+              level: plan.level,
+              original: sha256(originalBytes),
+              optimized: plan.optimized,
+              verifier,
+              browser: identity,
+            });
+          }
           doneLevels += 1;
-          cache.hits += 1;
-          console.log(formatProgress(doneLevels, totalLevels, entry.id, entry.level, 0, true));
+          console.log(formatProgress(doneLevels, totalLevels, entry.id, plan.level, elapsed, false));
         }
-      }
-      if (!needed.length) return;
-      const candidateFiles = Object.fromEntries(needed.map((entry) => [entry.level, entry.output]));
-      for (const entry of needed) inFlight.set(`${entry.id}.${entry.level}`, { id: entry.id, level: entry.level, startedAt: Date.now() });
-      const verdict = await verifyLevels(original, candidateFiles, {
-        checks: checksOf(levels),
-        scenarios: levels.flatMap((level) => scenariosFor(level)),
-        allowCaptureCache: captureCache,
-      });
-      for (const entry of needed) inFlight.delete(`${entry.id}.${entry.level}`);
-      timing.original += verdict.timing.original;
-      timing.optimized += verdict.timing.optimized;
-      timing.compare += verdict.timing.compare;
-      timing.cached += verdict.timing.cached;
-      timing.captureCache.hits += verdict.captureCache.hits;
-      timing.captureCache.misses += verdict.captureCache.misses;
-      for (const scenario of verdict.scenarios) browserChecks.scenarios.add(scenario);
-      for (const key of ["elements", "hover", "focus", "focusVisible", "active"]) {
-        browserChecks.totals[key] += verdict.totals[key];
-        browserChecks.unreachable.original[key] += verdict.unreachable.original[key];
-        browserChecks.unreachable.optimized[key] += verdict.unreachable.optimized[key];
-      }
-      browserChecks.unreachableDetails.push(...verdict.unreachableDetails.map((item) => ({ id: entries[0].id, ...item })));
-      browserChecks.screenshotLimits.push(...verdict.screenshotLimits.map((item) => ({ id: entries[0].id, ...item })));
-      browserChecks.degraded.push(...verdict.degraded.map((item) => ({ id: entries[0].id, ...item })));
-      for (const entry of needed) {
-        const result = verdict.levels[entry.level];
-        const cached = verdicts.get(entry.level);
-        if (cached?.revalidate) {
-          revalidateVerdict(cached.key, result);
-        } else if (verdictCache) {
-          const key = verdictKey({ verifier, scenarioHash, engineTag, identity, id: entry.id, level: entry.level, original: originalBytes, optimized: readFileSync(entry.output) });
-          writeVerdict(key, result);
-        }
-        for (const problem of result.problems) entry.problems.push(problem);
-        doneLevels += 1;
-        cache.misses += 1;
-        console.log(formatProgress(doneLevels, totalLevels, entry.id, entry.level, Math.round(result.timing.total / 1000), false));
+      } finally {
+        inFlight.delete(docId);
       }
     }, (entries) => {
       cache.misses += entries.length;
@@ -535,7 +561,7 @@ export async function runCorpus() {
 
   const totalJobMs = Math.max(Number(process.hrtime.bigint() - jobStarted) / 1e6, results.reduce((total, entry) => total + entry.ms, 0));
   const brotliQuality = computeWireSizes(results, totalJobMs);
-  const report = generateReport(results, {
+  const report = formatReport(results, {
     tier,
     selectedCount: selected.length,
     levels,
@@ -557,6 +583,6 @@ export async function runCorpus() {
   process.exit(failures.length ? 1 : 0);
 }
 
-if (process.argv[1] && (process.argv[1].endsWith("corpus.mjs") || resolve(process.argv[1]) === resolve(import.meta.dirname, "corpus.mjs"))) {
+if (process.argv[1]?.endsWith("corpus.mjs")) {
   await runCorpus();
 }
