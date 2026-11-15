@@ -309,15 +309,25 @@ const frames = async (page) => {
   ]);
 };
 
-export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {}) {
+export async function settle(page, { quiet = QUIET, limit = LIMIT, network, longLived } = {}) {
   const deadline = Date.now() + limit;
   await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
   await page.evaluate(watch).catch(() => {});
+  const isNetworkQuiet = () => {
+    if (!network) return true;
+    if (Date.now() - network.last < quiet) return false;
+    if (!network.pending) return true;
+    if (!network.openRequests || !network.openRequests.size) return true;
+    for (const url of network.openRequests.keys()) {
+      if (!longLived?.has(url)) return false;
+    }
+    return true;
+  };
   let previous = null;
   while (Date.now() < deadline) {
     if (network) {
       while (Date.now() < deadline) {
-        if (!network.pending && Date.now() - network.last >= quiet) break;
+        if (isNetworkQuiet()) break;
         await page.waitForTimeout(50);
       }
     }
@@ -375,7 +385,7 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {
     }
     await frames(page);
     const settled = await page.evaluate(() => globalThis[Symbol.for("octavo.quiet")]?.changed ?? Date.now()).catch(() => 0);
-    if (network && (network.pending || Date.now() - network.last < quiet)) continue;
+    if (!isNetworkQuiet()) continue;
     if (Date.now() - settled >= quiet) return true;
   }
   return false;
@@ -514,7 +524,7 @@ export async function capture(
   file,
   scenario,
   lossy,
-  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS } = {},
+  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS, longLived } = {},
 ) {
   const pace = patient ? PATIENCE : 1;
   const forms = rootForms(root);
@@ -536,7 +546,8 @@ export async function capture(
     const page = await context.newPage();
     const errors = [];
     const requests = [];
-    const network = { pending: 0, count: 0, last: 0 };
+    const openRequests = new Map();
+    const network = { pending: 0, count: 0, last: 0, openRequests };
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
     page.on("console", (message) => {
       if (message.type() !== "error") return;
@@ -548,18 +559,21 @@ export async function capture(
       network.pending += 1;
       network.count += 1;
       network.last = Date.now();
+      openRequests.set(request.url(), Date.now());
       if (!/^file:/.test(request.url())) requests.push(request.url());
     });
-    const finished = () => {
+    const finished = (request) => {
       network.pending = Math.max(0, network.pending - 1);
       network.last = Date.now();
+      if (request) openRequests.delete(request.url());
     };
     page.on("requestfinished", finished);
     page.on("requestfailed", finished);
+    const knownLongLived = new Set(longLived ?? []);
     const waits = [];
     const wait = async (name, options = {}) => {
       phase = `settle ${name}`;
-      waits.push(await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: (options.limit ?? LIMIT) * pace, network }));
+      waits.push(await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: (options.limit ?? LIMIT) * pace, network, longLived: knownLongLived }));
     };
     phase = "goto";
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
@@ -572,6 +586,7 @@ export async function capture(
     if (scripted) await page.evaluate(() => document.fonts.ready);
     else await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 3000 }).catch(() => {});
     await wait("initial page");
+    for (const url of openRequests.keys()) knownLongLived.add(url);
 
     const states = [];
     const record = async (label, extra = {}) => {
@@ -628,6 +643,7 @@ export async function capture(
       states,
       errors,
       requests,
+      openRequests: new Set(openRequests.keys()),
       base,
       checks: {
         ...forced.checks,

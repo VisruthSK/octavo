@@ -189,3 +189,23 @@ test("a dropped hover rule on a page with only a link is reported", async () => 
     .map(({ scenario }) => scenario);
   assert.ok(failing.includes("desktop-light"), `${failing}`);
 });
+
+test("a long-lived connection does not stall verification after settling", async () => {
+  const hanging = page(
+    base,
+    '<h1>Long</h1><script>fetch("http://127.0.0.1:1948/stream").catch(() => {});</script>',
+  );
+  const started = Date.now();
+  const report = await verify(write("long-original", hanging), write("long-changed", hanging), { only: ["desktop-light"] });
+  assert.deepEqual(failingScenarios(report), []);
+  assert.ok(Date.now() - started < 8000, `verification took ${Date.now() - started} ms`);
+});
+
+test("confirmation bounds recaptures when both captures are deterministic", async () => {
+  const original = page(base, "<h1>Title</h1>");
+  const changed = page(base, "<h1>Different</h1>");
+  const started = Date.now();
+  const report = await verify(write("det-orig", original), write("det-changed", changed), { only: ["desktop-light"] });
+  assert.ok(failingScenarios(report).includes("desktop-light"));
+  assert.ok(Date.now() - started < 8000, `deterministic diff took ${Date.now() - started} ms`);
+});

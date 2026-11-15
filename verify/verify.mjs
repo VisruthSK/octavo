@@ -141,20 +141,35 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
   if (!issues.length || issues.some((issue) => issue.includes("capture timed out") || issue.includes("screenshot missing"))) {
     return { issues, rounded: stats.roundedPixels };
   }
+  const stalled = !before.checks?.settled && !after.checks?.settled;
   const kept = await slots.using(async () => {
     const pairs = [{ before, after }];
     for (let round = 0; round < RECAPTURES; round++) {
       if (isDeadlineReached()) return [...issues, "verification deadline reached during document comparison"];
-      const patient = round > 0;
+      const patient = round > 0 && !stalled;
       const [again, optimizedAgain] = await Promise.all([
         take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, linkedOriginal: linked }).catch(crashed),
-        take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked }).catch(crashed),
+        take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked, longLived: before.openRequests }).catch(crashed),
       ]);
       if ([again.crashed, optimizedAgain.crashed].some((message) => message?.includes("capture timed out"))) {
         return ["capture timed out during confirmation"];
       }
       pairs.push({ before: view(again, sweep), after: view(optimizedAgain, sweep) });
       if (!compare(view(again, sweep), view(optimizedAgain, sweep), lossy).length) break;
+      if (
+        !compare(pairs[0].before, pairs[1].before, lossy).length &&
+        !compare(pairs[0].after, pairs[1].after, lossy).length
+      ) {
+        break;
+      }
+      const seen = (left, right) => new Set(compare(left, right, lossy).map(signature));
+      const within = [
+        seen(pairs[0].before, pairs[1].before),
+        seen(pairs[0].after, pairs[1].after),
+      ];
+      if (issues.every((issue) => within.some((set) => set.has(signature(issue))))) {
+        break;
+      }
     }
     const seen = (left, right) => new Set(compare(left, right, lossy).map(signature));
     const across = pairs.map((pair) => seen(pair.before, pair.after));
@@ -266,12 +281,17 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
       break;
     }
     let stopped = false;
+    const safeGroup = groups.find((group) => group.some((plan) => plan.level === "safe"));
+    let safeAfterNoJs = null;
     for (const group of groups) {
       const wanted = group.filter((plan) => plan.set.some((entry) => entry.name === scenario.name));
       if (!wanted.length) continue;
       const sweep = wanted.some((plan) => plan.set.some((entry) => entry.name === scenario.name && entry.sweep));
       const startedOptimized = process.hrtime.bigint();
-      const after = await run(group[0].path, { ...scenario, sweep });
+      const after = scenario.name === "no-js" && safeAfterNoJs && group !== safeGroup
+        ? safeAfterNoJs
+        : await run(group[0].path, { ...scenario, sweep, longLived: before.openRequests });
+      if (scenario.name === "no-js" && group === safeGroup) safeAfterNoJs = after;
       timing.optimized += elapsed(startedOptimized);
       if (after.crashed?.includes("capture timed out")) {
         failRemainder(scenarioAt, after.crashed);
