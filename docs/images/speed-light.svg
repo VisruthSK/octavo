@@ -99,7 +99,7 @@
 <circle cx='205.43' cy='63.07' r='3.62' style='stroke-width: 0.84; stroke: #1D4ED8; stroke-opacity: 0.90; fill: #1D4ED8; fill-opacity: 0.90;' />
 <text x='71.86' y='66.79' style='font-size: 10.40px;fill: #1F2328; font-family: "Arial";' textLength='118.45px' lengthAdjust='spacingAndGlyphs'>Quarto pages and reports</text>
 <text x='220.54' y='66.79' style='font-size: 10.40px;fill: #1F2328; font-family: "Arial";' textLength='114.44px' lengthAdjust='spacingAndGlyphs'>Image-heavy slide decks</text>
-<text x='13.95' y='40.07' style='font-size: 11.50px;fill: #59636E; font-family: "Arial";' textLength='390.08px' lengthAdjust='spacingAndGlyphs'>Packed level, default effort, 20 threads. Diagonals mark constant throughput.</text>
+<text x='13.95' y='40.07' style='font-size: 11.50px;fill: #59636E; font-family: "Arial";' textLength='390.08px' lengthAdjust='spacingAndGlyphs'>Archive level, default effort, 20 threads. Diagonals mark constant throughput.</text>
 <text x='13.95' y='24.69' style='font-size: 15.00px; font-weight: bold;fill: #1F2328; font-family: "Arial";' textLength='118.09px' lengthAdjust='spacingAndGlyphs'>Time to optimize</text>
 </g>
 </g>

@@ -94,7 +94,7 @@ shrink <- upstream$input_bytes / upstream$packed_bytes
 median_shrink <- median(shrink)
 distribution_chart <- function(p) {
   ggplot(data.frame(shrink = shrink), aes(shrink)) +
-    geom_histogram(bins = 36, fill = p$packed, colour = NA, alpha = 0.92) +
+    geom_histogram(bins = 36, fill = p$archive, colour = NA, alpha = 0.92) +
     geom_vline(xintercept = median_shrink, colour = p$accent, linewidth = 0.9) +
     annotate(
       "text", x = median_shrink * 1.08, y = Inf, vjust = 1.6, hjust = 0,
@@ -103,7 +103,7 @@ distribution_chart <- function(p) {
     scale_x_log10(breaks = c(1.5, 2, 5, 10, 20, 50), labels = function(x) paste0(x, "x")) +
     labs(
       title = "How much each document shrinks",
-      subtitle = sprintf("%d Quarto test documents at the packed level", length(shrink)),
+      subtitle = sprintf("%d Quarto test documents at the archive level", length(shrink)),
       x = "Original size divided by optimized size", y = "Documents"
     ) +
     base_theme(p) +
@@ -130,7 +130,7 @@ speed_chart <- function(p) {
       colour = p$muted, size = 3.2, hjust = 0, vjust = 0.5
     ) +
     geom_point(size = 3, alpha = 0.9) +
-    scale_colour_manual(values = c(p$second, p$packed)) +
+    scale_colour_manual(values = c(p$second, p$archive)) +
     scale_x_log10(
       breaks = c(0.1, 0.3, 1, 3, 10), labels = function(x) paste(x, "MiB"),
       limits = c(0.08, 40), expand = c(0, 0)
@@ -138,7 +138,7 @@ speed_chart <- function(p) {
     scale_y_log10(breaks = c(0.03, 0.1, 0.3, 1, 3), labels = function(x) paste0(x, " s"), limits = c(0.03, 5)) +
     labs(
       title = "Time to optimize",
-      subtitle = "Packed level, default effort, 20 threads. Diagonals mark constant throughput.",
+      subtitle = "Archive level, default effort, 20 threads. Diagonals mark constant throughput.",
       x = "Input size", y = NULL
     ) +
     base_theme(p) +

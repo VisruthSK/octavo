@@ -114,15 +114,15 @@ const reducedCase = ([name, change]) => {
   return [name, original, page(change(base))];
 };
 
-test("reduced scenario sets preserve every safe-set proof outside explicit exclusions", async () => {
+test("reduced scenario sets preserve every serve-set proof outside explicit exclusions", async () => {
   const problems = await Promise.all(
     breakages.map(reducedCase).map(async ([name, original, optimized], at) => {
       const originalFile = write(`reduced-${at}-original`, original);
       const changedFile = write(`reduced-${at}-changed`, optimized);
       if (reducedExclusions[name]) {
         const [scenario, reason] = reducedExclusions[name];
-        const safe = failingScenarios(await verify(originalFile, changedFile, { only: [scenario] }));
-        return safe.includes(scenario) ? [] : [`${name} was not caught by its listed exclusion: ${reason}`];
+        const serve = failingScenarios(await verify(originalFile, changedFile, { only: [scenario] }));
+        return serve.includes(scenario) ? [] : [`${name} was not caught by its listed exclusion: ${reason}`];
       }
       const missed = [];
       for (const level of ["portable", "archive"]) {
