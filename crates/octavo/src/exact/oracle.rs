@@ -280,7 +280,19 @@ pub fn font(input: &[u8], output: &[u8]) -> bool {
     let Some(a) = sfnt(input) else { return false };
     let Some(b) = sfnt(output) else { return false };
     if a.get(..12) != b.get(..12) { return false; }
-    matches!((tables(&a), tables(&b)), (Some(a), Some(b)) if a == b)
+    let (Some(a), Some(b)) = (tables(&a), tables(&b)) else { return false };
+    if a.len() != b.len() { return false; }
+    a.iter().all(|(tag, (checksum, table))| {
+        let Some((other_checksum, other)) = b.get(tag) else { return false };
+        if tag != b"head" { return checksum == other_checksum && table == other; }
+        if table.len() != other.len() || table.len() < 18 { return false; }
+        let flags = u16::from_be_bytes([table[16], table[17]]);
+        let other_flags = u16::from_be_bytes([other[16], other[17]]);
+        let adjusted_checksum = u32::from_be_bytes(*checksum).wrapping_sub(u32::from(flags & 0x0800) << 16);
+        let other_adjusted_checksum = u32::from_be_bytes(*other_checksum).wrapping_sub(u32::from(other_flags & 0x0800) << 16);
+        adjusted_checksum == other_adjusted_checksum && (flags ^ other_flags) & !0x0800 == 0
+            && table[..8] == other[..8] && table[12..16] == other[12..16] && table[18..] == other[18..]
+    })
 }
 
 #[cfg(test)]
@@ -337,7 +349,7 @@ mod tests {
             threads: None,
         }).unwrap();
         let decoded = sfnt(&encoded).unwrap();
-        assert!(!font(source, &encoded));
+        assert!(font(source, &encoded));
         assert!(font(&decoded, &encoded));
         let mut changed = decoded.to_vec();
         let (offset, _) = {
@@ -347,6 +359,27 @@ mod tests {
         };
         changed[offset] ^= 1;
         assert!(!font(&changed, &encoded));
+    }
+
+    #[test]
+    fn font_head_allows_only_checksum_adjustment_and_flag_eleven() {
+        let source = include_bytes!("../../tests/data/octavo-test.ttf");
+        let count = u16::from_be_bytes(source[4..6].try_into().unwrap()) as usize;
+        let entry = (0..count).map(|i| 12 + 16 * i).find(|i| &source[*i..*i + 4] == b"head").unwrap();
+        let offset = u32::from_be_bytes(source[entry + 8..entry + 12].try_into().unwrap()) as usize;
+        let mut candidate = source.to_vec();
+        candidate[offset + 8] ^= 1;
+        assert!(font(source, &candidate));
+        candidate[offset + 16] ^= 8;
+        let checksum = u32::from_be_bytes(source[entry + 4..entry + 8].try_into().unwrap());
+        let adjusted = if source[offset + 16] & 8 == 0 { checksum.wrapping_add(0x08000000) } else { checksum.wrapping_sub(0x08000000) };
+        candidate[entry + 4..entry + 8].copy_from_slice(&adjusted.to_be_bytes());
+        assert!(font(source, &candidate));
+        candidate[offset + 17] ^= 1;
+        assert!(!font(source, &candidate));
+        candidate[offset + 17] ^= 1;
+        candidate[offset + 20] ^= 1;
+        assert!(!font(source, &candidate));
     }
 
     #[test]

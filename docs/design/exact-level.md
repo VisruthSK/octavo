@@ -98,6 +98,6 @@ Equivalence holds by construction via translation validation: every exact transf
 |---|---|---|---|
 | Base64 (E1) | Decoded bytes | `decode(output) == decode(input)` | Keep original data URL |
 | Images (E2, E3) | Pixel buffers & ancillary chunks | Decoded RGBA pixel buffer byte-equal across all pixels (including colour under fully transparent alpha), bit depth and colour type match, and kept rendering-relevant chunks (`gAMA`, `cHRM`, `sRGB`, `iCCP`, `pHYs`) are identical | Keep original image bytes |
-| Fonts (E4) | Table directory & sfnt tables | WOFF2 decoded back to sfnt; tables match input sfnt table-by-table after normalising table order and padding; transformed tables (`glyf`, `loca`, `hmtx`) match decoded sfnt | Keep original font bytes |
+| Fonts (E4) | Table directory & sfnt tables | WOFF2 decoded back to sfnt; tables match input sfnt table-by-table after normalising table order and padding. The `head` table may differ only in `checkSumAdjustment` and flags bit 11; its directory checksum may differ by the corresponding bit contribution. All other table bytes and directory checksums match. | Keep original font bytes |
 | CSS (E5–E10) | cssparser token stream | Identical cssparser token stream modulo comments and pinned-insignificant whitespace; numbers match by parsed value and unit; hex colours match by RGBA; no rule added, dropped (except empty rules and byte-identical duplicates under adjacency rule), or reordered | Keep original CSS text |
 
