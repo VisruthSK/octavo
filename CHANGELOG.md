@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-13
+## [0.1.1] - 2026-11-14
 
 ### Changed
 
