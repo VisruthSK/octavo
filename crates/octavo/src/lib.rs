@@ -29,7 +29,8 @@ mod css;
 mod data;
 mod doc;
 mod embed;
-mod exactcss;
+#[doc = "Oracles for exact transformations."]
+pub mod exact;
 mod fonts;
 mod html;
 mod images;
@@ -772,28 +773,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     };
     let tuning = options.compression.tuning();
     let (images, (removals, scripts, styles, kept_whole)) = if options.exact {
-        let memory = (!options.keep_png).then(|| {
-            options
-                .image_memory
-                .unwrap_or(Options::DEFAULT_IMAGE_MEMORY)
-        });
-        let (images, (styles, data_urls)) = rayon::join(
-            || images::stage(&doc, None, tuning, memory, true),
-            || {
-                rayon::join(
-                    || {
-                        exactcss::stage(
-                            &doc,
-                            licenses,
-                            tuning,
-                            options.cache_directory.as_deref(),
-                        )
-                    },
-                    || normalize_data_urls(&doc),
-                )
-            },
-        );
-        (images, (Vec::new(), Vec::new(), styles.chain(data_urls).collect(), Vec::new()))
+        (Vec::new(), (Vec::new(), Vec::new(), Vec::new(), Vec::new()))
     } else {
         let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
         || {
@@ -944,7 +924,7 @@ impl Simplified {
             skipped: self.skipped.clone(),
             warnings: self.warnings.clone(),
         };
-        if mode == Mode::Safe {
+        if matches!(mode, Mode::Safe | Mode::Exact) {
             return unpacked();
         }
         let Some(packed) = pack::run(&self.scanned, mode, self.compression.tuning())
@@ -999,6 +979,7 @@ impl Simplified {
             Mode::Packed => &[Mode::Packed, Mode::Scripts, Mode::Safe],
             Mode::Scripts => &[Mode::Scripts, Mode::Safe],
             Mode::Safe => &[Mode::Safe],
+            Mode::Exact => &[Mode::Exact],
         };
         ladder.iter().find_map(|&step| {
             let candidate = self.pack(step);

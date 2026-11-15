@@ -1,5 +1,9 @@
 # Exact level: inventory
 
+## Browser bridge smoke specification
+
+Use one browser engine to render one compact document before and after exact optimization, and compare the rendered output. Include `white-space: pre` text, a visible space between inline-block elements, a `content` string containing whitespace and comment-like text, a custom property whose text is substituted into a declaration, and comments inside CSS values. Assert the text and generated content, measure the gap between inline blocks, and compare screenshots. These checks exercise the connection between the pinned CSS rules and browser behavior once; the oracle's negative tests establish that known changes are rejected.
+
 Step 1 of the `exact-level` task (issue context: `Mode` redesign, steps 3–4 of `engine-redesign-scope.md`). This records every transform Octavo applies today, read from the code on `main` (9208527). The class column separates transforms that are semantics-preserving by construction — the argument does not depend on guessing what the document uses — from heuristics, which guess selectors, classes, ids, scripts or characters and can be wrong.
 
 ## How a document is processed
