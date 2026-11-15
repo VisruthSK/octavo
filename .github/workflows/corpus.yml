@@ -33,7 +33,7 @@ on:
         description: Which scenario to capture for the diagnosis
         default: tablet
       diagnose_level:
-        description: Which level of the document to capture
+        description: Which level of the document to capture, or all for every level
         default: packed
       octavo_args:
         description: Extra arguments passed to every octavo invocation
@@ -256,6 +256,21 @@ jobs:
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
       - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}"
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
+      - name: Diagnose one document
+        if: always() && inputs.diagnose != ''
+        run: |
+          original="corpus/.cache/rendered/${{ inputs.diagnose }}.html"
+          [ -f "$original" ] || original="corpus/.cache/docs/${{ inputs.diagnose }}.html"
+          levels="${{ inputs.diagnose_level }}"
+          if [ "$levels" = all ]; then levels="safe scripts packed"; fi
+          for level in $levels; do
+            optimized="out/engines-${{ matrix.browser }}-${{ matrix.shard }}/${{ inputs.diagnose }}.$level.html"
+            if [ -f "$original" ] && [ -f "$optimized" ]; then
+              directory="out/engines-${{ matrix.browser }}-${{ matrix.shard }}-diagnose/$level"
+              node verify/diagnose.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" "$directory"
+              cp "$original" "$optimized" "$directory/"
+            fi
+          done
       - uses: actions/upload-artifact@v7
         if: always()
         with:
