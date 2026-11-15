@@ -19,15 +19,15 @@ This scopes the engine refactor brief against the code on the top of the pull re
 2. **No `analyze`, `plan`, `apply` pipeline for a single document.** The in-memory call already exists (`optimize`, `simplify`). A plan/apply split is justified for site mode, where nothing may be written until the whole tree is valid. Elsewhere it adds types without removing a defect.
 3. **Remote files.** The brief makes remote fetching opt-in and asks for an SSRF policy. Octavo's output files are always offline, so the CLI fetches stylesheets, fonts and images by default, with a size and time limit and `--no-fetch`. A private-network block was tried and dropped: Octavo is a local tool run by an author on their own documents, and the policy cost hundreds of lines and a flag for a threat that does not apply. It would be worth revisiting only if Octavo is ever run on documents from people other than the user.
 4. **Skera.** The brief says to treat the Skera replacement as given. It is still an evaluation (#18). The font coverage work depends on the outcome and is sequenced after it.
-5. **Evidence taxonomy.** Kept, but as a field on each audit record, not as a type hierarchy. The audit has to say which rule fired and whether it was a heuristic. A full proof-obligation framework would be unused by every current transform.
+5. **Evidence taxonomy.** Kept as a field on each audit record for heuristic transforms: the audit says which rule fired and whether it was a heuristic. The earlier objection to a proof-obligation framework (no transform would use it) no longer holds for one class: the exact level (`exact-level.md`) uses translation validation. Each transform in that class is paired with an independent oracle, and its output is adopted only if the oracle proves it equal to its input, otherwise the original bytes are kept. The type system carries the proof: only `adopt(original, candidate, oracle)` builds a `Proven<T>`, and the exact pipeline accepts only `Proven` values. The framework is scoped to that class; heuristic transforms stay audit fields.
 
 ## Plan
 
 | Step | Change | Why | Owner |
 |---|---|---|---|
-| 1 | Report only applied edits | Phantom entries in the audit | Done (pull request into `main`) |
-| 2 | Edit engine: reject conflicts explicitly and report them as skipped, with the transform that lost; byte deltas in the report sum to the final size | The report must agree with the output | Claude (critical) |
-| 3 | Replace `Mode` with independent settings: packaging (`plain`, `scripts`, `packed`), effort (`fast`, `balanced`, `maximum`), evidence (`generic`, `quarto1`), with `Safe` removed as a name; audit records carry the rule and its evidence class | `safe` does not mean safe; effort and risk must not be coupled | Claude designs the types, opencode migrates call sites and tests |
+| 1 | Report only applied edits | Phantom entries in the audit | Done |
+| 2 | Edit engine: reject conflicts explicitly and report them as skipped, with the transform that lost; byte deltas in the report sum to the final size | The report must agree with the output | Done |
+| 3 | Replace `Mode` with independent settings: packaging (`plain`, `scripts`, `packed`), effort (`fast`, `balanced`, `maximum`), evidence (`proven`, `generic`, `quarto1`), with `Safe` removed as a name; `proven` is the exact level, whose transforms carry oracle proofs; audit records carry the rule and its evidence class | `safe` does not mean safe; effort and risk must not be coupled | Claude designs the types, opencode migrates call sites and tests |
 | 4 | Isolate the Quarto 1 rules (`quarto.rs`, word-index pruning) behind the `quarto1` evidence profile, detected from the generator tag | Heuristics must not apply to unknown HTML | opencode, reviewed |
 | 5 | Embedding: containment of local paths to the resource roots, `<base>` and `type=module` cases in tests | Correctness of the new embedding path | opencode, reviewed |
 | 6 | Site mode: plan in memory, write to a staging directory, verify references, then promote; symlink policy; no stale files from an earlier build | Partial or stale output | opencode, reviewed |
@@ -37,6 +37,6 @@ This scopes the engine refactor brief against the code on the top of the pull re
 
 ## Open decisions
 
-- Remote fetching default (this plan: on, with the security policy; brief: off).
+- Remote fetching default: decided, on by default with `--no-fetch`, as shipped.
 - Whether to keep the name `Mode` for packaging only, or rename it.
 - Whether the JSON audit schema should be stable from 0.1 or marked unstable until 0.2.
