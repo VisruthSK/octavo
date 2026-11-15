@@ -101,3 +101,9 @@ Equivalence holds by construction via translation validation: every exact transf
 | Fonts (E4) | Table directory & sfnt tables | WOFF2 decoded back to sfnt; tables match input sfnt table-by-table after normalising table order and padding. The `head` table may differ only in `checkSumAdjustment` and flags bit 11; its directory checksum may differ by the corresponding bit contribution. All other table bytes and directory checksums match. | Keep original font bytes |
 | CSS (E5–E10) | cssparser token stream | Identical cssparser token stream modulo comments and pinned-insignificant whitespace; numbers match by parsed value and unit; hex colours match by RGBA; no rule added, dropped (except empty rules and byte-identical duplicates under adjacency rule), or reordered | Keep original CSS text |
 
+## Browser-free corpus check
+
+Run `node corpus/build.mjs --check`, then `cargo test -p octavo --lib exact_corpus_and_byte_price -- --ignored --nocapture`. The test reads every fixture in the manifest and every HTML file under the rendered upstream cache. Set `OCTAVO_EXACT_UPSTREAM_CACHE` to that rendered directory when it is not at the local default path. It verifies that output consists solely of the exact stage's validated edit spans, reports applied and rejected candidates and the number of documents unchanged by each transform, and fails on oracle rejections. The byte comparison uses every accepted fixture and the first 20 accepted upstream documents in sorted order.
+
+The implementation is still incomplete: CSS transforms beyond comment removal, several resource contexts, and compile-time enforcement that every stage carries `Proven` remain outstanding. The corpus check does not substitute for the browser bridge smoke above.
+

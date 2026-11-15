@@ -92,7 +92,12 @@ fn png_metadata(bytes: &[u8]) -> Option<(u8, u8, Vec<([u8; 4], Vec<u8>)>)> {
         }
         if matches!(&tag, b"acTL" | b"fcTL" | b"fdAT") { return None; }
         if !matches!(&tag, b"IHDR" | b"IDAT" | b"IEND") {
-            metadata.push((tag, data.to_vec()));
+            let indexed_transparency = &tag == b"tRNS" && header.is_some_and(|(_, color)| color == 3);
+            let data = if indexed_transparency {
+                let length = data.iter().rposition(|value| *value != 255).map_or(0, |index| index + 1);
+                &data[..length]
+            } else { data };
+            if !indexed_transparency || !data.is_empty() { metadata.push((tag, data.to_vec())); }
         }
         if &tag == b"IEND" {
             if pos != bytes.len() { return None; }
@@ -120,6 +125,10 @@ fn webp_pixels(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
 
 pub(crate) fn webp_eligible(bytes: &[u8]) -> bool {
     matches!(png_metadata(bytes), Some((8, 2 | 6, metadata)) if metadata.is_empty())
+}
+
+pub(crate) fn png_recompress_eligible(bytes: &[u8]) -> bool {
+    png_metadata(bytes).is_some_and(|(_, _, metadata)| !metadata.iter().any(|(tag, _)| matches!(tag, b"iCCP" | b"iDOT")))
 }
 
 #[doc = "Checks decoded pixels, PNG depth and color type, and rendering metadata."]

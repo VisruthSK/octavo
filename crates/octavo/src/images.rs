@@ -358,7 +358,7 @@ pub(crate) fn exact_candidates(bytes: &[u8], tuning: Tuning, webp_memory: Option
     let Ok((width, height)) = reader.into_dimensions() else { return Vec::new() };
     let pixels = u64::from(width) * u64::from(height);
     let mut candidates = Vec::new();
-    if pixels <= MAX_LOSSLESS_PIXELS {
+    if pixels <= MAX_LOSSLESS_PIXELS && crate::exact::oracle::png_recompress_eligible(bytes) {
         let options = PngOptions {
             strip: StripChunks::None,
             interlace: None,

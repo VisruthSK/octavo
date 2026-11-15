@@ -1,6 +1,9 @@
 #[doc = "Independent checks for exact transformations."]
 pub mod oracle;
 
+#[cfg(test)]
+mod corpus;
+
 use crate::{doc::{Doc, Edit}, data, fonts, images, html::{AttrName, Element}, Options, Target, Transform, Warning};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use cssparser::{ParseError, Parser, ParserInput, Token};
@@ -267,6 +270,21 @@ mod tests {
         let proven = super::adopt(original.clone(), changed, &super::oracle::Image);
         assert!(proven.rejected());
         assert_eq!(proven.into_inner(), original);
+    }
+
+    #[test]
+    fn palette_opaque_transparency_entries_are_equivalent() {
+        let original = include_bytes!("../../tests/data/palette-transparency.png");
+        let candidates = crate::images::exact_candidates(original, crate::Tuning::BALANCED, None);
+        assert_eq!(candidates.len(), 1);
+        assert!(super::oracle::image(original, &candidates[0].1));
+        let mut changed = original.to_vec();
+        let at = changed.windows(4).position(|bytes| bytes == b"tRNS").unwrap();
+        changed[at + 4] ^= 1;
+        let mut crc = flate2::Crc::new();
+        crc.update(&changed[at..at + 7]);
+        changed[at + 7..at + 11].copy_from_slice(&crc.sum().to_be_bytes());
+        assert!(!super::oracle::image(original, &changed));
     }
 
     #[test]
