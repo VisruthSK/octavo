@@ -6,7 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use cssparser::{ParseError, Parser, ParserInput, Token};
 use std::{ops::Range, path::Path};
 
-fn urls<'i>(parser: &mut Parser<'i, '_>, in_font: bool, found: &mut Vec<(Range<usize>, bool)>) -> Result<(), ParseError<'i, ()>> {
+fn urls<'i>(parser: &mut Parser<'i, '_>, in_font: bool, found: &mut Vec<(Range<usize>, bool, usize)>) -> Result<(), ParseError<'i, ()>> {
     let mut font_rule = false;
     loop {
         let start = parser.position();
@@ -21,11 +21,12 @@ fn urls<'i>(parser: &mut Parser<'i, '_>, in_font: bool, found: &mut Vec<(Range<u
                     let trimmed = content.trim_matches(|c: char| c.is_ascii_whitespace());
                     if trimmed == &*value {
                         let from = start.byte_index() + 4 + content.len() - content.trim_start_matches(|c: char| c.is_ascii_whitespace()).len();
-                        found.push((from..from + trimmed.len(), in_font));
+                        found.push((from..from + trimmed.len(), in_font, parser.position().byte_index()));
                     }
                 }
             }
             Token::Function(ref name) if name.eq_ignore_ascii_case("url") => {
+                let mut span = None;
                 parser.parse_nested_block(|inner| {
                     let at = inner.position();
                     if let Ok(Token::QuotedString(value)) = inner.next().cloned() {
@@ -33,11 +34,12 @@ fn urls<'i>(parser: &mut Parser<'i, '_>, in_font: bool, found: &mut Vec<(Range<u
                         let raw = slice.trim();
                         if raw.len() >= 2 && &raw[1..raw.len() - 1] == &*value && inner.is_exhausted() {
                             let from = at.byte_index() + slice.len() - slice.trim_start().len() + 1;
-                            found.push((from..from + value.len(), in_font));
+                            span = Some(from..from + value.len());
                         }
                     }
                     Ok::<_, ParseError<'i, ()>>(())
                 })?;
+                if let Some(span) = span { found.push((span, in_font, parser.position().byte_index())); }
             }
             Token::CurlyBracketBlock => {
                 let child_font = in_font || font_rule;
@@ -53,10 +55,10 @@ fn urls<'i>(parser: &mut Parser<'i, '_>, in_font: bool, found: &mut Vec<(Range<u
     Ok(())
 }
 
-fn consider(doc: &Doc, span: Range<usize>, target: Target, in_font: bool, tuning: Tuning, cache: Option<&Path>, edits: &mut Vec<Edit>, warnings: &mut Vec<Warning>) {
+fn consider(doc: &Doc, span: Range<usize>, target: Target, in_font: bool, unhinted: bool, tuning: Tuning, cache: Option<&Path>, edits: &mut Vec<Edit>, warnings: &mut Vec<Warning>) {
     let value = &doc.src()[span.clone()];
     if in_font && !value.contains('#') {
-        if let Some(decoded) = data::decode(value).filter(|d| d.mime == data::Mime::FontWoff2) {
+        if let Some(decoded) = data::decode(value).filter(|d| d.mime == data::Mime::FontWoff2 || unhinted && matches!(d.bytes.get(..4), Some(b"wOFF" | b"OTTO" | b"\x00\x01\x00\x00" | b"true" | b"typ1"))) {
             if let Some(encoded) = fonts::exact_transcode(&decoded.bytes, tuning, cache) {
                 if encoded.len() < decoded.bytes.len() {
                     let proven = adopt(decoded.bytes, encoded, &oracle::Font);
@@ -65,7 +67,8 @@ fn consider(doc: &Doc, span: Range<usize>, target: Target, in_font: bool, tuning
                         return;
                     }
                     if let Some(at) = value.to_ascii_lowercase().find(";base64,") {
-                        let text = format!("{}{}", &value[..at + 8], STANDARD.encode(proven.into_inner()));
+                        let prefix = if value[..at + 8].eq_ignore_ascii_case("data:font/woff2;base64,") { &value[..at + 8] } else if unhinted && matches!(value[..at + 8].to_ascii_lowercase().as_str(), "data:font/ttf;base64," | "data:font/otf;base64," | "data:font/woff;base64," | "data:application/font-woff;base64," | "data:application/x-font-ttf;base64,") { "data:font/woff2;base64," } else { return };
+                        let text = format!("{}{}", prefix, STANDARD.encode(proven.into_inner()));
                         if text.len() < span.len() {
                             edits.push(Edit { span, text, transform: Transform::ReencodedFont, target });
                         }
@@ -89,10 +92,23 @@ pub(crate) fn stage(doc: &Doc, tuning: Tuning, cache: Option<&Path>) -> (Vec<Edi
     let mut warnings = Vec::new();
     for tag in doc.tags() {
         for attr in &tag.attrs {
+            if matches!(&attr.name, AttrName::Other(name) if name == "style") && !attr.value.contains('&') {
+                if let Some(span) = &attr.value_span {
+                    let mut input = ParserInput::new(&attr.value);
+                    let mut parser = Parser::new(&mut input);
+                    let mut found = Vec::new();
+                    if urls(&mut parser, false, &mut found).is_ok() {
+                        for (url, _, _) in found {
+                            let range = span.start + url.start..span.start + url.end;
+                            consider(doc, range, Target::Resource(tag.label().to_string()), false, false, tuning, cache, &mut edits, &mut warnings);
+                        }
+                    }
+                }
+            }
             if !matches!(attr.name, AttrName::Src | AttrName::DataSrc | AttrName::Href) { continue; }
             let Some(span) = attr.value_span.clone() else { continue };
             let target = Target::Resource(tag.label().to_string());
-            consider(doc, span, target, false, tuning, cache, &mut edits, &mut warnings);
+            consider(doc, span, target, false, false, tuning, cache, &mut edits, &mut warnings);
         }
         if tag.element == Element::Style {
             if let Some(body) = &tag.body {
@@ -100,9 +116,11 @@ pub(crate) fn stage(doc: &Doc, tuning: Tuning, cache: Option<&Path>) -> (Vec<Edi
                 let mut parser = Parser::new(&mut input);
                 let mut found = Vec::new();
                 if urls(&mut parser, false, &mut found).is_ok() {
-                    for (span, in_font) in found {
+                    for (span, in_font, end) in found {
+                        let rest = doc.src()[body.start + end..body.end].trim_start_matches(|c: char| c.is_ascii_whitespace());
+                        let unhinted = rest.starts_with([';', '}', ',']);
                         let span = body.start + span.start..body.start + span.end;
-                        consider(doc, span, Target::Resource(tag.label().to_string()), in_font, tuning, cache, &mut edits, &mut warnings);
+                        consider(doc, span, Target::Resource(tag.label().to_string()), in_font, unhinted, tuning, cache, &mut edits, &mut warnings);
                     }
                 }
             }
@@ -173,6 +191,9 @@ mod tests {
         let output = optimize(input, Mode::Exact).unwrap();
         assert_eq!(output.html, "<html><style>a{background:url('data:image/png;base64,YQ==')}</style></html>");
         assert_eq!(optimize(&output.html, Mode::Exact).unwrap().html, output.html);
+        let input = "<html><img style=\"background:url('data:image/png;base64,Y Q==')\"></html>";
+        let output = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(output.html, "<html><img style=\"background:url('data:image/png;base64,YQ==')\"></html>");
     }
 
     #[test]
@@ -197,5 +218,22 @@ mod tests {
         let result = STANDARD.decode(payload).unwrap();
         assert!(super::oracle::font(&encoded, &result));
         assert_eq!(optimize(&output.html, Mode::Exact).unwrap().html, output.html);
+    }
+
+    #[test]
+    fn exact_reencodes_unhinted_woff_and_sfnt() {
+        for (mime, font) in [
+            ("font/ttf", include_bytes!("../../tests/data/octavo-test.ttf").as_slice()),
+            ("font/woff", include_bytes!("../../tests/data/octavo-test.woff").as_slice()),
+        ] {
+            let uri = format!("data:{mime};base64,{}", STANDARD.encode(font));
+            let html = format!("<html><style>@font-face{{font-family:x;src:url({uri})}}</style></html>");
+            let output = optimize(&html, Mode::Exact).unwrap();
+            assert!(output.applied.iter().any(|step| step.transform == Transform::ReencodedFont), "{mime}: {:?}", output.warnings);
+            let payload = output.html.split("data:font/woff2;base64,").nth(1).unwrap().split(')').next().unwrap();
+            assert!(super::oracle::font(font, &STANDARD.decode(payload).unwrap()));
+            let hinted = format!("<html><style>@font-face{{font-family:x;src:url({uri}) format('truetype')}}</style></html>");
+            assert_eq!(optimize(&hinted, Mode::Exact).unwrap().html, hinted);
+        }
     }
 }
