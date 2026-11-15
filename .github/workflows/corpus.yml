@@ -292,7 +292,7 @@ jobs:
           done
           exit 1
         working-directory: verify
-      - run: node --test verifier.test.mjs
+      - run: node --test verifier.test.mjs capture-cache.test.mjs
         working-directory: verify
 
   linked:

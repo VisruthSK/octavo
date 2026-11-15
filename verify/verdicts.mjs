@@ -14,7 +14,9 @@ const verifierSources = (folder) =>
     return entry.name.endsWith(".mjs") && !entry.name.endsWith(".test.mjs") ? [path] : [];
   });
 
-export const verifierHash = (folder = join(root, "verify")) => {
+const folderOf = () => join(root, "verify");
+
+const hashVerifier = (folder) => {
   const names = verifierSources(folder)
     .map((path) => relative(folder, path).replaceAll("\\", "/"))
     .sort()
@@ -25,6 +27,14 @@ export const verifierHash = (folder = join(root, "verify")) => {
     hash.update(readFileSync(join(folder, name)));
   }
   return hash.digest("hex");
+};
+
+let remembered = null;
+
+export const verifierHash = (folder = folderOf()) => {
+  if (folder !== folderOf()) return hashVerifier(folder);
+  remembered ??= hashVerifier(folder);
+  return remembered;
 };
 
 export const verdictKey = ({ original, optimized, level, verifier, browser, scenarios, version }) =>
