@@ -377,3 +377,25 @@ test("linked mode missing file count comparisons", () => {
     ['console errors: ["Failed to load resource: net::ERR_FILE_NOT_FOUND"] vs []'],
   );
 });
+
+test("lazily loaded math renderer fonts are not part of the loaded fonts comparison and other fonts are", () => {
+  const state = (fonts) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts,
+    animations: [],
+    sheets: 0,
+    scroll: [100, 100],
+    labels: ["DIV"],
+    rects: [[0, 0, 100, 100]],
+    styles: ["width:100px"],
+    screenshot: Buffer.from("same"),
+  });
+  const run = (before, after) => compare({ states: [state(before)], errors: [], requests: [] }, { states: [state(after)], errors: [], requests: [] }, false);
+  assert.deepEqual(run(["MathJax_Main", "Source Sans Pro"], ["MathJax_Main", "MathJax_Size4", "Source Sans Pro"]), []);
+  assert.deepEqual(run(["KaTeX_Main", "Inter"], ["Inter"]), []);
+  assert.ok(run(["Inter", "Source Sans Pro"], ["Inter"]).some((issue) => issue.includes("fonts ")));
+  assert.ok(run(["Inter"], ["Inter", "Source Sans Pro"]).some((issue) => issue.includes("fonts ")));
+});

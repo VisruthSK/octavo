@@ -205,7 +205,9 @@ function compareState(a, b, lossy, stats) {
     const at = firstDifference(a.dom, b.dom);
     issues.push(`dom differs at ${at}: [${excerpt(a.dom, at)}] vs [${excerpt(b.dom, at)}]`);
   }
-  if (a.fonts.join() !== b.fonts.join()) issues.push(`fonts ${a.fonts} vs ${b.fonts}`);
+  const fontsA = stableFonts(a.fonts);
+  const fontsB = stableFonts(b.fonts);
+  if (fontsA.join() !== fontsB.join()) issues.push(`fonts ${fontsA} vs ${fontsB}`);
   if (a.animations.join("\n") !== b.animations.join("\n")) {
     const present = new Set(b.animations);
     const missing = a.animations.filter((animation) => !present.has(animation));
@@ -271,6 +273,10 @@ export function compare(before, after, lossy, stats) {
   }
   return issues;
 }
+
+const LAZY_RENDERER_FONT = /^(?:MathJax|KaTeX)_/;
+
+const stableFonts = (fonts) => fonts.filter((family) => !LAZY_RENDERER_FONT.test(family));
 
 const FONT_FILE = /.(?:woff2?|ttf|otf|eot)(?:[?#]|$)/i;
 
