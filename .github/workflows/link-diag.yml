@@ -1,6 +1,8 @@
 name: Link Diag
 
 on:
+  push:
+    branches: [link-diag]
   workflow_dispatch:
 
 permissions:
