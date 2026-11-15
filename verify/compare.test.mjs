@@ -329,3 +329,51 @@ test("the requests comparison ignores order and lazily fetched font files and ke
   assert.ok(run([script], [script, "https://cdn.example/extra.js"]).some((issue) => issue.startsWith("requests:")));
   assert.ok(run([script], [script, "https://cdn.example/image.png"]).some((issue) => issue.startsWith("requests:")));
 });
+
+test("linked mode missing file count comparisons", () => {
+  const state = {
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [100, 100],
+    labels: ["DIV"],
+    rects: [[0, 0, 100, 100]],
+    styles: ["width:100px"],
+    screenshot: Buffer.from("same"),
+  };
+  const make = (errors, missingFiles) => ({
+    states: [state],
+    errors,
+    requests: [],
+    checks: missingFiles !== undefined ? { missingFiles } : {},
+  });
+
+  assert.deepEqual(compare(make([], 2), make([], 2), false), []);
+  assert.deepEqual(compare(make([], 2), make([], 1), false), []);
+  assert.deepEqual(compare(make([], 1), make([], 3), false), [
+    "2 more missing files on the optimized page",
+  ]);
+  assert.deepEqual(compare(make(["TypeError: x is undefined"], 1), make([], 1), false), [
+    'console errors: ["TypeError: x is undefined"] vs []',
+  ]);
+  assert.deepEqual(
+    compare(
+      make(["Failed to load resource: net::ERR_FILE_NOT_FOUND"], 1),
+      make(["Failed to load resource: net::ERR_FILE_NOT_FOUND"], 1),
+      false,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    compare(
+      { states: [state], errors: ["Failed to load resource: net::ERR_FILE_NOT_FOUND"], requests: [] },
+      { states: [state], errors: [], requests: [] },
+      false,
+    ),
+    ['console errors: ["Failed to load resource: net::ERR_FILE_NOT_FOUND"] vs []'],
+  );
+});

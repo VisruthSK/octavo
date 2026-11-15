@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
-import { isLinkedFileLoadFailure } from "./linked-artifacts.mjs";
+import { isLinkedFileLoadFailure, isMissingFile } from "./linked-artifacts.mjs";
 import { canonicalFontFamily } from "./styles.mjs";
 
 export const SCENARIOS = {
@@ -537,10 +537,15 @@ export async function capture(
     const errors = [];
     const requests = [];
     const network = { pending: 0, count: 0, last: 0 };
+    let missingFiles = linked ? 0 : undefined;
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
     page.on("console", (message) => {
       if (message.type() !== "error") return;
       if (linkedOriginal && isLinkedFileLoadFailure(message.text(), message.location())) return;
+      if (linked && isMissingFile(message.text(), message.location())) {
+        missingFiles += 1;
+        return;
+      }
       errors.push(engine.normalizeError(message.text()));
     });
     page.on("request", (request) => {
@@ -632,6 +637,7 @@ export async function capture(
       checks: {
         ...forced.checks,
         settled: waits.every((outcome) => outcome !== false),
+        ...(linked ? { missingFiles } : {}),
         screenshots: {
           taken: recorded.filter((state) => state.screenshot).length,
           total: recorded.length,
