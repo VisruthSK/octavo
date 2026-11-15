@@ -57,3 +57,27 @@ test("the capture sees the state after the timeout and the transition", async ()
     await browser.close();
   }
 });
+
+test("the capture waits for an attribute set after a delay", async () => {
+  const delayedFile = join(directory, "delayed-attr.html");
+  writeFileSync(
+    delayedFile,
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title></head><body>
+<div id="target" data-status="pending">Initial</div>
+<script>
+setTimeout(() => {
+  const el = document.getElementById("target");
+  el.setAttribute("data-status", "ready");
+  el.textContent = "Settled Attribute";
+}, 200);
+</script></body></html>`,
+  );
+  const browser = await launch();
+  try {
+    const [state] = (await capture(browser, delayedFile, scenariosFor("safe")[0], false)).states;
+    assert.match(state.dom, /data-status="ready"/);
+    assert.match(state.dom, /Settled Attribute/);
+  } finally {
+    await browser.close();
+  }
+});

@@ -57,6 +57,12 @@ async function reasonFor(element, state) {
         return `clipped by ${ancestor.tagName.toLowerCase()}${ancestor.id ? `#${ancestor.id}` : ""}`;
       }
     }
+    const rects = target.getClientRects();
+    const list = rects.length ? [...rects] : [rect];
+    for (const item of list) {
+      const hit = document.elementFromPoint(item.left + item.width / 2, item.top + item.height / 2);
+      if (hit && (hit === target || target.contains(hit))) return "";
+    }
     const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     if (hit && hit !== target && !target.contains(hit)) return `covered by ${hit.tagName.toLowerCase()}${hit.id ? `#${hit.id}` : ""}`;
     return "";
@@ -79,17 +85,21 @@ const ownPoint = (element) =>
   element
     .evaluate((target) => {
       const box = target.getBoundingClientRect();
-      const left = Math.max(box.left, 0);
-      const top = Math.max(box.top, 0);
-      const width = Math.min(box.right, innerWidth) - left;
-      const height = Math.min(box.bottom, innerHeight) - top;
-      if (width <= 0 || height <= 0) return null;
-      for (const down of [0.5, 0.1, 0.9, 0.3, 0.7]) {
-        for (const across of [0.5, 0.1, 0.9, 0.3, 0.7]) {
-          const x = left + width * across;
-          const y = top + height * down;
-          const hit = document.elementFromPoint(x, y);
-          if (hit && target.contains(hit) && !/^(IFRAME|FRAME|OBJECT|EMBED)$/.test(hit.tagName)) return { x: x - box.left, y: y - box.top };
+      const rects = target.getClientRects();
+      const list = rects.length ? [...rects] : [box];
+      for (const rect of list) {
+        const left = Math.max(rect.left, 0);
+        const top = Math.max(rect.top, 0);
+        const width = Math.min(rect.right, innerWidth) - left;
+        const height = Math.min(rect.bottom, innerHeight) - top;
+        if (width <= 0 || height <= 0) continue;
+        for (const down of [0.5, 0.1, 0.9, 0.3, 0.7]) {
+          for (const across of [0.5, 0.1, 0.9, 0.3, 0.7]) {
+            const x = left + width * across;
+            const y = top + height * down;
+            const hit = document.elementFromPoint(x, y);
+            if (hit && target.contains(hit) && !/^(IFRAME|FRAME|OBJECT|EMBED)$/.test(hit.tagName)) return { x: x - box.left, y: y - box.top };
+          }
         }
       }
       return null;
@@ -164,18 +174,21 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         continue;
       }
       onPhase(`forcedStates element ${index} locator hover`);
-      await element.hover({ timeout: 1000 }).catch(() => {});
+      let spot = await ownPoint(element);
+      await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
       onPhase(`forcedStates element ${index} hover probe`);
       let seen = await probe(index);
       for (let attempt = 0; attempt < 3 && !seen.states.hover; attempt++) {
         onPhase(`forcedStates element ${index} hover retry ${attempt}`);
-        await element.hover({ timeout: 1000 }).catch(() => {});
+        spot = await ownPoint(element);
+        await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
         await page.waitForTimeout(50);
         seen = await probe(index);
       }
       if (!seen.states.hover) {
         await element.evaluate((target) => target.scrollIntoView({ block: "center", inline: "center", behavior: "instant" })).catch(() => {});
-        await element.hover({ timeout: 1000 }).catch(() => {});
+        spot = await ownPoint(element);
+        await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
         seen = await probe(index);
       }
       if (seen.states.hover) {
@@ -221,11 +234,21 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       }
       await page.evaluate(() => document.activeElement?.blur());
       onPhase(`forcedStates element ${index} active target`);
-      const spot = await ownPoint(element);
+      await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+      spot = await ownPoint(element);
       await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
       onPhase(`forcedStates element ${index} active`);
       await page.mouse.down();
       seen = await probe(index);
+      for (let attempt = 0; attempt < 3 && !seen.states.active; attempt++) {
+        await page.mouse.up();
+        await page.waitForTimeout(50);
+        await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+        spot = await ownPoint(element);
+        await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
+        await page.mouse.down();
+        seen = await probe(index);
+      }
       if (seen.states.active) {
         checks.active += 1;
         states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);

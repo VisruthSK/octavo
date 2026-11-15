@@ -274,13 +274,20 @@ const probe = () => {
   const hub = window.MathJax?.Hub;
   const mathjax =
     Boolean(hub?.queue) && (Boolean(hub.queue.running) || Boolean(hub.queue.pending));
+  let revealReady = false;
+  try {
+    revealReady = typeof window.Reveal?.isReady === "function" ? Boolean(window.Reveal.isReady()) : false;
+  } catch {
+    revealReady = false;
+  }
   return {
     due,
     running: running.length,
     fonts: document.fonts.status === "loaded",
     transitioning,
     indices,
-    reveal: typeof window.Reveal?.isReady === "function",
+    reveal: Boolean(element),
+    revealReady,
     mathjax,
     mathjax3: Boolean(window.MathJax?.startup?.promise),
   };
@@ -327,8 +334,7 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {
       continue;
     }
     if (state.reveal) {
-      const ready = await page.evaluate(() => Promise.resolve(window.Reveal.isReady())).catch(() => false);
-      if (ready !== true || state.transitioning || state.indices !== previous) {
+      if (state.revealReady !== true || state.transitioning || state.indices !== previous) {
         previous = state.indices;
         await page.waitForTimeout(100);
         continue;
@@ -571,7 +577,19 @@ export async function capture(
     phase = "fonts ready";
     if (scripted) await page.evaluate(() => document.fonts.ready);
     else await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 3000 }).catch(() => {});
+    await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: "instant" })).catch(() => {});
+    await frames(page);
     await wait("initial page");
+
+    let previousDigest = await digestOf(page, forms, linked);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await page.waitForTimeout(50);
+      await frames(page);
+      const currentDigest = await digestOf(page, forms, linked);
+      if (currentDigest === previousDigest) break;
+      previousDigest = currentDigest;
+      await wait(`stability ${attempt}`);
+    }
 
     const states = [];
     const record = async (label, extra = {}) => {
@@ -585,21 +603,20 @@ export async function capture(
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...extra });
     };
-    await wait("before forced states");
+    await record("load", { digest: previousDigest });
     phase = "forcedStates element count";
     const forced = scripted && !scenario.motion
       ? await engine.forcedStates(page, INTERACTIVE, observe, (detail) => { phase = detail; })
       : emptyChecks(0);
     phase = "accessibility snapshot";
     const accessibility = await settledAccessibilityTree(page);
-    await wait("before initial capture");
-    await record("load", { forced: forced.states, accessibility });
+    states[0].forced = forced.states;
+    states[0].accessibility = accessibility;
     const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
     if (interact && scripted && scenario.sweep) {
       phase = "reveal slide number lookup";
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
-      let previous = await digestOf(page, forms, linked);
-      states[0].digest = previous;
+      let previous = previousDigest;
       for (const [index, interact] of interactions.entries()) {
         phase = `interaction sweep step ${index} slide number lookup`;
         const slideNumber = await page.evaluate(() => {
