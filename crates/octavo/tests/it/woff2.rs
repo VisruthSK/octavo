@@ -139,6 +139,64 @@ fn a_small_glyf_table_is_encoded_with_the_transform() {
     assert_eq!(glyf_transform_version(&woff2), 0);
 }
 
+fn sfnt_with_table(tag: [u8; 4], data: &[u8]) -> Vec<u8> {
+    let font = include_bytes!("../data/octavo-test.ttf");
+    let num_tables = u16::from_be_bytes(font[4..6].try_into().expect("numTables")) as usize;
+    let mut tables: Vec<([u8; 4], Cow<'_, [u8]>)> = Vec::with_capacity(num_tables + 1);
+    for index in 0..num_tables {
+        let record = 12 + 16 * index;
+        let t: [u8; 4] = font[record..record + 4].try_into().expect("a tag");
+        let offset =
+            u32::from_be_bytes(font[record + 8..record + 12].try_into().expect("an offset"))
+                as usize;
+        let length =
+            u32::from_be_bytes(font[record + 12..record + 16].try_into().expect("a length"))
+                as usize;
+        tables.push((t, Cow::Borrowed(&font[offset..offset + length])));
+    }
+    tables.push((tag, Cow::Borrowed(data)));
+    tables.sort_by_key(|(t, _)| *t);
+    let mut output = Vec::new();
+    output.extend_from_slice(&0x00010000u32.to_be_bytes());
+    output.extend_from_slice(&(tables.len() as u16).to_be_bytes());
+    let mut entry_selector = 0u16;
+    while (1u16 << (entry_selector + 1)) <= tables.len() as u16 {
+        entry_selector += 1;
+    }
+    let search_range = (1u16 << entry_selector) * 16;
+    let range_shift = tables.len() as u16 * 16 - search_range;
+    output.extend_from_slice(&search_range.to_be_bytes());
+    output.extend_from_slice(&entry_selector.to_be_bytes());
+    output.extend_from_slice(&range_shift.to_be_bytes());
+    let directory = output.len();
+    output.resize(directory + 16 * tables.len(), 0);
+    for (index, (t, data)) in tables.iter().enumerate() {
+        let padding = (4 - output.len() % 4) % 4;
+        output.resize(output.len() + padding, 0);
+        let offset = output.len() as u32;
+        output.extend_from_slice(data);
+        let record = directory + 16 * index;
+        output[record..record + 4].copy_from_slice(t);
+        output[record + 8..record + 12].copy_from_slice(&offset.to_be_bytes());
+        output[record + 12..record + 16].copy_from_slice(&(data.len() as u32).to_be_bytes());
+    }
+    output
+}
+
+#[test]
+fn a_font_with_a_prep_table_is_kept_whole_when_subsetting_is_requested() {
+    let font = sfnt_with_table(*b"prep", &[184, 1, 255, 133, 176, 4, 141]);
+    let html = font_page_with(&font);
+    let out = simplify(&html, Options::default())
+        .expect("supported")
+        .pack(Mode::Safe)
+        .html;
+    let woff2 = woff2_from(&out);
+    let sfnt = wuff::decompress_woff2(&woff2).expect("valid sfnt");
+    let font_ref = read_fonts::FontRef::new(&sfnt).expect("valid font");
+    assert!(font_ref.table_data(read_fonts::types::Tag::new(b"prep")).is_some());
+}
+
 #[test]
 fn a_glyf_table_beyond_the_short_loca_range_is_stored_without_the_transform() {
     let font = sfnt_with_glyf_beyond_the_short_loca_range();

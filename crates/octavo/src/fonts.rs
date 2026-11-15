@@ -524,7 +524,7 @@ fn subsetting_is_exact(sfnt: &[u8]) -> bool {
     let hinting = [b"fpgm", b"prep", b"cvt "]
         .iter()
         .any(|tag| font.table_data(SfntTag::new(tag)).is_some());
-    font.fvar().is_ok() || !hinting
+    !hinting
 }
 
 impl Transcoded {
@@ -680,7 +680,7 @@ fn notice(sfnt: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{has_positioning, layout_features};
+    use super::{has_positioning, layout_features, subsetting_is_exact};
 
     fn sfnt_with(tag: &[u8; 4], table: &[u8]) -> Vec<u8> {
         let mut font = vec![0, 1, 0, 0, 0, 1, 0, 16, 0, 0, 0, 0];
@@ -712,6 +712,18 @@ mod tests {
     fn a_font_with_a_gpos_table_has_positioning() {
         let gpos = [0, 1, 0, 0, 0, 10, 0, 12, 0, 14, 0, 0, 0, 0, 0, 0];
         assert!(has_positioning(&sfnt_with(b"GPOS", &gpos)));
+    }
+
+    #[test]
+    fn hinting_tables_disallow_subsetting() {
+        let prep = sfnt_with(b"prep", &[1, 2, 3]);
+        assert!(!subsetting_is_exact(&prep));
+        let fpgm = sfnt_with(b"fpgm", &[1, 2, 3]);
+        assert!(!subsetting_is_exact(&fpgm));
+        let cvt = sfnt_with(b"cvt ", &[1, 2, 3]);
+        assert!(!subsetting_is_exact(&cvt));
+        let plain = sfnt_with(b"head", &[0; 16]);
+        assert!(subsetting_is_exact(&plain));
     }
 
     #[test]
