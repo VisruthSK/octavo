@@ -231,20 +231,20 @@ export async function chooseUpstream({ jobs = 4 } = {}) {
   return { candidates: candidatesSeen, selected, skipped };
 }
 
-export const inShard = (entry, shard, allEntries = [], costs = readCosts()) => {
+export const inShard = (entry, shard, allEntries = [], costs = readCosts(), engine = shard?.engine ?? process.env.OCTAVO_BROWSER ?? "chromium") => {
   if (!shard || !shard.count || shard.count <= 1) return true;
   if (typeof entry === "number") return entry % shard.count === shard.index;
-  const slice = shardSlice(allEntries, shard, costs);
+  const slice = shardSlice(allEntries, shard, costs, engine);
   const id = typeof entry === "string" ? entry : entry?.id;
   return slice.some((item) => (typeof item === "string" ? item : item?.id) === id);
 };
 
-export async function renderSelected({ jobs = 4, tier = "full", shard } = {}) {
+export async function renderSelected({ jobs = 4, tier = "full", shard, engine = process.env.OCTAVO_BROWSER ?? "chromium" } = {}) {
   const sources = readJson(sourcesPath);
   mkdirSync(rendered, { recursive: true });
   const allEntries = readJson(selectionPath)
     .filter((entry) => tier === "full" || entry.tier === tier);
-  const entries = shardSlice(allEntries, shard, readCosts());
+  const entries = shardSlice(allEntries, shard, readCosts(), engine);
   const done = [];
   const failures = [];
   for (const source of sources) {
