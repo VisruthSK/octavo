@@ -24,15 +24,17 @@ const write = (name, html) => {
 const base = baseHtml();
 
 for (const m of mutations) {
-  test(`adversary mutation ${m.id} (${m.name})`, async () => {
+  test(`adversary mutation ${m.id} (${m.name})`, { concurrency: 4 }, async () => {
     if (misses.has(m.id)) {
       assert.ok(true);
       return;
     }
     const pair = m.create(base);
     const targetScenario = scenarios[m.id] ?? "desktop-light";
+    const needsInteract = m.id.startsWith("state-") || m.id.startsWith("script-");
     const report = await verify(write(`${m.id}-orig`, pair.original), write(`${m.id}-mut`, pair.mutated), {
       only: [targetScenario],
+      interact: needsInteract,
     });
     const issues = report.flatMap(({ issues }) => issues ?? []);
     assert.ok(issues.length > 0, `expected ${m.id} to be detected in ${targetScenario}`);
@@ -40,7 +42,7 @@ for (const m of mutations) {
 }
 
 for (const e of equivalentPairs) {
-  test(`adversary equivalent ${e.id} (${e.name})`, async () => {
+  test(`adversary equivalent ${e.id} (${e.name})`, { concurrency: 4 }, async () => {
     if (falseAlarms.has(e.id)) {
       assert.ok(true);
       return;
