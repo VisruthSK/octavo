@@ -248,5 +248,6 @@ No finished shards for WebKit in run 43671677423 (shards 1-10 still in progress)
 
 ## Measured Effect
 
-- On `quarto-cli-playwright-revealjs-multiplex`, verification time for `desktop-light` dropped from >350 s to 1.3 s (over 250x faster) with 0 false positives or regressions.
+- On `quarto-cli-playwright-revealjs-multiplex`, verification time for `desktop-light` dropped from >350 s to 1.75 s with only the long-lived connection bypass in `settle()` / `capture()` (over 200x faster) with 0 false positives or regressions.
+
 
