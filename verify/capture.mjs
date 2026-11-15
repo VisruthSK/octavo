@@ -382,6 +382,26 @@ const frames = async (page) => {
   ]);
 };
 
+export function trackNetwork(page, requests = []) {
+  const openRequests = new Set();
+  const network = { pending: 0, count: 0, last: 0, openRequests };
+  page.on("request", (request) => {
+    if (/^(data|blob|about):/.test(request.url())) return;
+    network.pending += 1;
+    network.count += 1;
+    network.last = Date.now();
+    openRequests.add(request);
+    if (!/^file:/.test(request.url())) requests.push(request.url());
+  });
+  const finished = (request) => {
+    if (!openRequests.delete(request)) return;
+    network.pending -= 1;
+    network.last = Date.now();
+  };
+  page.on("requestfinished", finished);
+  page.on("requestfailed", finished);
+  return network;
+}
 export async function settle(page, { quiet = QUIET, limit = LIMIT, network, longLived } = {}) {
   const deadline = Date.now() + limit;
   await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
@@ -392,8 +412,8 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network, long
     if (!network.pending) return true;
     if (!network.openRequests) return false;
     if (!network.openRequests.size) return false;
-    for (const url of network.openRequests.keys()) {
-      if (!longLived?.has(url)) return false;
+    for (const request of network.openRequests) {
+      if (!longLived?.has(request)) return false;
     }
     return true;
   };
@@ -620,29 +640,14 @@ export async function capture(
     const page = await context.newPage();
     const errors = [];
     const requests = [];
-    const openRequests = new Map();
-    const network = { pending: 0, count: 0, last: 0, openRequests };
+    const network = trackNetwork(page, requests);
+    const { openRequests } = network;
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
     page.on("console", (message) => {
       if (message.type() !== "error") return;
       if (linkedOriginal && isLinkedFileLoadFailure(message.text(), message.location())) return;
       errors.push(engine.normalizeError(message.text()));
     });
-    page.on("request", (request) => {
-      if (/^(data|blob|about):/.test(request.url())) return;
-      network.pending += 1;
-      network.count += 1;
-      network.last = Date.now();
-      openRequests.set(request.url(), Date.now());
-      if (!/^file:/.test(request.url())) requests.push(request.url());
-    });
-    const finished = (request) => {
-      network.pending = Math.max(0, network.pending - 1);
-      network.last = Date.now();
-      if (request) openRequests.delete(request.url());
-    };
-    page.on("requestfinished", finished);
-    page.on("requestfailed", finished);
     const knownLongLived = new Set(longLived ?? []);
     const waits = [];
     const wait = async (name, options = {}) => {
@@ -660,7 +665,7 @@ export async function capture(
     if (scripted) await page.evaluate(() => document.fonts.ready);
     else await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 3000 }).catch(() => {});
     await wait("initial page");
-    for (const url of openRequests.keys()) knownLongLived.add(url);
+    for (const request of openRequests) knownLongLived.add(request);
 
     const states = [];
     const record = async (label, extra = {}) => {
@@ -717,7 +722,7 @@ export async function capture(
       states,
       errors,
       requests,
-      openRequests: new Set(openRequests.keys()),
+      openRequests: new Set([...openRequests].map((request) => request.url())),
       base,
       checks: {
         ...forced.checks,
