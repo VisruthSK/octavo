@@ -115,3 +115,14 @@ pub(crate) fn encode_text(mime: Mime, text: &str) -> String {
 pub(crate) fn encode_base64(mime: Mime, bytes: &[u8]) -> String {
     format!("data:{mime};base64,{}", STANDARD.encode(bytes))
 }
+
+pub(crate) fn normalize(uri: &str) -> Option<String> {
+    let lower = uri.to_ascii_lowercase();
+    if !lower.starts_with("data:") {
+        return None;
+    }
+    let at = lower.find(";base64,")?;
+    let payload = &uri[at + 8..];
+    let canonical = STANDARD.encode(decode(uri)?.bytes);
+    (canonical != payload).then(|| format!("{}{}", &uri[..at + 8], canonical))
+}

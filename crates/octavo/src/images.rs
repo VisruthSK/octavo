@@ -82,6 +82,7 @@ pub(crate) fn stage(
     lossy: Option<ImageEncoding>,
     tuning: Tuning,
     webp_memory: Option<u64>,
+    normalize: bool,
 ) -> Vec<Edit> {
     let mut images: Vec<Candidate> = doc
         .tags()
@@ -141,21 +142,33 @@ pub(crate) fn stage(
         .into_iter()
         .map(|image| {
             let Candidate { tag, mut uris } = image;
-            Edit {
+            let recompressed = uris.iter().any(|uri| uri.converted.is_some());
+            let edit = Edit {
                 span: tag.span.clone(),
                 text: tag.open_tag(|name, value| {
                     uris.iter_mut()
                         .find(|uri| uri.attr == *name)
                         .and_then(|uri| uri.converted.take())
-                        .or_else(|| Some(value.to_string()))
+                        .map(|text| Some(text))
+                        .unwrap_or_else(|| {
+                            if normalize {
+                                data::normalize(value)
+                            } else {
+                                None
+                            }
+                            .or_else(|| Some(value.to_string()))
+                        })
                 }),
                 transform: if lossy.is_some() {
                     Transform::ReencodedImage
-                } else {
+                } else if recompressed {
                     Transform::RecompressedPng
+                } else {
+                    Transform::NormalizedDataUrl
                 },
                 target: Target::Resource(tag.label().to_string()),
-            }
+            };
+            edit
         })
         .filter(Edit::shrinks)
         .collect()

@@ -159,6 +159,14 @@ pub(crate) struct Rewritten {
     pub(crate) kept_whole: Vec<(String, usize)>,
 }
 
+pub(crate) fn exact_transcode(
+    bytes: &[u8],
+    tuning: Tuning,
+    cache: Option<&Path>,
+) -> Option<Vec<u8>> {
+    transcode(bytes, None, true, Licenses::Strip, cache, tuning).map(|t| t.woff2)
+}
+
 fn collect_usage(sheets: &mut [Option<StyleSheet<'_>>], loose: &[&str]) -> Usage {
     let rules = sheets
         .par_iter_mut()

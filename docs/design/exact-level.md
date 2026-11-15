@@ -78,3 +78,22 @@ Output bytes are a pure function of (input bytes, options, crate versions):
 ### What the guarantee covers
 
 Every byte Octavo emits decodes to exactly what the input decoded to: the same pixels (E2, E3), the same font (E4), the same resource bytes (E1), and CSS that parses to the same declarations in the same cascade order (E5–E10). Anything Octavo does not understand is left untouched, as today. What the level does NOT promise: it does not promise the output is smaller than a heuristic level, and it does not promise anything about HTML outside the tagged resources.
+
+## Translation Validation and Oracles
+
+Equivalence holds by construction via translation validation: every exact transform is paired with an independent oracle that verifies whether output equals input semantically. A transform's result is adopted only if its oracle accepts it; otherwise the original bytes are kept and the report notes the rejection.
+
+### Architectural Decisions
+
+1. **No `--verify-exact` CLI flag:** There is no new public CLI surface for checking. Oracles live entirely at library level (`crates/octavo`, module `octavo::exact::oracle`) and are exercised by unit tests and a corpus test, not by a CLI flag. The CLI gains only the `--level exact` value (`Mode::Exact`).
+2. **Library-level execution:** Transforms, oracle gating, and report entries live strictly in the library (`octavo`). The CLI is thin: it parses options and prints output.
+
+### Oracle Inventory
+
+| Domain | Oracle Scope | Equivalence Condition | Failure Action |
+|---|---|---|---|
+| Base64 (E1) | Decoded bytes | `decode(output) == decode(input)` | Keep original data URL |
+| Images (E2, E3) | Pixel buffers & ancillary chunks | Decoded RGBA pixel buffer byte-equal across all pixels (including colour under fully transparent alpha), bit depth and colour type match, and kept rendering-relevant chunks (`gAMA`, `cHRM`, `sRGB`, `iCCP`, `pHYs`) are identical | Keep original image bytes |
+| Fonts (E4) | Table directory & sfnt tables | WOFF2 decoded back to sfnt; tables match input sfnt table-by-table after normalising table order and padding; transformed tables (`glyf`, `loca`, `hmtx`) match decoded sfnt | Keep original font bytes |
+| CSS (E5–E10) | cssparser token stream | Identical cssparser token stream modulo comments and pinned-insignificant whitespace; numbers match by parsed value and unit; hex colours match by RGBA; no rule added, dropped (except empty rules and byte-identical duplicates under adjacency rule), or reordered | Keep original CSS text |
+

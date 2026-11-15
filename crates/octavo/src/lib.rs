@@ -29,6 +29,7 @@ mod css;
 mod data;
 mod doc;
 mod embed;
+mod exactcss;
 mod fonts;
 mod html;
 mod images;
@@ -51,7 +52,16 @@ use std::{
 /// How aggressively a document is rewritten.
 ///
 /// The levels nest: each includes everything the previous level does, plus
-/// more.
+/// more, until `Exact`, which stands apart.
+///
+/// `Safe`, `Scripts` and `Packed` rely on heuristics: they guess which
+/// selectors, classes, scripts and fonts a document uses from its own text,
+/// and can be wrong. `Exact` applies only transforms that are
+/// semantics-preserving by construction, so its output renders exactly like
+/// the input in every browser; see `docs/design/exact-level.md`. `Safe` is
+/// deprecated in documentation only: it does not mean safe, and it will be
+/// replaced by independent packaging and effort settings; new code should
+/// use `Exact` when the guarantee matters and `Packed` when size does.
 ///
 /// ```
 /// use octavo::{optimize, Mode};
@@ -64,6 +74,8 @@ use std::{
 #[non_exhaustive]
 pub enum Mode {
     /// Minify and prune. The output needs nothing the original did not.
+    /// Deprecated in documentation only: pruning is heuristic and can drop
+    /// styles that scripts put to use. See [`Mode::Exact`].
     Safe,
     /// Additionally compress scripts and data blocks into one blob that a
     /// small loader restores while the page is parsed. Stylesheets and
@@ -73,6 +85,14 @@ pub enum Mode {
     /// same blob. The loader needs JavaScript, so the page is unstyled when
     /// JavaScript is off.
     Packed,
+    /// Applies only transforms that are provably semantics-preserving by
+    /// construction: canonical base64, lossless image recompression and
+    /// guarded lossless WebP, whole-font WOFF2 re-encoding, and CSS comment,
+    /// whitespace, number and duplicate removal under pinned rules. Nothing
+    /// is pruned, subsetted, re-encoded lossily or packed. The output is
+    /// deterministic: same input bytes and options give identical output
+    /// bytes on every machine.
+    Exact,
 }
 
 impl fmt::Display for Mode {
@@ -81,6 +101,7 @@ impl fmt::Display for Mode {
             Mode::Safe => "safe",
             Mode::Scripts => "scripts",
             Mode::Packed => "packed",
+            Mode::Exact => "exact",
         })
     }
 }
@@ -88,14 +109,15 @@ impl fmt::Display for Mode {
 impl FromStr for Mode {
     type Err = String;
 
-    /// Parses the lowercase names `safe`, `scripts` and `packed`.
+    /// Parses the lowercase names `safe`, `scripts`, `packed` and `exact`.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "safe" => Ok(Mode::Safe),
             "scripts" => Ok(Mode::Scripts),
             "packed" => Ok(Mode::Packed),
+            "exact" => Ok(Mode::Exact),
             other => Err(format!(
-                "unknown level '{other}', expected one of: safe, scripts, packed"
+                "unknown level '{other}', expected one of: safe, scripts, packed, exact"
             )),
         }
     }
@@ -164,6 +186,15 @@ pub struct Options {
     /// How hard the compressors for fonts, PNG images and the packed blob
     /// work. It is independent of the [`Mode`].
     pub compression: Compression,
+    /// Restrict optimization to the transforms that are provably
+    /// semantics-preserving by construction, described in
+    /// `docs/design/exact-level.md`: canonical base64 payloads, lossless PNG
+    /// recompression and guarded lossless WebP, whole-font WOFF2
+    /// re-encoding, and CSS comment, whitespace, number and duplicate
+    /// removal under pinned rules. Nothing is pruned, subsetted, re-encoded
+    /// lossily, packed or otherwise rewritten outside those rules, and the
+    /// output is deterministic. `false` runs the heuristic stages.
+    pub exact: bool,
 }
 
 impl Options {
@@ -183,6 +214,7 @@ impl Default for Options {
             image_memory: None,
             cache_directory: None,
             compression: Compression::default(),
+            exact: false,
         }
     }
 }
@@ -418,6 +450,10 @@ pub enum Transform {
     /// because Chromium draws hinted static fonts differently on Linux
     /// after subsetting.
     FontKeptWhole,
+    /// A stylesheet was rewritten under the rules of the exact level.
+    MinifiedStylesheet,
+    /// A `data:` URL payload was re-encoded as canonical base64.
+    NormalizedDataUrl,
     /// Resources were compressed into one blob.
     Packed,
 }
@@ -431,6 +467,8 @@ impl fmt::Display for Transform {
             Transform::RecompressedPng => "png-recompressed",
             Transform::ReencodedImage => "image-reencoded",
             Transform::FontKeptWhole => "font-kept-whole",
+            Transform::MinifiedStylesheet => "stylesheet-minified",
+            Transform::NormalizedDataUrl => "data-url-normalized",
             Transform::Packed => "packed",
         })
     }
@@ -693,7 +731,11 @@ pub fn is_self_contained(src: &str) -> bool {
 /// # Ok::<(), octavo::Error>(())
 /// ```
 pub fn optimize(src: &str, mode: Mode) -> Result<Output, Error> {
-    Ok(simplify(src, Options::default())?.pack(mode))
+    let options = Options {
+        exact: mode == Mode::Exact,
+        ..Options::default()
+    };
+    Ok(simplify(src, options)?.pack(mode))
 }
 
 /// Runs the stages that do not depend on a [`Mode`].
@@ -728,17 +770,43 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     } else {
         Licenses::Keep
     };
-    let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
+    let tuning = options.compression.tuning();
+    let (images, (removals, scripts, styles, kept_whole)) = if options.exact {
+        let memory = (!options.keep_png).then(|| {
+            options
+                .image_memory
+                .unwrap_or(Options::DEFAULT_IMAGE_MEMORY)
+        });
+        let (images, (styles, data_urls)) = rayon::join(
+            || images::stage(&doc, None, tuning, memory, true),
+            || {
+                rayon::join(
+                    || {
+                        exactcss::stage(
+                            &doc,
+                            licenses,
+                            tuning,
+                            options.cache_directory.as_deref(),
+                        )
+                    },
+                    || normalize_data_urls(&doc),
+                )
+            },
+        );
+        (images, (Vec::new(), Vec::new(), styles.chain(data_urls).collect(), Vec::new()))
+    } else {
+        let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
         || {
             images::stage(
                 &doc,
                 options.images,
-                options.compression.tuning(),
+                tuning,
                 (!options.keep_png).then(|| {
                     options
                         .image_memory
                         .unwrap_or(Options::DEFAULT_IMAGE_MEMORY)
                 }),
+                false,
             )
         },
         || {
@@ -762,7 +830,9 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             );
             (removals, scripts, styles, kept_whole)
         },
-    );
+        );
+        (images, (removals, scripts, styles, kept_whole))
+    };
     let edits: Vec<Edit> = removals
         .into_iter()
         .chain(scripts)
@@ -866,15 +936,6 @@ impl Simplified {
 
     /// Produces the final document for `mode`, keeping the unpacked document
     /// when packing would not make it smaller.
-    ///
-    /// ```
-    /// use octavo::{simplify, Mode, Options};
-    ///
-    /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
-    /// let out = simplified.pack(Mode::Packed);
-    /// assert_eq!(out.html, "<html><head></head><body></body></html>");
-    /// # Ok::<(), octavo::Error>(())
-    /// ```
     #[must_use]
     pub fn pack(&self, mode: Mode) -> Output {
         let unpacked = || Output {
