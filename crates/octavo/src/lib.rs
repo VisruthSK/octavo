@@ -457,6 +457,8 @@ pub enum Transform {
     NormalizedDataUrl,
     #[doc = "A whole font was re-encoded as WOFF2."]
     ReencodedFont,
+    #[doc = "A PNG was converted to lossless WebP."]
+    ConvertedWebp,
     /// Resources were compressed into one blob.
     Packed,
 }
@@ -473,6 +475,7 @@ impl fmt::Display for Transform {
             Transform::MinifiedStylesheet => "stylesheet-minified",
             Transform::NormalizedDataUrl => "data-url-normalized",
             Transform::ReencodedFont => "font-reencoded",
+            Transform::ConvertedWebp => "webp-converted",
             Transform::Packed => "packed",
         })
     }
@@ -780,7 +783,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     let tuning = options.compression.tuning();
     let mut exact_warnings = Vec::new();
     let (images, (removals, scripts, styles, kept_whole)) = if options.exact {
-        let (edits, warnings) = exact::stage(&doc, tuning, options.cache_directory.as_deref());
+        let (edits, warnings) = exact::stage(&doc, &options);
         exact_warnings = warnings;
         (Vec::new(), (Vec::new(), Vec::new(), edits, Vec::new()))
     } else {

@@ -353,6 +353,35 @@ fn recompress_png(bytes: &[u8], pixels: u64, tuning: Tuning) -> Option<Vec<u8>> 
         .filter(|better| better.len() < bytes.len())
 }
 
+pub(crate) fn exact_candidates(bytes: &[u8], tuning: Tuning, webp_memory: Option<u64>) -> Vec<(Mime, Vec<u8>)> {
+    let Ok(reader) = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format() else { return Vec::new() };
+    let Ok((width, height)) = reader.into_dimensions() else { return Vec::new() };
+    let pixels = u64::from(width) * u64::from(height);
+    let mut candidates = Vec::new();
+    if pixels <= MAX_LOSSLESS_PIXELS {
+        let options = PngOptions {
+            strip: StripChunks::None,
+            interlace: None,
+            optimize_alpha: false,
+            bit_depth_reduction: false,
+            color_type_reduction: false,
+            palette_reduction: false,
+            grayscale_reduction: false,
+            ..PngOptions::from_preset(tuning.png_preset.map_or(preset_for(pixels), |preset| preset.min(6)))
+        };
+        if let Ok(png) = oxipng::optimize_from_memory(bytes, &options) {
+            if png.len() < bytes.len() { candidates.push((Mime::ImagePng, png)); }
+        }
+    }
+    if let Some(memory) = webp_memory.filter(|_| crate::exact::oracle::webp_eligible(bytes)) {
+        let decoded = Decoded { image: data::DataUri { mime: Mime::ImagePng, bytes: bytes.to_vec() }, pixels };
+        if let Some(webp) = lossless_webp(&decoded, &MemoryBudget::new(memory)) {
+            if webp.len() < bytes.len() { candidates.push((Mime::ImageWebp, webp)); }
+        }
+    }
+    candidates
+}
+
 fn encode(decoded: &Decoded, lossy: ImageEncoding) -> Option<String> {
     if decoded.pixels > MAX_LOSSY_PIXELS {
         return None;

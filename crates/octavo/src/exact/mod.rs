@@ -1,10 +1,10 @@
 #[doc = "Independent checks for exact transformations."]
 pub mod oracle;
 
-use crate::{doc::{Doc, Edit}, data, fonts, html::{AttrName, Element}, Target, Transform, Tuning, Warning};
+use crate::{doc::{Doc, Edit}, data, fonts, images, html::{AttrName, Element}, Options, Target, Transform, Warning};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use cssparser::{ParseError, Parser, ParserInput, Token};
-use std::{ops::Range, path::Path};
+use std::ops::Range;
 
 fn urls<'i>(parser: &mut Parser<'i, '_>, in_font: bool, found: &mut Vec<(Range<usize>, bool, usize)>) -> Result<(), ParseError<'i, ()>> {
     let mut font_rule = false;
@@ -55,8 +55,32 @@ fn urls<'i>(parser: &mut Parser<'i, '_>, in_font: bool, found: &mut Vec<(Range<u
     Ok(())
 }
 
-fn consider(doc: &Doc, span: Range<usize>, target: Target, in_font: bool, unhinted: bool, tuning: Tuning, cache: Option<&Path>, edits: &mut Vec<Edit>, warnings: &mut Vec<Warning>) {
+fn consider(doc: &Doc, span: Range<usize>, target: Target, in_font: bool, unhinted: bool, image: bool, options: &Options, edits: &mut Vec<Edit>, warnings: &mut Vec<Warning>) {
+    let tuning = options.compression.tuning();
+    let cache = options.cache_directory.as_deref();
     let value = &doc.src()[span.clone()];
+    if image && value.get(..22).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:image/png;base64,")) && !value.contains('#') {
+        if let Some(decoded) = data::decode(value) {
+            let memory = (!options.keep_png).then(|| options.image_memory.unwrap_or(Options::DEFAULT_IMAGE_MEMORY));
+            let mut best = None;
+            for (mime, candidate) in images::exact_candidates(&decoded.bytes, tuning, memory) {
+                let transform = if mime == data::Mime::ImageWebp { Transform::ConvertedWebp } else { Transform::RecompressedPng };
+                let proven = adopt(decoded.bytes.clone(), candidate, &oracle::Image);
+                if proven.rejected() {
+                    warnings.push(Warning::OracleRejected { transform, target: target.clone() });
+                    continue;
+                }
+                let text = data::encode_base64(mime, &proven.into_inner());
+                if text.len() < span.len() && best.as_ref().is_none_or(|(_, previous): &(Transform, String)| text.len() < previous.len()) {
+                    best = Some((transform, text));
+                }
+            }
+            if let Some((transform, text)) = best {
+                edits.push(Edit { span, text, transform, target });
+                return;
+            }
+        }
+    }
     if in_font && !value.contains('#') {
         if let Some(decoded) = data::decode(value).filter(|d| d.mime == data::Mime::FontWoff2 || unhinted && matches!(d.bytes.get(..4), Some(b"wOFF" | b"OTTO" | b"\x00\x01\x00\x00" | b"true" | b"typ1"))) {
             if let Some(encoded) = fonts::exact_transcode(&decoded.bytes, tuning, cache) {
@@ -87,7 +111,7 @@ fn consider(doc: &Doc, span: Range<usize>, target: Target, in_font: bool, unhint
     }
 }
 
-pub(crate) fn stage(doc: &Doc, tuning: Tuning, cache: Option<&Path>) -> (Vec<Edit>, Vec<Warning>) {
+pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
     let mut edits = Vec::new();
     let mut warnings = Vec::new();
     for tag in doc.tags() {
@@ -100,7 +124,7 @@ pub(crate) fn stage(doc: &Doc, tuning: Tuning, cache: Option<&Path>) -> (Vec<Edi
                     if urls(&mut parser, false, &mut found).is_ok() {
                         for (url, _, _) in found {
                             let range = span.start + url.start..span.start + url.end;
-                            consider(doc, range, Target::Resource(tag.label().to_string()), false, false, tuning, cache, &mut edits, &mut warnings);
+                            consider(doc, range, Target::Resource(tag.label().to_string()), false, false, false, options, &mut edits, &mut warnings);
                         }
                     }
                 }
@@ -108,7 +132,8 @@ pub(crate) fn stage(doc: &Doc, tuning: Tuning, cache: Option<&Path>) -> (Vec<Edi
             if !matches!(attr.name, AttrName::Src | AttrName::DataSrc | AttrName::Href) { continue; }
             let Some(span) = attr.value_span.clone() else { continue };
             let target = Target::Resource(tag.label().to_string());
-            consider(doc, span, target, false, false, tuning, cache, &mut edits, &mut warnings);
+            let image = tag.element == Element::Img && !tag.in_svg && matches!(attr.name, AttrName::Src | AttrName::DataSrc);
+            consider(doc, span, target, false, false, image, options, &mut edits, &mut warnings);
         }
         if tag.element == Element::Style {
             if let Some(body) = &tag.body {
@@ -120,7 +145,7 @@ pub(crate) fn stage(doc: &Doc, tuning: Tuning, cache: Option<&Path>) -> (Vec<Edi
                         let rest = doc.src()[body.start + end..body.end].trim_start_matches(|c: char| c.is_ascii_whitespace());
                         let unhinted = rest.starts_with([';', '}', ',']);
                         let span = body.start + span.start..body.start + span.end;
-                        consider(doc, span, Target::Resource(tag.label().to_string()), in_font, unhinted, tuning, cache, &mut edits, &mut warnings);
+                        consider(doc, span, Target::Resource(tag.label().to_string()), in_font, unhinted, false, options, &mut edits, &mut warnings);
                     }
                 }
             }
@@ -159,6 +184,48 @@ pub fn adopt<T>(original: T, candidate: T, oracle: &impl Oracle<T>) -> Proven<T>
 mod tests {
     use crate::{optimize, Mode, Transform};
     use base64::{engine::general_purpose::STANDARD, Engine};
+    use image::ImageEncoder;
+
+    fn png_image() -> Vec<u8> {
+        let pixels: Vec<u8> = (0..128 * 128).flat_map(|i| [i as u8, (i / 128) as u8, 42, if i % 5 == 0 { 0 } else { 255 }]).collect();
+        let mut bytes = Vec::new();
+        image::codecs::png::PngEncoder::new_with_quality(&mut bytes, image::codecs::png::CompressionType::Fast, image::codecs::png::FilterType::NoFilter)
+            .write_image(&pixels, 128, 128, image::ExtendedColorType::Rgba8).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn exact_gates_png_and_webp() {
+        let png = png_image();
+        let html = format!("<html><img src='data:image/png;base64,{}'></html>", STANDARD.encode(&png));
+        let mut options = crate::Options::default();
+        options.exact = true;
+        options.keep_png = true;
+        let out = crate::simplify(&html, options).unwrap().pack(Mode::Exact);
+        assert!(out.applied.iter().any(|step| step.transform == Transform::RecompressedPng), "{:?}", out.warnings);
+        let payload = out.html.split(";base64,").nth(1).unwrap().split('\'').next().unwrap();
+        assert!(super::oracle::image(&png, &STANDARD.decode(payload).unwrap()));
+        let out = optimize(&html, Mode::Exact).unwrap();
+        assert!(out.applied.iter().any(|step| step.transform == Transform::ConvertedWebp), "{:?}", out.warnings);
+        let payload = out.html.split(";base64,").nth(1).unwrap().split('\'').next().unwrap();
+        assert!(super::oracle::image(&png, &STANDARD.decode(payload).unwrap()));
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    #[test]
+    fn image_oracle_rejection_keeps_original() {
+        let original = png_image();
+        let changed = {
+            let mut pixels = image::load_from_memory(&original).unwrap().to_rgba8();
+            pixels.get_pixel_mut(0, 0).0[0] ^= 1;
+            let mut bytes = Vec::new();
+            image::codecs::png::PngEncoder::new(&mut bytes).write_image(pixels.as_raw(), 128, 128, image::ExtendedColorType::Rgba8).unwrap();
+            bytes
+        };
+        let proven = super::adopt(original.clone(), changed, &super::oracle::Image);
+        assert!(proven.rejected());
+        assert_eq!(proven.into_inner(), original);
+    }
 
     #[test]
     fn exact_normalizes_attribute_base64_and_is_idempotent() {

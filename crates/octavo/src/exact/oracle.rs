@@ -118,6 +118,10 @@ fn webp_pixels(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     Some((decoded.width(), decoded.height(), rgba))
 }
 
+pub(crate) fn webp_eligible(bytes: &[u8]) -> bool {
+    matches!(png_metadata(bytes), Some((8, 2 | 6, metadata)) if metadata.is_empty())
+}
+
 #[doc = "Checks decoded pixels, PNG depth and color type, and rendering metadata."]
 pub fn image(input: &[u8], output: &[u8]) -> bool {
     let png_a = png_metadata(input);
