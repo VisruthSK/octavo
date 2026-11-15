@@ -194,7 +194,11 @@ fn a_font_with_a_prep_table_is_kept_whole_when_subsetting_is_requested() {
     let woff2 = woff2_from(&out);
     let sfnt = wuff::decompress_woff2(&woff2).expect("valid sfnt");
     let font_ref = read_fonts::FontRef::new(&sfnt).expect("valid font");
-    assert!(font_ref.table_data(read_fonts::types::Tag::new(b"prep")).is_some());
+    assert!(
+        font_ref
+            .table_data(read_fonts::types::Tag::new(b"prep"))
+            .is_some()
+    );
 }
 
 #[test]
