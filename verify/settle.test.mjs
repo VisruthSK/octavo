@@ -57,3 +57,16 @@ test("the capture sees the state after the timeout and the transition", async ()
     await browser.close();
   }
 });
+
+test("the settle treats a bare pending network object as not quiet", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto("about:blank");
+    const network = { pending: 1, count: 1, last: Date.now() - 500 };
+    const quiet = await settle(page, { network, limit: 200, quiet: 50 });
+    assert.equal(quiet, false);
+  } finally {
+    await browser.close();
+  }
+});

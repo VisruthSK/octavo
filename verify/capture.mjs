@@ -317,7 +317,8 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network, long
     if (!network) return true;
     if (Date.now() - network.last < quiet) return false;
     if (!network.pending) return true;
-    if (!network.openRequests || !network.openRequests.size) return true;
+    if (!network.openRequests) return false;
+    if (!network.openRequests.size) return false;
     for (const url of network.openRequests.keys()) {
       if (!longLived?.has(url)) return false;
     }
