@@ -303,3 +303,29 @@ test("missing and extra computed style entries are reported instead of throwing"
     assert.ok(issues.some((issue) => issue.includes("style count")));
   }
 });
+
+test("the requests comparison ignores order and lazily fetched font files and keeps everything else", () => {
+  const state = {
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [100, 100],
+    labels: ["DIV"],
+    rects: [[0, 0, 100, 100]],
+    styles: ["width:100px"],
+    screenshot: Buffer.from("same"),
+  };
+  const run = (before, after) => compare({ states: [state], errors: [], requests: before }, { states: [state], errors: [], requests: after }, false);
+  const script = "https://cdn.example/lib.js";
+  const style = "https://cdn.example/lib.css";
+  const font = "https://cdn.example/fonts/Size4-Regular.woff?V=2.7.9";
+  assert.deepEqual(run([script, font, style], [style, script]), []);
+  assert.deepEqual(run([script, style], [style, script, script]), []);
+  assert.ok(run([script, style], [script]).some((issue) => issue.startsWith("requests:")));
+  assert.ok(run([script], [script, "https://cdn.example/extra.js"]).some((issue) => issue.startsWith("requests:")));
+  assert.ok(run([script], [script, "https://cdn.example/image.png"]).some((issue) => issue.startsWith("requests:")));
+});
