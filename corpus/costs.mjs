@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 export const costsPath = join(import.meta.dirname, "costs.json");
 export const DEFAULT_FALLBACK_COST = 38;
+export const ENGINES = ["chromium", "firefox", "webkit"];
 
 const findLogFiles = (target) => {
   if (!existsSync(target)) return [];
@@ -27,15 +28,21 @@ export function buildCosts(source = root) {
   const perEngine = { chromium: {}, firefox: {}, webkit: {} };
   const progressRegex = /\[(\d+)\/(\d+)\]\s+([^\s]+)\s+([^\s]+)\s+(\d+)s(\s+\(cached\))?/;
 
-  const processText = (text) => {
-    let currentEngine = "chromium";
+  const processFileOrText = (text, filePath = "") => {
+    let defaultEngine = null;
+    const lower = filePath.toLowerCase();
+    if (lower.includes("chromium")) defaultEngine = "chromium";
+    else if (lower.includes("firefox")) defaultEngine = "firefox";
+    else if (lower.includes("webkit")) defaultEngine = "webkit";
+
+    let currentEngine = defaultEngine ?? "chromium";
     const lines = text.split("\n");
     for (const line of lines) {
-      if (line.includes("firefox")) {
-        currentEngine = "firefox";
-      } else if (line.includes("webkit")) {
+      if (line.includes("out/engines-webkit") || line.includes("WebKit checks") || line.includes("browser: WebKit") || line.includes("OCTAVO_BROWSER: webkit") || (!defaultEngine && line.includes("webkit"))) {
         currentEngine = "webkit";
-      } else if (line.includes("Corpus (smoke, shard") || line.includes("chromium")) {
+      } else if (line.includes("out/engines-firefox") || line.includes("Firefox checks") || line.includes("browser: Firefox") || line.includes("OCTAVO_BROWSER: firefox") || (!defaultEngine && line.includes("firefox"))) {
+        currentEngine = "firefox";
+      } else if (line.includes("out/engines-chromium") || line.includes("Chromium checks") || line.includes("browser: Chromium") || line.includes("OCTAVO_BROWSER: chromium") || (!defaultEngine && (line.includes("Corpus (smoke, shard") || line.includes("chromium")))) {
         currentEngine = "chromium";
       }
       const match = line.match(progressRegex);
@@ -53,10 +60,21 @@ export function buildCosts(source = root) {
 
   if (files.length > 0) {
     for (const file of files) {
-      processText(readFileSync(file, "utf8"));
+      processFileOrText(readFileSync(file, "utf8"), file);
     }
   } else if (typeof source === "string") {
-    processText(source);
+    processFileOrText(source, "");
+  }
+
+  const medians = {};
+  for (const eng of ENGINES) {
+    const totals = Object.values(perEngine[eng])
+      .map((levels) => Object.values(levels).reduce((a, b) => a + b, 0))
+      .sort((a, b) => a - b);
+    const mid = Math.floor(totals.length / 2);
+    medians[eng] = totals.length
+      ? (totals.length % 2 !== 0 ? totals[mid] : Math.round((totals[mid - 1] + totals[mid]) / 2))
+      : DEFAULT_FALLBACK_COST;
   }
 
   const allDocIds = new Set([
@@ -66,18 +84,16 @@ export function buildCosts(source = root) {
   ]);
 
   const table = {};
-  for (const id of allDocIds) {
-    const cr = Object.values(perEngine.chromium[id] ?? {}).reduce((a, b) => a + b, 0);
-    const ff = Object.values(perEngine.firefox[id] ?? {}).reduce((a, b) => a + b, 0);
-    const wk = Object.values(perEngine.webkit[id] ?? {}).reduce((a, b) => a + b, 0);
-    table[id] = Math.max(cr, ff, wk);
+  for (const id of [...allDocIds].sort()) {
+    table[id] = {};
+    for (const eng of ENGINES) {
+      const levels = perEngine[eng][id];
+      const measured = levels ? Object.values(levels).reduce((a, b) => a + b, 0) : null;
+      table[id][eng] = measured ?? medians[eng];
+    }
   }
 
-  const sorted = {};
-  for (const key of Object.keys(table).sort()) {
-    sorted[key] = table[key];
-  }
-  return sorted;
+  return table;
 }
 
 export function readCosts(path = costsPath) {
@@ -85,9 +101,15 @@ export function readCosts(path = costsPath) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
-export function costOf(doc, costs = {}) {
+export function costOf(doc, costs = {}, engine = "chromium") {
   const id = typeof doc === "string" ? doc : doc?.id;
-  if (id && costs[id] !== undefined) return costs[id];
+  const entry = id ? costs[id] : undefined;
+  if (typeof entry === "number") return entry;
+  if (entry && typeof entry === "object") {
+    if (typeof entry[engine] === "number") return entry[engine];
+    const first = Object.values(entry).find((v) => typeof v === "number");
+    if (first !== undefined) return first;
+  }
   if (doc?.bytes) return Math.max(1, Math.round(doc.bytes / 1024));
   return DEFAULT_FALLBACK_COST;
 }
