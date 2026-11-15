@@ -1,9 +1,9 @@
-use crate::common::{busy_script, data_uri, packed, page, safe, simplified};
+use crate::common::{archive, busy_script, data_uri, page, serve, simplified};
 use octavo::{Compression, Mode, Options, Tuning, optimize, simplify};
 
 #[test]
 fn css_comments_mentioning_custom_properties_do_not_swallow_rules() {
-    let out = safe(&page(
+    let out = serve(&page(
         "<style>/* set --gap: 1rem */ .a{color:red} .b{color:blue}</style>",
         "<p class=\"a b\">",
     ));
@@ -12,7 +12,7 @@ fn css_comments_mentioning_custom_properties_do_not_swallow_rules() {
 
 #[test]
 fn important_custom_properties_keep_their_priority() {
-    let out = safe(&page(
+    let out = serve(&page(
         "<style>.a{--x:red !important;--x:blue;color:var(--x)}</style>",
         "<p class=a>",
     ));
@@ -21,7 +21,7 @@ fn important_custom_properties_keep_their_priority() {
 
 #[test]
 fn custom_property_strings_with_semicolons_survive() {
-    let out = safe(&page(
+    let out = serve(&page(
         r#"<style>.a{--s:"a;b}c";--t:url(data:x;base64,AAA);content:var(--s);background:var(--t)}</style>"#,
         "<p class=a>",
     ));
@@ -31,13 +31,13 @@ fn custom_property_strings_with_semicolons_survive() {
 #[test]
 fn layer_blocks_are_never_removed_so_layer_order_is_stable() {
     let css = "@layer base{.unused{top:0}}@layer theme{p{color:blue}}@layer base{p{color:green}}";
-    let out = safe(&page(&format!("<style>{css}</style>"), "<p>"));
+    let out = serve(&page(&format!("<style>{css}</style>"), "<p>"));
     assert!(out.find("base").unwrap() < out.find("theme").unwrap());
 }
 
 #[test]
 fn camel_case_svg_type_selectors_are_kept() {
-    let out = safe(&page(
+    let out = serve(&page(
         "<style>foreignObject{overflow:visible}clipPath{opacity:1}</style>",
         "<svg><foreignObject></foreignObject><clipPath></clipPath></svg>",
     ));
@@ -46,7 +46,7 @@ fn camel_case_svg_type_selectors_are_kept() {
 
 #[test]
 fn class_names_with_arbitrary_punctuation_are_reachable() {
-    let out = safe(&page(
+    let out = serve(&page(
         r"<style>.w-\[50\%\]{width:50%}.\!mt-0{margin:0}.gone{top:0}</style>",
         "<p class=\"w-[50%] !mt-0\">",
     ));
@@ -63,7 +63,7 @@ fn rules_inside_noscript_do_not_become_pack_sites() {
         ),
         "<p>",
     );
-    let out = packed(&src);
+    let out = archive(&src);
     assert!(!out.contains("<noscript><script>"));
     assert!(out.contains("$o(0"));
 }
@@ -77,13 +77,13 @@ fn attribute_values_with_newlines_and_entities_stay_valid_javascript() {
         ),
         "<p>",
     );
-    let out = packed(&src);
+    let out = archive(&src);
     assert!(!out.contains("line1\nline2") || !out.contains("$o(0,0,"));
     let src = page(
         &format!("<script data-a=\"x &amp; y\">{}</script>", busy_script("c")),
         "<p>",
     );
-    assert!(!packed(&src).contains("data-a\":\"x &amp;"));
+    assert!(!archive(&src).contains("data-a\":\"x &amp;"));
 }
 
 #[test]
@@ -92,14 +92,14 @@ fn a_script_matching_two_library_signatures_does_not_panic() {
         "/*! Bootstrap v5.3 @popperjs/core v2 */{}",
         "var q=1;".repeat(400)
     );
-    let out = safe(&page(&format!("<script>{both}</script>"), "<p>"));
+    let out = serve(&page(&format!("<script>{both}</script>"), "<p>"));
     assert!(!out.contains("var q=1;") && !out.contains("Bootstrap"));
 }
 
 #[test]
 fn library_signatures_must_appear_in_the_banner() {
     let bundle = format!("{}/* clipboard.js v2.0.11 */", "var q=1;".repeat(400));
-    let out = safe(&page(&format!("<script>{bundle}</script>"), "<p>"));
+    let out = serve(&page(&format!("<script>{bundle}</script>"), "<p>"));
     assert!(out.contains("clipboard.js"));
 }
 
@@ -110,7 +110,7 @@ fn the_null_object_stub_cannot_collide_with_page_globals() {
         &format!("<script>let n=1</script><script>{clipboard}</script>"),
         "<p>",
     );
-    let out = safe(&src);
+    let out = serve(&src);
     assert!(
         out.contains("{let ") && out.contains("new Proxy") && out.contains("window.ClipboardJS=")
     );
@@ -120,7 +120,7 @@ fn the_null_object_stub_cannot_collide_with_page_globals() {
 fn font_families_match_case_insensitively() {
     let font =
         "@font-face{font-family:Lato;src:url(data:font/ttf;base64,AAAA)}body{font-family:lato}";
-    let out = safe(&page(&format!("<style>{font}</style>"), "<p>"));
+    let out = serve(&page(&format!("<style>{font}</style>"), "<p>"));
     assert!(out.contains("@font-face"));
 }
 
@@ -128,15 +128,15 @@ fn font_families_match_case_insensitively() {
 fn fonts_used_only_by_inline_svg_styles_are_kept() {
     let face = "@font-face{font-family:\"Fira Code\";src:url(data:font/ttf;base64,AAAA)}";
     let svg = "<svg><style>text{font-family:\"Fira Code\"}</style><text>x</text></svg>";
-    assert!(safe(&page(&format!("<style>{face}</style>"), svg)).contains("@font-face"));
+    assert!(serve(&page(&format!("<style>{face}</style>"), svg)).contains("@font-face"));
 }
 
 #[test]
 fn unused_fonts_are_dropped_but_variable_referenced_fonts_are_kept() {
     let used = "@font-face{font-family:Vault;src:url(data:font/ttf;base64,AAAA)}:root{--heading:Vault,serif}p{font-family:var(--heading)}";
-    assert!(safe(&page(&format!("<style>{used}</style>"), "<p>")).contains("@font-face"));
+    assert!(serve(&page(&format!("<style>{used}</style>"), "<p>")).contains("@font-face"));
     let unused = "@font-face{font-family:Ghost;src:url(data:font/ttf;base64,AAAA)}p{color:red}";
-    assert!(!safe(&page(&format!("<style>{unused}</style>"), "<p>")).contains("Ghost"));
+    assert!(!serve(&page(&format!("<style>{unused}</style>"), "<p>")).contains("Ghost"));
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn module_scripts_in_any_case_are_not_packed() {
             &format!("<script type=\"{kind}\">{}</script>", busy_script("m")),
             "<p>",
         );
-        assert!(!packed(&src).contains("$o("), "{kind}");
+        assert!(!archive(&src).contains("$o("), "{kind}");
     }
 }
 
@@ -159,7 +159,7 @@ fn script_types_that_merely_contain_javascript_keep_their_type() {
         ),
         "<p>",
     );
-    assert!(packed(&src).contains("text/x-javascript-template"));
+    assert!(archive(&src).contains("text/x-javascript-template"));
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn svg_with_scripts_or_event_handlers_is_not_packed() {
         .collect();
     for active in ["<script>alert(1)</script>", "<g onclick=\"go()\"></g>"] {
         let src = page("", &format!("<svg>{shapes}{active}</svg>"));
-        assert!(!packed(&src).contains("$o("), "{active}");
+        assert!(!archive(&src).contains("$o("), "{active}");
     }
 }
 
@@ -181,7 +181,7 @@ fn single_quoted_attribute_values_containing_double_quotes_stay_well_formed() {
         &format!("<script type=module data-q='say \"hi\"' src=\"{encoded}\"></script>"),
         "<p>",
     );
-    let out = safe(&src);
+    let out = serve(&src);
     assert!(out.contains("data-q=\"say &quot;hi&quot;\"") || out.contains("src="));
 }
 
@@ -194,7 +194,7 @@ fn a_module_data_uri_with_an_upper_case_scheme_is_inlined_like_a_lower_case_one(
             "<script type=module src=\"{}\"></script>",
             encoded.replacen("data:", scheme, 1)
         );
-        let out = safe(&page(&tag, "<p>"));
+        let out = serve(&page(&tag, "<p>"));
         assert!(!out.contains("src="), "{scheme}: {out:.200}");
         assert!(out.contains("window.once"), "{scheme}: {out:.200}");
     }
@@ -205,7 +205,7 @@ fn duplicated_data_uri_modules_are_not_inlined_twice() {
     let module = "window.once=(window.once||0)+1;".repeat(80);
     let encoded = data_uri("text/javascript", module.as_bytes());
     let tag = format!("<script type=module src=\"{encoded}\"></script>");
-    let out = safe(&page(&format!("{tag}{tag}"), "<p>"));
+    let out = serve(&page(&format!("{tag}{tag}"), "<p>"));
     assert_eq!(out.matches("src=").count(), 2);
 }
 
@@ -235,13 +235,13 @@ fn every_truncation_of_a_realistic_document_is_handled_without_panicking() {
         "<p class=\"a\">héllo ✓</p><svg><circle r=\"1\"/></svg>",
     );
     for end in (0..whole.len()).filter(|i| whole.is_char_boundary(*i)) {
-        let _ = optimize(&whole[..end], Mode::Packed);
+        let _ = optimize(&whole[..end], Mode::Archive);
     }
 }
 
 #[test]
 fn unprefixed_backdrop_filter_survives_next_to_its_prefixed_twin() {
-    let out = safe(&page(
+    let out = serve(&page(
         "<style>.a{color:red;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}</style>",
         "<p class=\"a\">",
     ));
@@ -258,7 +258,7 @@ fn unprefixed_backdrop_filter_survives_next_to_its_prefixed_twin() {
 fn only_textual_data_counts_as_words_the_page_can_use() {
     let hidden_in_pixels = data_uri("image/png", b"onlyinbinary");
     let hidden_in_text = data_uri("text/plain", b"onlyintext");
-    let out = safe(&page(
+    let out = serve(&page(
         "<style>.onlyinbinary{color:red}.onlyintext{color:blue}</style>",
         &format!("<img src=\"{hidden_in_pixels}\"><img src=\"{hidden_in_text}\">"),
     ));
@@ -274,7 +274,7 @@ fn a_font_face_with_legacy_sources_keeps_one_woff2_copy_from_the_last_src() {
         eot = data_uri("application/vnd.ms-fontobject", b"not a usable font"),
         ttf = data_uri("font/ttf", font),
     );
-    let out = safe(&page(&format!("<style>{css}</style>"), "<p>A</p>"));
+    let out = serve(&page(&format!("<style>{css}</style>"), "<p>A</p>"));
     assert!(out.contains("data:font/woff2"), "{out}");
     assert!(!out.contains("fontobject"), "{out}");
     assert!(!out.contains("data:font/ttf"), "{out}");
@@ -283,7 +283,7 @@ fn a_font_face_with_legacy_sources_keeps_one_woff2_copy_from_the_last_src() {
 #[test]
 fn a_rule_the_parser_rejects_is_kept_in_place_while_the_rest_of_the_sheet_is_optimized() {
     let css = ".gone{color:red}\n.a:first{margin-top:12px}\n.keep{color:#0000ff}\n@media print{.gone{color:blue}}";
-    let out = safe(&page(
+    let out = serve(&page(
         &format!("<style>{css}</style>"),
         "<p class=\"keep a\">",
     ));
@@ -299,7 +299,7 @@ fn a_rule_the_parser_rejects_is_kept_in_place_while_the_rest_of_the_sheet_is_opt
 #[test]
 fn several_rejected_rules_and_non_ascii_text_before_them_are_all_restored() {
     let css = ".gone{color:red}\n.a::-moz-bogus-thing{x:y}\n/* é€ */ .b:first{margin:0}\n.keep{color:#0000ff}";
-    let out = safe(&page(
+    let out = serve(&page(
         &format!("<style>{css}</style>"),
         "<p class=\"keep a b\">",
     ));
@@ -311,7 +311,7 @@ fn several_rejected_rules_and_non_ascii_text_before_them_are_all_restored() {
 #[test]
 fn arithmetic_that_would_lose_precision_is_left_as_written() {
     let css = ".gone{color:red}.a{font-size:calc(1.6em / .7)}.b{width:calc(100% - 20px)}.keep{color:#0000ff}";
-    let out = safe(&page(
+    let out = serve(&page(
         &format!("<style>{css}</style>"),
         "<p class=\"a b keep\">",
     ));
@@ -326,7 +326,7 @@ fn plaintext_content_is_not_markup() {
         "<style>.witness{margin-left:1px}</style>",
         "<p>before</p><plaintext><script>var x = 1;</script>",
     );
-    let out = safe(&src);
+    let out = serve(&src);
     assert!(out.contains("var x = 1;"), "{out}");
     assert!(!out.contains(".witness"), "{out}");
 }
@@ -343,7 +343,7 @@ fn bogus_comments_are_not_markup_and_stay_byte_identical() {
             "<style>.witness{margin-left:1px}</style>",
             &format!("<p>before</p>{bogus}"),
         );
-        let out = safe(&src);
+        let out = serve(&src);
         assert!(out.contains(kept), "{out}");
         assert!(out.contains(bogus), "{out}");
         assert!(!out.contains(".witness"), "{out}");
@@ -357,7 +357,7 @@ fn an_html_word_inside_a_script_is_not_a_document() {
         "<!-- <html> --><p>x</p>",
     ] {
         assert_eq!(
-            optimize(src, Mode::Safe).unwrap_err(),
+            optimize(src, Mode::Serve).unwrap_err(),
             octavo::Error::NotHtml,
             "{src}"
         );
@@ -373,7 +373,7 @@ fn a_css_banner_is_printed_exactly_once_unless_licenses_are_stripped() {
         ),
         "<p class=\"keep\">",
     );
-    let kept = safe(&src);
+    let kept = serve(&src);
     assert_eq!(kept.matches("Bootstrap v5.3.3").count(), 1, "{kept}");
     assert!(!kept.contains(".dead-0"), "{kept}");
     let stripped = simplified(&src, {
@@ -381,7 +381,7 @@ fn a_css_banner_is_printed_exactly_once_unless_licenses_are_stripped() {
         options.strip_licenses = true;
         options
     })
-    .pack(Mode::Safe);
+    .pack(Mode::Serve);
     assert!(
         !stripped.html.contains("Bootstrap v5.3.3"),
         "{}",
@@ -392,7 +392,7 @@ fn a_css_banner_is_printed_exactly_once_unless_licenses_are_stripped() {
 #[test]
 fn an_unterminated_block_is_kept_while_the_rest_of_the_sheet_is_optimized() {
     let css = ".gone{color:red}\n.keep{color:#0000ff}\n.a:first{margin-top:12px";
-    let out = safe(&page(
+    let out = serve(&page(
         &format!("<style>{css}</style>"),
         "<p class=\"keep a\">",
     ));
@@ -404,7 +404,7 @@ fn an_unterminated_block_is_kept_while_the_rest_of_the_sheet_is_optimized() {
 #[test]
 fn a_rejected_rule_inside_media_is_kept_while_the_rest_of_the_sheet_is_optimized() {
     let css = ".gone{color:red}\n@media print{.g2{color:blue}.a:first{margin-top:12px}}\n.keep{color:#0000ff}";
-    let out = safe(&page(
+    let out = serve(&page(
         &format!("<style>{css}</style>"),
         "<p class=\"keep a\">",
     ));
@@ -417,7 +417,7 @@ fn a_rejected_rule_inside_media_is_kept_while_the_rest_of_the_sheet_is_optimized
 #[test]
 fn many_adjacent_rules_that_are_set_aside_all_come_back_in_order() {
     let css = ".gone{color:red}.a{font-size:calc(1.6em / .7)}.b{font-size:calc(2em / .3)}.c::-moz-bogus-thing{x:y}.keep{color:#0000ff}";
-    let out = safe(&page(
+    let out = serve(&page(
         &format!("<style>{css}</style>"),
         "<p class=\"a b c keep\">",
     ));
@@ -461,10 +461,10 @@ fn a_cached_font_gives_exactly_the_same_output_as_a_converted_one() {
     whole.subset_text_fonts = false;
     let uncached = simplify(&html, whole)
         .expect("supported")
-        .pack(Mode::Safe)
+        .pack(Mode::Serve)
         .html;
     let first = simplify(&html, cache_options(&directory)).expect("supported");
-    let first = first.pack(Mode::Safe).html;
+    let first = first.pack(Mode::Serve).html;
     assert_eq!(
         std::fs::read_dir(directory.join("fonts"))
             .expect("cache written")
@@ -472,7 +472,7 @@ fn a_cached_font_gives_exactly_the_same_output_as_a_converted_one() {
         1
     );
     let second = simplify(&html, cache_options(&directory)).expect("supported");
-    let second = second.pack(Mode::Safe).html;
+    let second = second.pack(Mode::Serve).html;
     assert_eq!(first, uncached);
     assert_eq!(second, uncached);
     assert_eq!(
@@ -516,7 +516,7 @@ fn a_damaged_cache_entry_is_ignored_and_replaced() {
     std::fs::write(&entry, b"not a cache entry").expect("overwrite");
     let out = simplify(&html, cache_options(&directory))
         .expect("supported")
-        .pack(Mode::Safe)
+        .pack(Mode::Serve)
         .html;
     assert!(out.contains("data:font/woff2"), "{out}");
     assert!(std::fs::read(&entry).expect("rewritten").len() > 20);
@@ -527,7 +527,7 @@ fn packed_size(html: &str, compression: Compression) -> usize {
     options.compression = compression;
     simplify(html, options)
         .expect("supported")
-        .pack(Mode::Packed)
+        .pack(Mode::Archive)
         .html
         .len()
 }
@@ -574,7 +574,7 @@ fn a_class_name_longer_than_the_stored_word_length_keeps_its_rule() {
             "<p>padding</p>".repeat(400)
         ),
     );
-    let out = safe(&src);
+    let out = serve(&src);
     assert!(out.contains(&format!(".{long}")));
     assert!(!out.contains("unused-thing"));
 }

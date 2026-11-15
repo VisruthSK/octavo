@@ -51,7 +51,7 @@ test("the settle waits for a late timeout and for a transition to finish", async
 test("the capture sees the state after the timeout and the transition", async () => {
   const browser = await launch();
   try {
-    const [state] = (await capture(browser, file, scenariosFor("safe")[0], false)).states;
+    const [state] = (await capture(browser, file, scenariosFor("serve")[0], false)).states;
     assert.match(state.dom, /Settled/);
     assert.match(state.styles.join(""), /width:150px/);
   } finally {
@@ -95,7 +95,7 @@ test("the settle waits for an iframe srcdoc to paint its frames", async () => {
 test("the capture snapshot sees the updated colour inside an iframe srcdoc", async () => {
   const browser = await launch();
   try {
-    const [state] = (await capture(browser, iframeFile, scenariosFor("safe")[0], false)).states;
+    const [state] = (await capture(browser, iframeFile, scenariosFor("serve")[0], false)).states;
     assert.ok(state.screenshot);
     const png = PNG.sync.read(state.screenshot);
     const offset = (50 * png.width + 50) * 4;

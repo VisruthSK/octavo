@@ -125,7 +125,7 @@ test("reduced scenario sets preserve every safe-set proof outside explicit exclu
         return safe.includes(scenario) ? [] : [`${name} was not caught by its listed exclusion: ${reason}`];
       }
       const missed = [];
-      for (const level of ["scripts", "packed"]) {
+      for (const level of ["portable", "archive"]) {
         if (!failingScenarios(await verify(originalFile, changedFile, { level })).length) missed.push(`${name} escaped ${level}`);
       }
       return missed;
@@ -141,11 +141,11 @@ const loaderBreakages = [
   ["deferred script moved", "window.ready=true;window.target.textContent='ready'", "window.target.textContent=window.ready?'ready':'early';window.ready=true"],
 ];
 
-test("scripts and packed scenarios catch loader restoration breakages", async () => {
+test("portable and archive scenarios catch loader restoration breakages", async () => {
   const shell = (script) => page("body{margin:8px}", `<h1 id="target">initial</h1><script>window.target=document.getElementById('target');window.order=[];${script}</script>`);
   const escaped = await Promise.all(
     loaderBreakages.flatMap(([name, expected, changed], at) =>
-      ["scripts", "packed"].map(async (level) => {
+      ["portable", "archive"].map(async (level) => {
         const originalFile = write(`loader-${at}-${level}-original`, shell(expected));
         const changedFile = write(`loader-${at}-${level}-changed`, shell(changed));
         const found = failingScenarios(await verify(originalFile, changedFile, { level }));

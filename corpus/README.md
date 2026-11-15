@@ -109,7 +109,7 @@ node verify/corpus.mjs --tier full --browser --filter '^css-'
 | Flag | Meaning |
 |---|---|
 | `--tier smoke\|full` | Which tier to run. The default is `smoke` |
-| `--levels safe,scripts,packed` | Which levels to run. The default is `safe,packed` for `smoke` and all three for `full` |
+| `--levels serve,portable,archive` | Which levels to run. The default is `serve,archive` for `smoke` and all three for `full` |
 | `--browser` | Compare each optimized page with the original in the engine named by `OCTAVO_BROWSER` |
 | `--filter <regex>` | Run only documents whose id matches |
 | `--jobs <n>` | Documents processed at once |

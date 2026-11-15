@@ -10,8 +10,8 @@ corpus <- read.csv(file.path(root, "docs", "charts", "corpus.csv"))
 speed <- read.csv(file.path(root, "docs", "charts", "speed.csv"))
 
 themes <- list(
-  light = list(ink = "#1f2328", muted = "#59636e", grid = "#d8dee4", safe = "#a9c5f7", scripts = "#5f8fe8", packed = "#1d4ed8", accent = "#d4572a", second = "#8250df"),
-  dark = list(ink = "#e6edf3", muted = "#9198a1", grid = "#30363d", safe = "#35508a", scripts = "#5a86d6", packed = "#8db4ff", accent = "#ff8a5c", second = "#b392f0")
+  light = list(ink = "#1f2328", muted = "#59636e", grid = "#d8dee4", serve = "#a9c5f7", portable = "#5f8fe8", archive = "#1d4ed8", accent = "#d4572a", second = "#8250df"),
+  dark = list(ink = "#e6edf3", muted = "#9198a1", grid = "#30363d", serve = "#35508a", portable = "#5a86d6", archive = "#8db4ff", accent = "#ff8a5c", second = "#b392f0")
 )
 
 base_theme <- function(p) {
@@ -51,9 +51,9 @@ upstream$group <- factor(
 
 share <- function(rows) {
   data.frame(
-    safe = sum(rows$safe_bytes) / sum(rows$input_bytes),
-    scripts = sum(rows$scripts_bytes) / sum(rows$input_bytes),
-    packed = sum(rows$packed_bytes) / sum(rows$input_bytes)
+    serve = sum(rows$safe_bytes) / sum(rows$input_bytes),
+    portable = sum(rows$scripts_bytes) / sum(rows$input_bytes),
+    archive = sum(rows$packed_bytes) / sum(rows$input_bytes)
   )
 }
 levels_table <- do.call(rbind, lapply(
@@ -63,13 +63,13 @@ levels_table <- do.call(rbind, lapply(
     s <- share(rows)
     data.frame(
       group = sprintf("%s (%d)", g, nrow(rows)),
-      level = c("safe", "scripts", "packed"),
-      share = c(s$safe, s$scripts, s$packed)
+      level = c("serve", "portable", "archive"),
+      share = c(s$serve, s$portable, s$archive)
     )
   }
 ))
 levels_table$group <- factor(levels_table$group, levels = rev(unique(levels_table$group)))
-levels_table$level <- factor(levels_table$level, levels = c("safe", "scripts", "packed"))
+levels_table$level <- factor(levels_table$level, levels = c("serve", "portable", "archive"))
 
 levels_chart <- function(p) {
   ggplot(levels_table, aes(share, group, fill = level)) +
@@ -78,7 +78,7 @@ levels_chart <- function(p) {
       aes(label = percent(share, accuracy = 0.1)),
       position = position_dodge2(width = 0.8, reverse = TRUE, padding = 0.12), hjust = -0.15, size = 3.3, colour = p$ink
     ) +
-    scale_fill_manual(values = c(safe = p$safe, scripts = p$scripts, packed = p$packed)) +
+    scale_fill_manual(values = c(serve = p$serve, portable = p$portable, archive = p$archive)) +
     scale_x_continuous(labels = percent_format(accuracy = 1), limits = c(0, 0.36), expand = c(0, 0)) +
     labs(
       title = "Output size by level",
