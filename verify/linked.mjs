@@ -5,6 +5,7 @@ import { brotliCompressSync, constants } from "node:zlib";
 import { readCosts } from "../corpus/costs.mjs";
 import { shardSlice } from "../corpus/sharding.mjs";
 import { renderLinked, renderedPath } from "../corpus/upstream.mjs";
+import { engineName } from "./engines/index.mjs";
 import { closeBrowser, verify } from "./verify.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -25,7 +26,7 @@ const allEntries = existsSync(selectionPath)
   ? JSON.parse(readFileSync(selectionPath, "utf8")).filter((entry) => tier === "full" || entry.tier === tier)
   : [];
 const costs = readCosts();
-const selected = shardSlice(allEntries, shard, costs).filter((entry) => filter.test(entry.id));
+const selected = shardSlice(allEntries, shard, costs, engineName({})).filter((entry) => filter.test(entry.id));
 
 const wire = (path) =>
   brotliCompressSync(readFileSync(path), { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }).length;

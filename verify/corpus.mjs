@@ -107,7 +107,7 @@ const shard = shardCount ? { index: shardPosition - 1, count: shardCount } : und
 const allHandWritten = (await materialize())
   .map((row) => ({ ...row, path: documentPath(row.id) }))
   .filter((row) => tier === "full" || row.tier === "smoke");
-const handWritten = shardSlice(allHandWritten, shard, costs);
+const handWritten = shardSlice(allHandWritten, shard, costs, engine.name);
 const selectionFile = join(root, "corpus", "selection.json");
 const allUpstream = (upstream && existsSync(selectionFile)
   ? JSON.parse(readFileSync(selectionFile, "utf8"))
@@ -115,7 +115,7 @@ const allUpstream = (upstream && existsSync(selectionFile)
 )
   .filter((entry) => tier === "full" || entry.tier === tier)
   .map((entry) => ({ ...entry, browser: true, expect: { outcome: "accepts" }, path: renderedPath(entry.id) }));
-const upstreamInShard = shardSlice(allUpstream, shard, costs);
+const upstreamInShard = shardSlice(allUpstream, shard, costs, engine.name);
 const rows = [...handWritten, ...upstreamInShard];
 const selected = rows.filter((row) => filter.test(row.id));
 rmSync(outDirectory, { recursive: true, force: true });
