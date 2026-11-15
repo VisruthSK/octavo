@@ -274,10 +274,39 @@ const probe = () => {
   const hub = window.MathJax?.Hub;
   const mathjax =
     Boolean(hub?.queue) && (Boolean(hub.queue.running) || Boolean(hub.queue.pending));
+  const inspectable = (doc) => {
+    const list = [];
+    try {
+      for (const iframe of doc.querySelectorAll("iframe")) {
+        let inner;
+        try {
+          inner = iframe.contentDocument;
+        } catch {
+          continue;
+        }
+        if (!inner) continue;
+        list.push(iframe);
+        list.push(...inspectable(inner));
+      }
+    } catch {}
+    return list;
+  };
+  const iframes = inspectable(document).every((iframe) => {
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) return true;
+      if (doc.readyState !== "complete") return false;
+      if (doc.fonts && doc.fonts.status !== "loaded") return false;
+      return true;
+    } catch {
+      return true;
+    }
+  });
   return {
     due,
     running: running.length,
     fonts: document.fonts.status === "loaded",
+    iframes,
     transitioning,
     indices,
     reveal: typeof window.Reveal?.isReady === "function",
@@ -294,17 +323,61 @@ const watch = () => {
   const touch = () => {
     state.changed = Date.now();
   };
-  const mutations = new MutationObserver(touch);
-  const resizes = new ResizeObserver(touch);
-  mutations.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-  resizes.observe(document.documentElement);
-  document.addEventListener("scroll", touch, { capture: true, passive: true });
+  const observeDoc = (doc) => {
+    try {
+      const mutations = new MutationObserver(touch);
+      const resizes = new ResizeObserver(touch);
+      mutations.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+      resizes.observe(doc.documentElement);
+      doc.addEventListener("scroll", touch, { capture: true, passive: true });
+      for (const iframe of doc.querySelectorAll("iframe")) {
+        try {
+          if (iframe.contentDocument) observeDoc(iframe.contentDocument);
+        } catch {}
+      }
+    } catch {}
+  };
+  observeDoc(document);
   return state;
 };
 
 const frames = async (page) => {
   await Promise.race([
-    page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))).catch(() => {}),
+    page.evaluate(() => {
+      const wait = (win) =>
+        new Promise((done) => {
+          try {
+            if (!win || typeof win.requestAnimationFrame !== "function") return done();
+            const timer = setTimeout(done, 500);
+            win.requestAnimationFrame(() =>
+              win.requestAnimationFrame(() => {
+                clearTimeout(timer);
+                done();
+              }),
+            );
+          } catch {
+            done();
+          }
+        });
+      const inspectable = (doc) => {
+        const wins = [];
+        try {
+          for (const iframe of doc.querySelectorAll("iframe")) {
+            let inner;
+            try {
+              inner = iframe.contentDocument;
+            } catch {
+              continue;
+            }
+            if (!inner || !iframe.contentWindow) continue;
+            wins.push(iframe.contentWindow);
+            wins.push(...inspectable(inner));
+          }
+        } catch {}
+        return wins;
+      };
+      return Promise.all([window, ...inspectable(document)].map(wait));
+    }).catch(() => {}),
     page.waitForTimeout(500),
   ]);
 };
@@ -345,7 +418,7 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network, long
         continue;
       }
     }
-    if (!state.fonts) {
+    if (!state.fonts || !state.iframes) {
       await page.waitForTimeout(50);
       continue;
     }

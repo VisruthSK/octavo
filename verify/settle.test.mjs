@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { PNG } from "pngjs";
 import { launch } from "./engines/index.mjs";
 import { capture, scenariosFor, settle, trackTimers } from "./capture.mjs";
 
@@ -66,6 +67,54 @@ test("the settle treats a bare pending network object as not quiet", async () =>
     const network = { pending: 1, count: 1, last: Date.now() - 500 };
     const quiet = await settle(page, { network, limit: 200, quiet: 50 });
     assert.equal(quiet, false);
+  } finally {
+    await browser.close();
+  }
+});
+
+const iframeFile = join(directory, "iframe.html");
+const iframeDoc = [
+  "<!DOCTYPE html><html><body style=\"margin:0;background:rgb(255,0,0)\">",
+  "<script>",
+  "requestAnimationFrame(() => {",
+  "  requestAnimationFrame(() => {",
+  "    document.body.style.background = 'rgb(0,255,0)';",
+  "  });",
+  "});",
+  "</script>",
+  "</body></html>",
+].join("");
+writeFileSync(
+  iframeFile,
+  `<!DOCTYPE html><html><head><meta charset="utf-8"><title>iframe</title></head><body style="margin:0"><iframe id="frame" style="width:200px;height:200px;border:0" srcdoc="${iframeDoc.replaceAll('"', "&quot;")}"></iframe></body></html>`,
+);
+
+test("the settle waits for an iframe srcdoc to paint its frames", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(pathToFileURL(iframeFile).href, { waitUntil: "load" });
+    await settle(page);
+    const color = await page.evaluate(() => {
+      const frame = document.getElementById("frame");
+      return getComputedStyle(frame.contentDocument.body).backgroundColor;
+    });
+    assert.equal(color, "rgb(0, 255, 0)");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the capture snapshot sees the updated colour inside an iframe srcdoc", async () => {
+  const browser = await launch();
+  try {
+    const [state] = (await capture(browser, iframeFile, scenariosFor("safe")[0], false)).states;
+    assert.ok(state.screenshot);
+    const png = PNG.sync.read(state.screenshot);
+    const offset = (50 * png.width + 50) * 4;
+    const r = png.data[offset];
+    const g = png.data[offset + 1];
+    assert.equal(g > 200 && r < 50, true);
   } finally {
     await browser.close();
   }
