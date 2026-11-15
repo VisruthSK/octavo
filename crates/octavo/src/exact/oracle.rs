@@ -197,7 +197,7 @@ fn normalize_css_tokens(tokens: &[String]) -> Vec<String> {
     for (i, token) in tokens.iter().enumerate() {
         let previous = i.checked_sub(1).and_then(|n| tokens.get(n)).map(String::as_str);
         let next = tokens.get(i + 1).map(String::as_str);
-        if token == "space" && (matches!(previous, Some("CurlyBracketBlock" | "end:}" | "Semicolon" | "Comma"))
+        if token == "space" && (previous.is_none() || next.is_none() || matches!(previous, Some("CurlyBracketBlock" | "end:}" | "Semicolon" | "Comma"))
             || matches!(next, Some("CurlyBracketBlock" | "end:}" | "end:)" | "Semicolon" | "Comma"))) {
             continue;
         }
@@ -213,11 +213,72 @@ fn normalize_css_tokens(tokens: &[String]) -> Vec<String> {
     result
 }
 
+fn reduce_css_rules(source: &str) -> Option<(String, usize)> {
+    let mut input = ParserInput::new(source);
+    let mut parser = Parser::new(&mut input);
+    let mut start: Option<usize> = None;
+    let mut at_rule = false;
+    let mut removable_group = false;
+    let mut previous: Option<&str> = None;
+    let mut removals = Vec::new();
+    loop {
+        let position = parser.position();
+        let Ok(token) = parser.next_including_whitespace_and_comments().cloned() else { break };
+        if token.is_parse_error() { return None; }
+        match token {
+            Token::WhiteSpace(_) | Token::Comment(_) if start.is_none() => {}
+            Token::CurlyBracketBlock => {
+                let from = start.take()?;
+                let block = parser.position();
+                let empty = parser.parse_nested_block(|inner| {
+                    let mut empty = true;
+                    while let Ok(token) = inner.next_including_whitespace_and_comments().cloned() {
+                        if !matches!(token, Token::WhiteSpace(_) | Token::Comment(_)) {
+                            empty = false;
+                        }
+                    }
+                    Ok::<_, ParseError<'_, ()>>(empty)
+                }).ok()?;
+                if !parser.slice_from(block).ends_with('}') { return None; }
+                let end = parser.position().byte_index();
+                let current = &source[from..end];
+                if empty && (!at_rule || removable_group) || !at_rule && previous == Some(current) {
+                    removals.push(from..end);
+                } else {
+                    previous = (!at_rule).then_some(current);
+                }
+                at_rule = false;
+                removable_group = false;
+            }
+            Token::Semicolon => { start = None; at_rule = false; removable_group = false; previous = None; }
+            Token::AtKeyword(name) if start.is_none() => {
+                start = Some(position.byte_index());
+                at_rule = true;
+                removable_group = ["media", "supports", "container"].iter().any(|group| name.eq_ignore_ascii_case(group));
+            }
+            _ => { if start.is_none() { start = Some(position.byte_index()); } }
+        }
+    }
+    let count = removals.len();
+    let mut output = String::with_capacity(source.len());
+    let mut from = 0;
+    for span in removals {
+        output.push_str(&source[from..span.start]);
+        from = span.end;
+    }
+    output.push_str(&source[from..]);
+    Some((output, count))
+}
+
 #[doc = "Checks whether two stylesheets have the same conservative token stream."]
 pub fn css(input: &str, output: &str) -> bool {
+    if input == output { return true; }
     if input.contains("--") || output.contains("--") {
-        return input == output;
+        return false;
     }
+    let Some((reduced_input, _)) = reduce_css_rules(input) else { return false };
+    let Some((reduced_output, output_reductions)) = reduce_css_rules(output) else { return false };
+    if output_reductions != 0 { return false; }
     let tokenize = |s: &str| {
         let mut input = ParserInput::new(s);
         let mut parser = Parser::new(&mut input);
@@ -225,7 +286,7 @@ pub fn css(input: &str, output: &str) -> bool {
         css_tokens(&mut parser, &mut tokens).ok()?;
         Some(normalize_css_tokens(&tokens))
     };
-    matches!((tokenize(input), tokenize(output)), (Some(a), Some(b)) if a == b && (input == output || !a.iter().any(|token| token.starts_with("custom:"))))
+    matches!((tokenize(&reduced_input), tokenize(&reduced_output)), (Some(a), Some(b)) if a == b && !a.iter().any(|token| token.starts_with("custom:")))
 }
 
 #[doc = "Checks that two data URLs have equal decoded payloads."]
@@ -397,6 +458,13 @@ mod tests {
         assert!(css("a{color:#aabbcc}", "a{color:#abc}"));
         assert!(!css("a{color:#aabbcc}", "a{color:#abd}"));
         assert!(!css("#aabbcc{color:red}", "#abc{color:red}"));
+        assert!(css("a{}b{color:red}", "b{color:red}"));
+        assert!(css("a{} b{color:red}", "b{color:red}"));
+        assert!(css("a{color:red}a{color:red}", "a{color:red}"));
+        assert!(css("@media screen{}", ""));
+        assert!(!css("@layer x{}", ""));
+        assert!(!css("a{color:red}", "a{}a{color:red}"));
+        assert!(!css("a{color:red}b{color:blue}a{color:red}", "a{color:red}b{color:blue}"));
         assert!(!css("a{--x: a b}", "a{--x: ab}"));
         assert!(css("a{opacity:0.5}", "a{opacity:.5}"));
         assert!(!css("a{opacity:0.50000001}", "a{opacity:0.5}"));
