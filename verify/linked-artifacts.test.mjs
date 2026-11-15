@@ -6,10 +6,10 @@ test("a module script blocked by CORS on a file page is an artifact", () => {
   assert.ok(isLinkedFileLoadFailure("Access to script at 'file:///tmp/site/libs/a.js' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: http.", {}));
 });
 
-test("a file resource that failed to load is an artifact on both known error codes", () => {
+test("a file resource that failed to load is an artifact on CORS failure", () => {
   const location = { url: "file:///tmp/site/libs/a.js" };
   assert.ok(isLinkedFileLoadFailure("Failed to load resource: net::ERR_FAILED", location));
-  assert.ok(isLinkedFileLoadFailure("Failed to load resource: net::ERR_FILE_NOT_FOUND", location));
+  assert.equal(isLinkedFileLoadFailure("Failed to load resource: net::ERR_FILE_NOT_FOUND", location), false);
 });
 
 test("a failed load of a web resource is not an artifact", () => {
