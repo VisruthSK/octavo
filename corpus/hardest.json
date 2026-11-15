@@ -1,0 +1,15 @@
+[
+  "linked-stylesheet-is-rejected",
+  "nothing-to-gain",
+  "plain-text-is-rejected",
+  "quarto-cli-playwright-html-axe-standard-best-practice",
+  "quarto-cli-playwright-revealjs-links-id",
+  "quarto-cli-reveal-aside-footnotes",
+  "quarto-cli-syntax-test",
+  "runtime-built-class-names-survive",
+  "script-text-inside-a-comment-is-left-alone",
+  "scripts-inline-event-handler-is-kept",
+  "textarea-content-is-not-markup",
+  "twenty-thousand-paragraphs",
+  "unused-rules-are-pruned"
+]

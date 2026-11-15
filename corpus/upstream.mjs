@@ -180,10 +180,12 @@ async function renderDocument({ id, file }) {
 
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const sourcesPath = join(import.meta.dirname, "sources.json");
+const pinnedPath = join(import.meta.dirname, "hardest.json");
 export const selectionPath = join(import.meta.dirname, "selection.json");
 
 export async function chooseUpstream({ jobs = 4 } = {}) {
   const sources = readJson(sourcesPath);
+  const pinned = readJson(pinnedPath);
   const version = spawnSync(quarto, ["--version"], { encoding: "utf8" }).stdout.trim();
   mkdirSync(rendered, { recursive: true });
   const selected = [];
@@ -211,7 +213,7 @@ export async function chooseUpstream({ jobs = 4 } = {}) {
       });
     });
     pooled.sort((a, b) => a.id.localeCompare(b.id));
-    const smoke = new Set(selectStratified(pooled, source.smoke).map((pick) => pick.id));
+    const smoke = new Set(selectStratified(pooled, source.smoke, pinned).map((pick) => pick.id));
     for (const entry of pooled) selected.push({ ...entry, tier: smoke.has(entry.id) ? "smoke" : "full" });
     candidatesSeen += eligible.length;
   }
