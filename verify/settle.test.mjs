@@ -81,3 +81,74 @@ setTimeout(() => {
     await browser.close();
   }
 });
+
+test("a page with an empty .reveal div and no Reveal object settles in under 2 s with JS enabled", async () => {
+  const emptyRevealFile = join(directory, "empty-reveal-js.html");
+  writeFileSync(
+    emptyRevealFile,
+    "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>t</title></head><body><div class=\"reveal\"></div></body></html>",
+  );
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(pathToFileURL(emptyRevealFile).href, { waitUntil: "load" });
+    const start = Date.now();
+    const settled = await settle(page, { javaScriptEnabled: true });
+    const duration = Date.now() - start;
+    assert.equal(settled, true);
+    assert.ok(duration < 2000, `duration ${duration}ms >= 2000ms`);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a page with an empty .reveal div and no Reveal object settles in under 2 s with JS disabled", async () => {
+  const emptyRevealFile = join(directory, "empty-reveal-nojs.html");
+  writeFileSync(
+    emptyRevealFile,
+    "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>t</title></head><body><div class=\"reveal\"></div></body></html>",
+  );
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+    await page.goto(pathToFileURL(emptyRevealFile).href, { waitUntil: "load" });
+    const start = Date.now();
+    const settled = await settle(page, { javaScriptEnabled: false });
+    const duration = Date.now() - start;
+    assert.equal(settled, true);
+    assert.ok(duration < 2000, `duration ${duration}ms >= 2000ms`);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("delayed Reveal readiness test still waits", async () => {
+  const delayedRevealFile = join(directory, "delayed-reveal.html");
+  writeFileSync(
+    delayedRevealFile,
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title></head><body>
+<div class="reveal"></div>
+<script>
+window.Reveal = { isReady: () => false };
+setTimeout(() => {
+  window.Reveal.isReady = () => true;
+  document.querySelector('.reveal').setAttribute('data-ready', 'true');
+}, 300);
+</script></body></html>`,
+  );
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(pathToFileURL(delayedRevealFile).href, { waitUntil: "load" });
+    const start = Date.now();
+    const settled = await settle(page);
+    const duration = Date.now() - start;
+    assert.equal(settled, true);
+    assert.ok(duration >= 300, `duration ${duration}ms < 300ms`);
+    const ready = await page.evaluate(() => document.querySelector(".reveal").getAttribute("data-ready"));
+    assert.equal(ready, "true");
+  } finally {
+    await browser.close();
+  }
+});

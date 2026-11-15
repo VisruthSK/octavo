@@ -247,7 +247,7 @@ const emptyChecks = (elements) => ({
 const QUIET = 150;
 const LIMIT = 3000;
 
-const probe = () => {
+const probe = ({ javaScriptEnabled = true } = {}) => {
   const state = globalThis[Symbol.for("octavo.timers")];
   const now = Date.now();
   let due = 0;
@@ -280,13 +280,17 @@ const probe = () => {
   } catch {
     revealReady = false;
   }
+  const hasRevealScript = javaScriptEnabled && [...document.querySelectorAll("script")].some((script) =>
+    /reveal/i.test(script.src || "") || /reveal/i.test(script.textContent || "")
+  );
+  const reveal = Boolean(element) && javaScriptEnabled && (typeof window.Reveal !== "undefined" || hasRevealScript);
   return {
     due,
     running: running.length,
     fonts: document.fonts.status === "loaded",
     transitioning,
     indices,
-    reveal: Boolean(element),
+    reveal,
     revealReady,
     mathjax,
     mathjax3: Boolean(window.MathJax?.startup?.promise),
@@ -316,9 +320,12 @@ const frames = async (page) => {
   ]);
 };
 
-export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {}) {
+export async function settle(page, { quiet = QUIET, limit = LIMIT, network, javaScriptEnabled, scripted } = {}) {
+  const enabled = javaScriptEnabled ?? scripted ?? true;
   const deadline = Date.now() + limit;
-  await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
+  if (enabled) {
+    await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
+  }
   await page.evaluate(watch).catch(() => {});
   let previous = null;
   while (Date.now() < deadline) {
@@ -328,7 +335,7 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {
         await page.waitForTimeout(50);
       }
     }
-    const state = await page.evaluate(probe).catch(() => null);
+    const state = await page.evaluate(probe, { javaScriptEnabled: enabled }).catch(() => null);
     if (!state) {
       await page.waitForTimeout(50);
       continue;
@@ -565,7 +572,14 @@ export async function capture(
     const waits = [];
     const wait = async (name, options = {}) => {
       phase = `settle ${name}`;
-      waits.push(await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: (options.limit ?? LIMIT) * pace, network }));
+      waits.push(
+        await engine.settle(page, settle, {
+          quiet: (options.quiet ?? QUIET) * pace,
+          limit: (options.limit ?? LIMIT) * pace,
+          network,
+          javaScriptEnabled: options.javaScriptEnabled ?? scripted,
+        }),
+      );
     };
     phase = "goto";
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
