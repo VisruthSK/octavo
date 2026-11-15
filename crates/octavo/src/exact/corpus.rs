@@ -6,6 +6,7 @@ struct Counts {
     applied: usize,
     rejected: usize,
     unchanged: usize,
+    saved: usize,
 }
 
 fn html_files(path: &Path, output: &mut Vec<PathBuf>) {
@@ -41,6 +42,7 @@ fn exact_corpus_and_byte_price() {
     let mut rejections = 0usize;
     let mut fixture_bytes = (0usize, 0usize, 0usize, 0usize);
     let mut upstream_bytes = (0usize, 0usize, 0usize, 0usize);
+    let mut upstream_grew = 0usize;
     for (index, (is_upstream, path)) in fixture_paths.iter().map(|p| (false, p)).chain(upstream_paths.iter().map(|p| (true, p))).enumerate() {
         if index % 25 == 0 { eprintln!("processed {index} documents"); }
         let source = fs::read_to_string(path).unwrap();
@@ -58,18 +60,23 @@ fn exact_corpus_and_byte_price() {
         options.exact = true;
         let (edits, _) = super::stage(&doc, &options);
         assert_eq!(Edits::new(edits).apply(&source), output.html, "outside validated spans: {}", path.display());
+        for step in &output.applied {
+            assert!(step.after < step.before, "non-shrinking {} in {}", step.transform, path.display());
+        }
         for transform in transforms {
             let applied = output.applied.iter().filter(|step| step.transform == transform).count();
             let rejected = output.warnings.iter().filter(|warning| matches!(warning, Warning::OracleRejected { transform: t, .. } if *t == transform)).count();
             if rejected != 0 { eprintln!("oracle rejected {transform} for {}", path.display()); }
             let entry = counts.get_mut(&transform).unwrap();
             entry.applied += applied;
+            entry.saved += output.applied.iter().filter(|step| step.transform == transform).map(|step| step.before - step.after).sum::<usize>();
             entry.rejected += rejected;
             if applied == 0 && rejected == 0 { entry.unchanged += 1; }
             rejections += rejected;
         }
         let totals = if is_upstream { &mut upstream_bytes } else { &mut fixture_bytes };
         if !is_upstream || totals.0 < 20 {
+            if is_upstream && output.html.len() > source.len() { upstream_grew += 1; }
             let safe = optimize(&source, Mode::Safe).unwrap();
             totals.0 += 1;
             totals.1 += source.len();
@@ -79,11 +86,13 @@ fn exact_corpus_and_byte_price() {
     }
     println!("fixtures={} upstream={} refused={refused}", fixture_paths.len(), upstream_paths.len());
     for (transform, count) in counts {
-        println!("{transform}: applied={} rejected={} unchanged_documents={}", count.applied, count.rejected, count.unchanged);
+        println!("{transform}: applied={} rejected={} unchanged_documents={} bytes_saved={}", count.applied, count.rejected, count.unchanged, count.saved);
     }
     for (label, (count, input, exact, safe)) in [("fixtures", fixture_bytes), ("upstream sample", upstream_bytes)] {
         println!("{label}: documents={count} input={input} exact={exact} safe={safe} exact_minus_safe={}", exact as i128 - safe as i128);
     }
+    println!("upstream sample grew={upstream_grew}");
     assert_eq!(rejections, 0, "oracle rejected candidates in corpus");
+    assert_eq!(upstream_grew, 0, "exact output grew in upstream sample");
     assert!(upstream_bytes.0 >= 20, "fewer than 20 usable upstream documents");
 }

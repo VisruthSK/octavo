@@ -146,6 +146,7 @@ fn consider(doc: &Doc, span: Range<usize>, target: Target, in_font: bool, unhint
         }
     }
     let Some(candidate) = data::normalize(value) else { return };
+    if candidate.len() >= span.len() { return; }
     let proven = adopt(value.to_string(), candidate, &oracle::Base64);
     if proven.rejected() {
         warnings.push(Warning::OracleRejected { transform: Transform::NormalizedDataUrl, target });
@@ -306,10 +307,10 @@ mod tests {
     }
 
     #[test]
-    fn exact_completes_base64_padding() {
+    fn exact_keeps_base64_when_padding_would_grow() {
         let input = "<html><img src='data:image/png;base64,YQ'></html>";
         let output = optimize(input, Mode::Exact).unwrap();
-        assert_eq!(output.html, "<html><img src='data:image/png;base64,YQ=='></html>");
+        assert_eq!(output.html, input);
     }
 
     #[test]
