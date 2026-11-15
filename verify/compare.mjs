@@ -66,7 +66,7 @@ const canonical = (declaration) => {
       if (replaced) text = text.slice(0, start) + replaced + text.slice(end + 1);
     }
   }
-  const pseudo = ["::before", "::after", "::marker", "::placeholder"].find((prefix) => text.startsWith(prefix)) ?? "";
+  const pseudo = ["::before", "::after", "::marker", "::placeholder", "::selection", "::-webkit-scrollbar"].find((prefix) => text.startsWith(prefix)) ?? "";
   const colon = text.indexOf(":", pseudo ? 2 : 0);
   if (colon < 0 || text.slice(pseudo.length, colon) === "font-family") return text;
   return `${text.slice(0, colon + 1)}${canonicalCssValue(text.slice(colon + 1))}`;

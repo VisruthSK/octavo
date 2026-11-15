@@ -82,7 +82,7 @@ export const canonicalStyle = (style = "", writingMode = "horizontal-tb") => {
       continue;
     }
     const name = declaration.slice(0, colon);
-    const pseudo = ["::before", "::after", "::marker", "::placeholder"].find((prefix) => name.startsWith(prefix)) ?? "";
+    const pseudo = ["::before", "::after", "::marker", "::placeholder", "::selection", "::-webkit-scrollbar"].find((prefix) => name.startsWith(prefix)) ?? "";
     const property = name.slice(pseudo.length);
     if (["width", "height", "inline-size", "block-size"].includes(property)) {
       const physical = property === "inline-size" ? (horizontal ? "width" : "height") :

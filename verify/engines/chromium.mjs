@@ -60,16 +60,16 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
   const states = [];
   const checks = { elements: Math.min(nodeIds.length, 40), hover: 0, focus: 0, focusVisible: 0, active: 0 };
   for (const [index, nodeId] of nodeIds.slice(0, 40).entries()) {
-    for (const state of [["hover"], ["focus", "focus-visible"], ["active"]]) {
+    for (const state of [["hover"], ["focus"], ["focus-visible"], ["active"]]) {
       onPhase(`forcedStates element ${index} ${state[0]}`);
       await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: state });
       const seen = await page.evaluate(observe, { probe: { selector, index } });
       states.push([`:${state[0]} on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
+      if (state[0] === "hover") checks.hover += 1;
+      else if (state[0] === "focus") checks.focus += 1;
+      else if (state[0] === "focus-visible") checks.focusVisible += 1;
+      else if (state[0] === "active") checks.active += 1;
     }
-    checks.hover += 1;
-    checks.focus += 1;
-    checks.focusVisible += 1;
-    checks.active += 1;
     await session.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [] });
   }
   await page.evaluate(() => {
