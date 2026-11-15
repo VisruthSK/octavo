@@ -4,14 +4,21 @@ import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeBrowser, verify } from "./verify.mjs";
+import { engineName } from "./engines/index.mjs";
 import { baseHtml, mutations, equivalentPairs } from "./adversary/mutations.mjs";
 
 after(closeBrowser);
 
+const engine = engineName();
 const manifest = JSON.parse(readFileSync(new URL("./adversary/manifest.json", import.meta.url), "utf8"));
-const misses = new Set(manifest.chromium.missed);
-const falseAlarms = new Set(manifest.chromium.falseAlarms);
-const scenarios = manifest.chromium.scenarios;
+// Calibration is recorded per engine. Without it a recorded miss cannot be told from a
+// regression, so the suite skips for that engine instead of asserting another engine's numbers.
+// Record calibration by running the adversary harness against the engine and adding its section.
+const calibration = manifest[engine];
+const skip = calibration ? false : `no adversary calibration recorded for ${engine}`;
+const misses = new Set(calibration?.missed ?? []);
+const falseAlarms = new Set(calibration?.falseAlarms ?? []);
+const scenarios = calibration?.scenarios ?? {};
 
 const directory = mkdtempSync(join(tmpdir(), "octavo-adversary-test-"));
 
@@ -24,7 +31,7 @@ const write = (name, html) => {
 const base = baseHtml();
 
 for (const m of mutations) {
-  test(`adversary mutation ${m.id} (${m.name})`, { concurrency: 4 }, async () => {
+  test(`adversary mutation ${m.id} (${m.name})`, { concurrency: 4, skip }, async () => {
     if (misses.has(m.id)) {
       assert.ok(true);
       return;
@@ -42,7 +49,7 @@ for (const m of mutations) {
 }
 
 for (const e of equivalentPairs) {
-  test(`adversary equivalent ${e.id} (${e.name})`, { concurrency: 4 }, async () => {
+  test(`adversary equivalent ${e.id} (${e.name})`, { concurrency: 4, skip }, async () => {
     if (falseAlarms.has(e.id)) {
       assert.ok(true);
       return;
