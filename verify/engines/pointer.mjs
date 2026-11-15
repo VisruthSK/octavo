@@ -75,12 +75,52 @@ function noteUnreachable(checks, state, detail, unreachableStates) {
   if (unreachableStates.size === 1) checks.unreachable.elements += 1;
 }
 
-export async function focus(page, element) {
-  await page.evaluate(() => document.activeElement?.blur());
-  for (let attempt = 0; attempt < 60; attempt++) {
+const ownPoint = (element) =>
+  element
+    .evaluate((target) => {
+      const box = target.getBoundingClientRect();
+      const left = Math.max(box.left, 0);
+      const top = Math.max(box.top, 0);
+      const width = Math.min(box.right, innerWidth) - left;
+      const height = Math.min(box.bottom, innerHeight) - top;
+      if (width <= 0 || height <= 0) return null;
+      for (const down of [0.5, 0.1, 0.9, 0.3, 0.7]) {
+        for (const across of [0.5, 0.1, 0.9, 0.3, 0.7]) {
+          const x = left + width * across;
+          const y = top + height * down;
+          const hit = document.elementFromPoint(x, y);
+          if (hit && target.contains(hit) && !/^(IFRAME|FRAME|OBJECT|EMBED)$/.test(hit.tagName)) return { x: x - box.left, y: y - box.top };
+        }
+      }
+      return null;
+    })
+    .catch(() => null);
+
+const FOCUS_ATTEMPTS = 60;
+
+const walk = async (page, element) => {
+  for (let attempt = 0; attempt < FOCUS_ATTEMPTS; attempt++) {
     await page.keyboard.press("Tab");
     if (await element.evaluate((target) => document.activeElement === target).catch(() => false)) return true;
   }
+  return false;
+};
+
+const restartFromTop = (page) =>
+  page.evaluate(() => {
+    const start = document.createElement("span");
+    start.tabIndex = -1;
+    document.body.prepend(start);
+    start.focus();
+    start.remove();
+  });
+
+export async function focus(page, element) {
+  await page.evaluate(() => document.activeElement?.blur());
+  if (await walk(page, element)) return true;
+  await page.evaluate(() => document.activeElement?.blur());
+  await restartFromTop(page).catch(() => {});
+  if (await walk(page, element)) return true;
   await page.keyboard.down("Tab");
   await element.focus({ timeout: 1000 }).catch(() => {});
   await page.keyboard.up("Tab");
@@ -181,7 +221,8 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       }
       await page.evaluate(() => document.activeElement?.blur());
       onPhase(`forcedStates element ${index} active target`);
-      await element.hover({ timeout: 1000 }).catch(() => {});
+      const spot = await ownPoint(element);
+      await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
       onPhase(`forcedStates element ${index} active`);
       await page.mouse.down();
       seen = await probe(index);
