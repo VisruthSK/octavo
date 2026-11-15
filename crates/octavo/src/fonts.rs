@@ -162,9 +162,18 @@ pub(crate) struct Rewritten {
 pub(crate) fn exact_transcode(
     bytes: &[u8],
     tuning: Tuning,
-    cache: Option<&Path>,
+    _cache: Option<&Path>,
 ) -> Option<Vec<u8>> {
-    transcode(bytes, None, true, Licenses::Strip, cache, tuning).map(|t| t.woff2)
+    let sfnt = match bytes.get(..4)? {
+        b"wOFF" => Cow::Owned(wuff::decompress_woff1(bytes).ok()?),
+        b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
+        _ => Cow::Borrowed(bytes),
+    };
+    ttf2woff2::encode_with_options(&sfnt, ttf2woff2::EncodeOptions {
+        quality: ttf2woff2::BrotliQuality::from(tuning.woff2_quality.min(11)),
+        transform_glyf_loca: false,
+        threads: None,
+    }).ok()
 }
 
 fn collect_usage(sheets: &mut [Option<StyleSheet<'_>>], loose: &[&str]) -> Usage {

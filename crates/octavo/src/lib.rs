@@ -455,6 +455,8 @@ pub enum Transform {
     MinifiedStylesheet,
     /// A `data:` URL payload was re-encoded as canonical base64.
     NormalizedDataUrl,
+    #[doc = "A whole font was re-encoded as WOFF2."]
+    ReencodedFont,
     /// Resources were compressed into one blob.
     Packed,
 }
@@ -470,6 +472,7 @@ impl fmt::Display for Transform {
             Transform::FontKeptWhole => "font-kept-whole",
             Transform::MinifiedStylesheet => "stylesheet-minified",
             Transform::NormalizedDataUrl => "data-url-normalized",
+            Transform::ReencodedFont => "font-reencoded",
             Transform::Packed => "packed",
         })
     }
@@ -610,6 +613,8 @@ pub enum Warning {
     /// The page loads a resource from the network, so it cannot work
     /// offline. Carries the URL as written in the document.
     RemoteResource(Url),
+    #[doc = "An exact transformation was rejected by its oracle."]
+    OracleRejected { transform: Transform, target: Target },
 }
 
 impl fmt::Display for Warning {
@@ -621,6 +626,7 @@ impl fmt::Display for Warning {
                     "loads {url} when opened, so the page does not work offline"
                 )
             }
+            Warning::OracleRejected { transform, target } => write!(f, "oracle rejected {transform} for {target}"),
         }
     }
 }
@@ -772,8 +778,11 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         Licenses::Keep
     };
     let tuning = options.compression.tuning();
+    let mut exact_warnings = Vec::new();
     let (images, (removals, scripts, styles, kept_whole)) = if options.exact {
-        (Vec::new(), (Vec::new(), Vec::new(), Vec::new(), Vec::new()))
+        let (edits, warnings) = exact::stage(&doc, tuning, options.cache_directory.as_deref());
+        exact_warnings = warnings;
+        (Vec::new(), (Vec::new(), Vec::new(), edits, Vec::new()))
     } else {
         let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
         || {
@@ -848,6 +857,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     let html = edits.apply(src);
     Ok(Simplified {
         scanned: html::Scanned::new(html),
+        original: src.to_string(),
+        exact: options.exact,
         compression: options.compression,
         applied,
         skipped,
@@ -855,6 +866,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             .remote()
             .cloned()
             .map(Warning::RemoteResource)
+            .chain(exact_warnings)
             .collect(),
     })
 }
@@ -877,6 +889,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
 #[non_exhaustive]
 pub struct Simplified {
     scanned: html::Scanned,
+    original: String,
+    exact: bool,
     applied: Vec<Applied>,
     skipped: Vec<Skipped>,
     warnings: Vec<Warning>,
@@ -918,6 +932,9 @@ impl Simplified {
     /// when packing would not make it smaller.
     #[must_use]
     pub fn pack(&self, mode: Mode) -> Output {
+        if mode == Mode::Exact && !self.exact {
+            return Output { html: self.original.clone(), applied: Vec::new(), skipped: Vec::new(), warnings: self.warnings.clone() };
+        }
         let unpacked = || Output {
             html: self.scanned.html().to_string(),
             applied: self.applied.clone(),
