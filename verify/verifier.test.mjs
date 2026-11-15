@@ -4,7 +4,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeBrowser, verify, withTimeout } from "./verify.mjs";
-import { checksOf, engine, engineNames } from "./engines/index.mjs";
+import { checksOf, engine, engineNames, launch } from "./engines/index.mjs";
+import { focus } from "./engines/pointer.mjs";
 
 after(closeBrowser);
 
@@ -188,4 +189,64 @@ test("a dropped hover rule on a page with only a link is reported", async () => 
     .filter(({ issues }) => issues.length)
     .map(({ scenario }) => scenario);
   assert.ok(failing.includes("desktop-light"), `${failing}`);
+});
+
+test("element with tabindex=-1 reaches the fallback and ends focused with no Tab presses counted", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<div id="target" tabindex="-1">Target</div>');
+    let tabPresses = 0;
+    const originalPress = page.keyboard.press.bind(page.keyboard);
+    page.keyboard.press = async (key, ...args) => {
+      if (key === "Tab") tabPresses++;
+      return originalPress(key, ...args);
+    };
+    const element = page.locator("#target");
+    const focused = await focus(page, element);
+    assert.strictEqual(focused, true);
+    assert.strictEqual(tabPresses, 0);
+    const isTarget = await element.evaluate((target) => document.activeElement === target);
+    assert.strictEqual(isTarget, true);
+    await page.close();
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a page with 3 tabbables never presses more than 5 times", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<button id="b1">1</button><button id="b2">2</button><button id="b3">3</button>');
+    let tabPresses = 0;
+    const originalPress = page.keyboard.press.bind(page.keyboard);
+    page.keyboard.press = async (key, ...args) => {
+      if (key === "Tab") tabPresses++;
+      return originalPress(key, ...args);
+    };
+    const element = page.locator("#b3");
+    const focused = await focus(page, element);
+    assert.strictEqual(focused, true);
+    assert.ok(tabPresses <= 5, `pressed ${tabPresses} times (expected <= 5)`);
+    await page.close();
+  } finally {
+    await browser.close();
+  }
+});
+
+test("unchanged result for an element that Tab can reach", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<button id="b1">1</button><button id="target">Target</button>');
+    const element = page.locator("#target");
+    const focused = await focus(page, element);
+    const isTarget = await element.evaluate((target) => document.activeElement === target);
+    assert.strictEqual(focused, true);
+    assert.strictEqual(isTarget, true);
+    await page.close();
+  } finally {
+    await browser.close();
+  }
 });
