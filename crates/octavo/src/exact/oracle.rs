@@ -1,4 +1,4 @@
-use data_url::DataUrl;
+use base64::{engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig}, alphabet, Engine};
 use cssparser::{ParseError, Parser, ParserInput, Token};
 use std::{borrow::Cow, collections::BTreeMap};
 
@@ -103,31 +103,42 @@ fn png_metadata(bytes: &[u8]) -> Option<(u8, u8, Vec<([u8; 4], Vec<u8>)>)> {
     None
 }
 
+fn webp_pixels(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+    if bytes.get(..4)? != b"RIFF" || bytes.get(8..16)? != b"WEBPVP8L" { return None; }
+    let length = u32::from_le_bytes(bytes.get(16..20)?.try_into().ok()?) as usize;
+    if length.checked_add(20 + length % 2)? != bytes.len() { return None; }
+    let riff_length = u32::from_le_bytes(bytes.get(4..8)?.try_into().ok()?) as usize;
+    if riff_length.checked_add(8)? != bytes.len() { return None; }
+    let decoded = webp::Decoder::new(bytes).decode()?;
+    let rgba = if decoded.is_alpha() {
+        decoded.to_vec()
+    } else {
+        decoded.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect()
+    };
+    Some((decoded.width(), decoded.height(), rgba))
+}
+
 #[doc = "Checks decoded pixels, PNG depth and color type, and rendering metadata."]
 pub fn image(input: &[u8], output: &[u8]) -> bool {
-    let Some((depth, color, metadata)) = png_metadata(input) else { return false };
-    let Ok(original) = image::load_from_memory_with_format(input, image::ImageFormat::Png) else { return false };
-    if let Some((other_depth, other_color, other_metadata)) = png_metadata(output) {
+    let png_a = png_metadata(input);
+    let png_b = png_metadata(output);
+    if let (Some(a), Some(b)) = (&png_a, &png_b) {
+        let Ok(original) = image::load_from_memory_with_format(input, image::ImageFormat::Png) else { return false };
         let Ok(candidate) = image::load_from_memory_with_format(output, image::ImageFormat::Png) else { return false };
-        return depth == other_depth && color == other_color && metadata == other_metadata
-            && original.to_rgba16() == candidate.to_rgba16();
+        return a == b && original.to_rgba16() == candidate.to_rgba16();
     }
-    if depth != 8 || !matches!(color, 2 | 6) || !metadata.is_empty()
-        || output.get(..4) != Some(b"RIFF".as_slice()) || output.get(8..16) != Some(b"WEBPVP8L".as_slice()) {
-        return false;
-    }
-    let Some(length) = output.get(16..20).and_then(|b| <[u8; 4]>::try_from(b).ok()).map(u32::from_le_bytes) else { return false };
-    if (length as usize).checked_add(20 + (length as usize % 2)) != Some(output.len()) { return false; }
-    let Some(riff_length) = output.get(4..8).and_then(|b| <[u8; 4]>::try_from(b).ok()).map(u32::from_le_bytes) else { return false };
-    if (riff_length as usize).checked_add(8) != Some(output.len()) { return false; }
-    let Some(candidate) = webp::Decoder::new(output).decode() else { return false };
-    let original = original.to_rgba8();
-    if original.width() != candidate.width() || original.height() != candidate.height() { return false; }
-    if candidate.is_alpha() {
-        original.as_raw().as_slice() == &*candidate
-    } else {
-        original.pixels().zip(candidate.chunks_exact(3)).all(|(a, b)| a.0 == [b[0], b[1], b[2], 255])
-    }
+    if let (Some(a), Some(b)) = (webp_pixels(input), webp_pixels(output)) { return a == b; }
+    let (png, webp, metadata) = match (png_a, png_b) {
+        (Some(meta), None) => (input, output, meta),
+        (None, Some(meta)) => (output, input, meta),
+        _ => return false,
+    };
+    if metadata.0 != 8 || !matches!(metadata.1, 2 | 6) || !metadata.2.is_empty() { return false; }
+    let Ok(decoded) = image::load_from_memory_with_format(png, image::ImageFormat::Png) else { return false };
+    let Some((width, height, pixels)) = webp_pixels(webp) else { return false };
+    let rgba = decoded.to_rgba8();
+    rgba.width() == width && rgba.height() == height && rgba.as_raw() == &pixels
+        && rgba.pixels().all(|p| matches!(p[3], 0 | 255))
 }
 
 fn css_tokens<'i>(parser: &mut Parser<'i, '_>, output: &mut Vec<String>) -> Result<(), ParseError<'i, ()>> {
@@ -139,6 +150,7 @@ fn css_tokens<'i>(parser: &mut Parser<'i, '_>, output: &mut Vec<String>) -> Resu
         }
         match token {
             Token::Comment(_) => {}
+            Token::WhiteSpace(_) => output.push("space".to_string()),
             Token::Ident(ref name) if name.starts_with("--") => output.push(format!("custom:{name}")),
             Token::Function(_) | Token::ParenthesisBlock | Token::SquareBracketBlock | Token::CurlyBracketBlock => {
                 let close = match token {
@@ -152,7 +164,7 @@ fn css_tokens<'i>(parser: &mut Parser<'i, '_>, output: &mut Vec<String>) -> Resu
                 if !parser.slice_from(start).ends_with(close) {
                     return Err(parser.new_custom_error(()));
                 }
-                output.push("end".to_string());
+                output.push(format!("end:{close}"));
             }
             Token::Number { int_value, .. } | Token::Percentage { int_value, .. } | Token::Dimension { int_value, .. } => {
                 let raw = parser.slice_from(start);
@@ -162,6 +174,39 @@ fn css_tokens<'i>(parser: &mut Parser<'i, '_>, output: &mut Vec<String>) -> Resu
         }
     }
     Ok(())
+}
+
+fn color_key(token: &str) -> Option<String> {
+    let value = token.strip_prefix("IDHash(\"").or_else(|| token.strip_prefix("Hash(\""))?.strip_suffix("\")")?;
+    if !value.bytes().all(|b| b.is_ascii_hexdigit()) { return None; }
+    let mut color = match value.len() {
+        3 | 4 => value.chars().flat_map(|c| [c.to_ascii_lowercase(), c.to_ascii_lowercase()]).collect::<String>(),
+        6 | 8 => value.to_ascii_lowercase(),
+        _ => return None,
+    };
+    if color.len() == 6 { color.push_str("ff"); }
+    Some(format!("color:{color}"))
+}
+
+fn normalize_css_tokens(tokens: &[String]) -> Vec<String> {
+    let mut result = Vec::new();
+    for (i, token) in tokens.iter().enumerate() {
+        let previous = i.checked_sub(1).and_then(|n| tokens.get(n)).map(String::as_str);
+        let next = tokens.get(i + 1).map(String::as_str);
+        if token == "space" && (matches!(previous, Some("CurlyBracketBlock" | "end:}" | "Semicolon" | "Comma"))
+            || matches!(next, Some("CurlyBracketBlock" | "end:}" | "end:)" | "Semicolon" | "Comma"))) {
+            continue;
+        }
+        let before: Vec<&str> = tokens[..i].iter().rev().map(String::as_str).filter(|t| *t != "space").take(3).collect();
+        let after = tokens[i + 1..].iter().map(String::as_str).find(|t| *t != "space");
+        if matches!(before.as_slice(), ["Colon", property, "CurlyBracketBlock" | "Semicolon"]
+            if matches!(*property, "Ident(\"color\")" | "Ident(\"background-color\")" | "Ident(\"border-color\")" | "Ident(\"outline-color\")" | "Ident(\"fill\")" | "Ident(\"stroke\")"))
+            && matches!(after, Some("Semicolon" | "end:}")) {
+            if let Some(color) = color_key(token) { result.push(color); continue; }
+        }
+        result.push(token.clone());
+    }
+    result
 }
 
 #[doc = "Checks whether two stylesheets have the same conservative token stream."]
@@ -174,14 +219,30 @@ pub fn css(input: &str, output: &str) -> bool {
         let mut parser = Parser::new(&mut input);
         let mut tokens = Vec::new();
         css_tokens(&mut parser, &mut tokens).ok()?;
-        Some(tokens)
+        Some(normalize_css_tokens(&tokens))
     };
     matches!((tokenize(input), tokenize(output)), (Some(a), Some(b)) if a == b && (input == output || !a.iter().any(|token| token.starts_with("custom:"))))
 }
 
 #[doc = "Checks that two data URLs have equal decoded payloads."]
 pub fn base64(input: &str, output: &str) -> bool {
-    let decode = |s: &str| DataUrl::process(s).ok()?.decode_to_vec().ok().map(|v| v.0);
+    let decode = |s: &str| {
+        let (header, body) = s.split_once(',')?;
+        if !header.get(..5)?.eq_ignore_ascii_case("data:") || !header.get(header.len().checked_sub(7)?..)?.eq_ignore_ascii_case(";base64") { return None; }
+        let (payload, fragment) = body.split_once('#').map_or((body, None), |(body, fragment)| (body, Some(fragment)));
+        let mut bytes: Vec<u8> = percent_encoding::percent_decode_str(payload)
+            .filter(|b| !matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0c))
+            .collect();
+        if bytes.len() % 4 == 0 {
+            if bytes.last() == Some(&b'=') { bytes.pop(); }
+            if bytes.last() == Some(&b'=') { bytes.pop(); }
+        }
+        if bytes.len() % 4 == 1 || bytes.contains(&b'=') { return None; }
+        let engine = GeneralPurpose::new(&alphabet::STANDARD, GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::RequireNone)
+            .with_decode_allow_trailing_bits(true));
+        Some((header.to_string(), engine.decode(bytes).ok()?, fragment.map(str::to_owned)))
+    };
     matches!((decode(input), decode(output)), (Some(a), Some(b)) if a == b)
 }
 
@@ -193,7 +254,7 @@ fn sfnt(bytes: &[u8]) -> Option<Cow<'_, [u8]>> {
     }
 }
 
-fn tables(bytes: &[u8]) -> Option<BTreeMap<[u8; 4], &[u8]>> {
+fn tables(bytes: &[u8]) -> Option<BTreeMap<[u8; 4], ([u8; 4], &[u8])>> {
     if !matches!(bytes.get(..4)?, b"\x00\x01\x00\x00" | b"OTTO" | b"true" | b"typ1") {
         return None;
     }
@@ -203,10 +264,11 @@ fn tables(bytes: &[u8]) -> Option<BTreeMap<[u8; 4], &[u8]>> {
     for i in 0..count {
         let entry = bytes.get(12 + i * 16..28 + i * 16)?;
         let tag = entry[0..4].try_into().ok()?;
+        let checksum = entry[4..8].try_into().ok()?;
         let offset = u32::from_be_bytes(entry[8..12].try_into().ok()?) as usize;
         let length = u32::from_be_bytes(entry[12..16].try_into().ok()?) as usize;
         let table = bytes.get(offset..offset.checked_add(length)?)?;
-        if tables.insert(tag, table).is_some() {
+        if tables.insert(tag, (checksum, table)).is_some() {
             return None;
         }
     }
@@ -217,7 +279,7 @@ fn tables(bytes: &[u8]) -> Option<BTreeMap<[u8; 4], &[u8]>> {
 pub fn font(input: &[u8], output: &[u8]) -> bool {
     let Some(a) = sfnt(input) else { return false };
     let Some(b) = sfnt(output) else { return false };
-    if a.get(..4) != b.get(..4) { return false; }
+    if a.get(..12) != b.get(..12) { return false; }
     matches!((tables(&a), tables(&b)), (Some(a), Some(b)) if a == b)
 }
 
@@ -230,6 +292,10 @@ mod tests {
         assert!(base64("data:;base64,YQ==", "data:;base64,YQ"));
         assert!(!base64("data:;base64,YQ==", "data:;base64,Yg=="));
         assert!(!base64("data:;base64,YQ==", "data:;base64,!"));
+        assert!(base64("data:;base64,Y%51%3d%3d", "data:;base64,YQ"));
+        assert!(!base64("data:;base64,YQ==#one", "data:;base64,YQ==#two"));
+        assert!(!base64("data:text/plain;base64,YQ==", "data:text/html;base64,YQ=="));
+        assert!(!base64("data:;base64,YQ===", "data:;base64,YQ=="));
         let original = "data:;base64,YQ==".to_string();
         let proven = super::super::adopt(original.clone(), "data:;base64,Yg==".to_string(), &Base64);
         assert!(proven.rejected());
@@ -250,6 +316,37 @@ mod tests {
         b[31] = b'e';
         assert!(!font(&a, &b));
         assert!(!font(&a, &b[..30]));
+        let mut moved = vec![0; 40];
+        moved[..28].copy_from_slice(&a[..28]);
+        moved[23] = 36;
+        moved[36..40].copy_from_slice(b"abcd");
+        assert!(font(&a, &moved));
+        moved[16] = 1;
+        assert!(!font(&a, &moved));
+        moved[16] = 0;
+        moved[0] = 1;
+        assert!(!font(&a, &moved));
+    }
+
+    #[test]
+    fn font_compares_woff2_decoded_tables() {
+        let source = include_bytes!("../../tests/data/octavo-test.ttf");
+        let encoded = ttf2woff2::encode_with_options(source, ttf2woff2::EncodeOptions {
+            quality: ttf2woff2::BrotliQuality::from(5),
+            transform_glyf_loca: false,
+            threads: None,
+        }).unwrap();
+        let decoded = sfnt(&encoded).unwrap();
+        assert!(!font(source, &encoded));
+        assert!(font(&decoded, &encoded));
+        let mut changed = decoded.to_vec();
+        let (offset, _) = {
+            let entry = &changed[12..28];
+            (u32::from_be_bytes(entry[8..12].try_into().unwrap()) as usize,
+             u32::from_be_bytes(entry[12..16].try_into().unwrap()) as usize)
+        };
+        changed[offset] ^= 1;
+        assert!(!font(&changed, &encoded));
     }
 
     #[test]
@@ -258,6 +355,11 @@ mod tests {
         assert!(!css("a{color:red}", "b{color:red}"));
         assert!(!css("a{color:red}", "a{color:blue}"));
         assert!(!css("a :hover{color:red}", "a:hover{color:red}"));
+        assert!(css("a, b { color:red; }", "a,b{color:red;}"));
+        assert!(!css("a + b{color:red}", "a+b{color:red}"));
+        assert!(css("a{color:#aabbcc}", "a{color:#abc}"));
+        assert!(!css("a{color:#aabbcc}", "a{color:#abd}"));
+        assert!(!css("#aabbcc{color:red}", "#abc{color:red}"));
         assert!(!css("a{--x: a b}", "a{--x: ab}"));
         assert!(css("a{opacity:0.5}", "a{opacity:.5}"));
         assert!(!css("a{opacity:0.50000001}", "a{opacity:0.5}"));
@@ -282,5 +384,14 @@ mod tests {
         gamma.splice(at..at, [0, 0, 0, 4, b'g', b'A', b'M', b'A', 0, 0, 0xb1, 0x8f, 0x0b, 0xfc, 0x61, 0x05]);
         assert!(image(&gamma, &gamma));
         assert!(!image(&a, &gamma));
+        let opaque = [10, 20, 30, 255];
+        let changed = [10, 20, 31, 255];
+        let webp_a = webp::Encoder::from_rgba(&opaque, 1, 1).encode_lossless();
+        let webp_b = webp::Encoder::from_rgba(&changed, 1, 1).encode_lossless();
+        let png = encode(opaque);
+        assert!(image(&png, &webp_a));
+        assert!(image(&webp_a, &png));
+        assert!(image(&webp_a, &webp_a));
+        assert!(!image(&webp_a, &webp_b));
     }
 }
