@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
@@ -486,7 +487,7 @@ const NAVIGATION = 4;
 const ALWAYS_OBSERVED = new Set([HOVER]);
 
 async function digestOf(page, forms = [], linked = false) {
-  return page.evaluate(async ({ forms, linked }) => {
+  const text = await page.evaluate(({ forms, linked }) => {
     const clone = document.documentElement.cloneNode(true);
     clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
     for (const node of clone.querySelectorAll(linked ? "[src], [data-src], [srcset]" : '[src^="data:"], [data-src^="data:"]')) {
@@ -495,10 +496,9 @@ async function digestOf(page, forms = [], linked = false) {
       if (linked) node.removeAttribute("srcset");
     }
     const html = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
-    const text = forms.reduce((current, form) => current.split(form).join("{site}"), html);
-    const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return forms.reduce((current, form) => current.split(form).join("{site}"), html);
   }, { forms, linked });
+  return createHash("sha256").update(text).digest("hex");
 }
 
 function rootForms(root) {

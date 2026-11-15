@@ -59,6 +59,18 @@ test("the capture sees the state after the timeout and the transition", async ()
   }
 });
 
+test("a capture with JavaScript disabled produces a stable digest", async () => {
+  const browser = await launch();
+  try {
+    const scenario = scenariosFor("safe").find(({ name }) => name === "no-js");
+    const result = await capture(browser, file, scenario, false, { timeoutMs: 10000 });
+    assert.match(result.states[0].digest, /^[a-f0-9]{64}$/);
+    assert.match(result.states[0].dom, /Title/);
+  } finally {
+    await browser.close();
+  }
+});
+
 const iframeFile = join(directory, "iframe.html");
 const iframeDoc = [
   "<!DOCTYPE html><html><body style=\"margin:0;background:rgb(255,0,0)\">",
