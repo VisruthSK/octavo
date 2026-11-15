@@ -168,7 +168,7 @@ jobs:
             pages: 4
           - browser: firefox
             label: Firefox
-            pages: 6
+            pages: 4
           - browser: webkit
             label: WebKit
             pages: 4
