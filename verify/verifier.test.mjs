@@ -191,6 +191,17 @@ test("a dropped hover rule on a page with only a link is reported", async () => 
   assert.ok(failing.includes("desktop-light"), `${failing}`);
 });
 
+test("a long-lived connection does not stall verification after settling", async () => {
+  const hanging = page(
+    base,
+    '<h1>Long</h1><script>fetch("http://127.0.0.1:1948/stream").catch(() => {});</script>',
+  );
+  const started = Date.now();
+  const report = await verify(write("long-original", hanging), write("long-changed", hanging), { only: ["desktop-light"] });
+  assert.deepEqual(failingScenarios(report), []);
+  assert.ok(Date.now() - started < 8000, `verification took ${Date.now() - started} ms`);
+});
+
 test("element with tabindex=-1 reaches the fallback and ends focused with no Tab presses counted", async () => {
   const browser = await launch();
   try {
