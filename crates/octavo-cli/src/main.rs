@@ -116,7 +116,7 @@ struct Optimize {
         value_name = "LEVEL",
         default_value_t = Mode::Packed,
         value_parser = value_parser!(Mode),
-        help = "How much to rewrite. Output shrinks in this order: safe is the largest and works without JavaScript, scripts is smaller, packed is the smallest and needs JavaScript"
+        help = "How much to rewrite: exact uses verified transforms; safe, scripts and packed use heuristic optimization"
     )]
     level: Mode,
     #[arg(
@@ -417,14 +417,16 @@ struct Savings {
 fn audit(
     input: &Path,
     level: Mode,
-    options: Options,
+    mut options: Options,
     resource_paths: &[PathBuf],
     fetch: bool,
 ) -> Result<(), String> {
     let (src, _) = prepare(input, read(input)?, resource_paths, fetch);
+    options.exact = level == Mode::Exact;
     let out = simplify(&src, options)
         .map_err(|error| failure(input, &error))?
         .pack(level);
+    warn(&out.warnings);
     let mut totals: BTreeMap<Transform, Savings> = BTreeMap::new();
     for step in &out.applied {
         let total = totals.entry(step.transform).or_default();
@@ -480,7 +482,7 @@ fn run(
     input: &Path,
     output: &Path,
     level: Mode,
-    options: Options,
+    mut options: Options,
     resource_paths: &[PathBuf],
     fetch: bool,
 ) -> Result<(), String> {
@@ -490,6 +492,7 @@ fn run(
     let progress = spinner();
     progress.set_message("reading the page");
     let (src, linked) = prepare(input, original, resource_paths, fetch);
+    options.exact = level == Mode::Exact;
     progress.set_message("optimizing");
     let simplified = simplify(&src, options).map_err(|error| failure(input, &error))?;
     progress.set_message(format!("packing ({level})"));
