@@ -325,7 +325,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
   return { reports, timing };
 }
 
-export async function verify(original, optimized, { lossy = false, level = "safe", only, roots, linked = false, captureCache = false } = {}) {
+export async function verify(original, optimized, { lossy = false, level = "serve", only, roots, linked = false, captureCache = false } = {}) {
   const files = [optimized].flat();
   const { reports } = await verifyLevels(
     original,

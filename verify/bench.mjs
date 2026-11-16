@@ -11,10 +11,10 @@ process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 const binary = join(scratch, basename(built));
 copyFileSync(built, binary);
 const outDir = join(root, "out");
-const [mode = "packed", ...inputs] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const [mode = "archive", ...inputs] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const skipVerify = process.argv.includes("--no-verify");
 const lossy = process.argv.includes("--lossy");
-const needsJavaScript = mode === "packed";
+const needsJavaScript = mode === "archive";
 
 const files = inputs.flatMap((input) =>
   statSync(input).isDirectory()

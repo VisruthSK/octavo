@@ -31,7 +31,7 @@ const write = (name, faces) => {
 };
 
 const fontIssues = async (original, changed) => {
-  const reports = await verify(original, changed, { level: "safe", only: ["desktop-light"] });
+  const reports = await verify(original, changed, { level: "serve", only: ["desktop-light"] });
   return reports.flatMap(({ issues }) => issues).filter((issue) => issue.startsWith("load: fonts") || issue.includes("fonts "));
 };
 

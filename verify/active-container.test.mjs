@@ -19,7 +19,7 @@ p{margin:0;padding:80px 0}
 test("a container whose centre is an iframe can still have its active state checked", async () => {
   const file = join(directory, "container.html");
   writeFileSync(file, page);
-  const reports = await verify(file, file, { level: "safe", only: ["desktop-light"] });
+  const reports = await verify(file, file, { level: "serve", only: ["desktop-light"] });
   const incomplete = reports.flatMap(({ issues }) => issues).filter((issue) => issue.includes("check incomplete"));
   assert.deepEqual(incomplete, []);
 });

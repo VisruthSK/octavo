@@ -14,7 +14,7 @@ const flag = (name, fallback) => {
   return at < 0 ? fallback : (process.argv[at + 1] ?? fallback);
 };
 const tier = flag("tier", "smoke");
-const level = flag("level", "safe");
+const level = flag("level", "serve");
 const filter = new RegExp(flag("filter", "."));
 const browser = process.argv.includes("--browser");
 const binary = resolve(flag("binary", join(root, "target", "release", process.platform === "win32" ? "octavo.exe" : "octavo")));
