@@ -394,18 +394,49 @@ const frames = async (page) => {
   ]);
 };
 
-export async function settle(page, { quiet = QUIET, limit = LIMIT, network, javaScriptEnabled, scripted } = {}) {
+export function trackNetwork(page, requests = []) {
+  const openRequests = new Set();
+  const network = { pending: 0, count: 0, last: 0, openRequests };
+  page.on("request", (request) => {
+    if (/^(data|blob|about):/.test(request.url())) return;
+    network.pending += 1;
+    network.count += 1;
+    network.last = Date.now();
+    openRequests.add(request);
+    if (!/^file:/.test(request.url())) requests.push(request.url());
+  });
+  const finished = (request) => {
+    if (!openRequests.delete(request)) return;
+    network.pending -= 1;
+    network.last = Date.now();
+  };
+  page.on("requestfinished", finished);
+  page.on("requestfailed", finished);
+  return network;
+}
+export async function settle(page, { quiet = QUIET, limit = LIMIT, network, longLived, javaScriptEnabled, scripted } = {}) {
   const enabled = javaScriptEnabled ?? scripted ?? true;
   const deadline = Date.now() + limit;
   if (enabled) {
     await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
   }
   await page.evaluate(watch).catch(() => {});
+  const isNetworkQuiet = () => {
+    if (!network) return true;
+    if (Date.now() - network.last < quiet) return false;
+    if (!network.pending) return true;
+    if (!network.openRequests) return false;
+    if (!network.openRequests.size) return false;
+    for (const request of network.openRequests) {
+      if (!longLived?.has(request)) return false;
+    }
+    return true;
+  };
   let previous = null;
   while (Date.now() < deadline) {
     if (network) {
       while (Date.now() < deadline) {
-        if (!network.pending && Date.now() - network.last >= quiet) break;
+        if (isNetworkQuiet()) break;
         await page.waitForTimeout(50);
       }
     }
@@ -462,7 +493,7 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network, java
     }
     await frames(page);
     const settled = await page.evaluate(() => globalThis[Symbol.for("octavo.quiet")]?.changed ?? Date.now()).catch(() => 0);
-    if (network && (network.pending || Date.now() - network.last < quiet)) continue;
+    if (!isNetworkQuiet()) continue;
     if (Date.now() - settled >= quiet) return true;
   }
   return false;
@@ -600,7 +631,7 @@ export async function capture(
   file,
   scenario,
   lossy,
-  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS } = {},
+  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS, longLived } = {},
 ) {
   const pace = patient ? PATIENCE : 1;
   const forms = rootForms(root);
@@ -622,26 +653,15 @@ export async function capture(
     const page = await context.newPage();
     const errors = [];
     const requests = [];
-    const network = { pending: 0, count: 0, last: 0 };
+    const network = trackNetwork(page, requests);
+    const { openRequests } = network;
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
     page.on("console", (message) => {
       if (message.type() !== "error") return;
       if (linkedOriginal && isLinkedFileLoadFailure(message.text(), message.location())) return;
       errors.push(engine.normalizeError(message.text()));
     });
-    page.on("request", (request) => {
-      if (/^(data|blob|about):/.test(request.url())) return;
-      network.pending += 1;
-      network.count += 1;
-      network.last = Date.now();
-      if (!/^file:/.test(request.url())) requests.push(request.url());
-    });
-    const finished = () => {
-      network.pending = Math.max(0, network.pending - 1);
-      network.last = Date.now();
-    };
-    page.on("requestfinished", finished);
-    page.on("requestfailed", finished);
+    const knownLongLived = new Set(longLived ?? []);
     const waits = [];
     const wait = async (name, options = {}) => {
       phase = `settle ${name}`;
@@ -650,6 +670,7 @@ export async function capture(
           quiet: (options.quiet ?? QUIET) * pace,
           limit: (options.limit ?? LIMIT) * pace,
           network,
+          longLived: knownLongLived,
           javaScriptEnabled: options.javaScriptEnabled ?? scripted,
         }),
       );
@@ -667,6 +688,7 @@ export async function capture(
     await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: "instant" })).catch(() => {});
     await frames(page);
     await wait("initial page");
+    for (const request of openRequests) knownLongLived.add(request);
 
     let previousDigest = await digestOf(page, forms, linked);
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -732,6 +754,7 @@ export async function capture(
       states,
       errors,
       requests,
+      openRequests: new Set([...openRequests].map((request) => request.url())),
       base,
       checks: {
         ...forced.checks,

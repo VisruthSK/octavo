@@ -4,9 +4,10 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createServer } from "node:http";
 import { PNG } from "pngjs";
 import { launch } from "./engines/index.mjs";
-import { capture, scenariosFor, settle, trackTimers } from "./capture.mjs";
+import { capture, scenariosFor, settle, trackNetwork, trackTimers } from "./capture.mjs";
 
 const directory = mkdtempSync(join(tmpdir(), "octavo-settle-"));
 
@@ -71,6 +72,51 @@ test("a capture with JavaScript disabled produces a stable digest", async () => 
   }
 });
 
+test("the settle treats a bare pending network object as not quiet", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto("about:blank");
+    const network = { pending: 1, count: 1, last: Date.now() - 500 };
+    const quiet = await settle(page, { network, limit: 200, quiet: 50 });
+    assert.equal(quiet, false);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("settle waits for a new request to the same URL as an open long-lived request", async () => {
+  const responses = [];
+  const server = createServer((request, response) => {
+    if (request.url !== "/stream") return response.end("<!doctype html><body>test</body>");
+    responses.push(response);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const browser = await launch();
+  try {
+    const context = await browser.newContext();
+    await context.addInitScript(trackTimers);
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    const network = trackNetwork(page);
+    await page.evaluate(() => { fetch("/stream"); });
+    while (responses.length < 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    const longLived = new Set(network.openRequests);
+    await page.evaluate(() => { fetch("/stream"); });
+    while (responses.length < 2) await new Promise((resolve) => setTimeout(resolve, 10));
+    let settled = false;
+    const result = settle(page, { network, longLived, quiet: 100, limit: 3000 }).then((value) => { settled = true; return value; });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    assert.equal(settled, false);
+    responses[1].end("done");
+    assert.equal(await result, true);
+    assert.equal(network.pending, 1);
+  } finally {
+    for (const response of responses) response.destroy();
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
 const iframeFile = join(directory, "iframe.html");
 const iframeDoc = [
   "<!DOCTYPE html><html><body style=\"margin:0;background:rgb(255,0,0)\">",
