@@ -83,7 +83,7 @@ test("a corrupted cache file is ignored and recaptured", async () => {
   });
   assert.equal(calls, 1);
   assert.equal(outcome.cached, false);
-  assert.deepEqual(readCapture(key, folder).states.length, 1);
+  assert.deepEqual(payloadOf(readCapture(key, folder)), payloadOf(outcome.result));
 });
 
 test("a capture without every screenshot is not cached", async () => {
