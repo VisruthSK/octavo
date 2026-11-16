@@ -94,6 +94,18 @@ test("interned styles survive a capture cache round trip", () => {
   assert.deepEqual(payloadOf(readCapture(cacheKey, folder)), payloadOf(result));
 });
 
+test("invalid interned style indices are rejected and recaptured", async () => {
+  const cacheKey = captureKey({ ...parts, scenario: "invalid-interned" });
+  const result = { states: [{ label: "load", screenshot: null, styles: [1], styleValues: ["color:red"] }], errors: [], requests: [], checks: {} };
+  writeCapture(cacheKey, result, folder);
+  assert.equal(readCapture(cacheKey, folder), null);
+  let calls = 0;
+  const recaptured = await cachedCapture({ key: cacheKey, folder, capture: async () => { calls++; return fresh(); } });
+  assert.equal(calls, 1);
+  assert.equal(recaptured.cached, false);
+  assert.deepEqual(payloadOf(readCapture(cacheKey, folder)), payloadOf(recaptured.result));
+});
+
 test("a capture without every screenshot is not cached", async () => {
   const missing = captureKey({ ...parts, scenario: "motion" });
   let calls = 0;

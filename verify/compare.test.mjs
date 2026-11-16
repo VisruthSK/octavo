@@ -318,6 +318,22 @@ test("interned styles retain late element and pseudo-style differences", () => {
   assert.deepEqual(compare({ states: [a], errors: [], requests: [] }, { states: [same], errors: [], requests: [] }, false), []);
 });
 
+test("interned and legacy styles compare with each element's writing mode", () => {
+  const state = (styles, styleValues, writingModes) => ({
+    title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0,
+    scroll: [0, 0], labels: ["P"], rects: [[0, 0, 1, 1]], styles, styleValues, writingModes,
+    screenshot: Buffer.from("same"),
+  });
+  const style = "width:40px;inline-size:40px";
+  const original = state([style], undefined, ["horizontal-tb"]);
+  const same = state([0], [style], ["horizontal-tb"]);
+  const otherMode = state([0], [style], ["vertical-rl"]);
+  const check = (a, b) => compare({ states: [a], errors: [], requests: [] }, { states: [b], errors: [], requests: [] }, false);
+  assert.deepEqual(check(original, same), []);
+  assert.ok(check(original, otherMode).some((issue) => issue.includes("different computed style")));
+  assert.throws(() => check(original, state([1], [style], ["horizontal-tb"])), /invalid computed style storage/);
+});
+
 test("the requests comparison ignores order and lazily fetched font files and keeps everything else", () => {
   const state = {
     title: "",

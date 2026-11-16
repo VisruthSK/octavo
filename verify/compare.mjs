@@ -2,6 +2,7 @@ import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import { engine } from "./engines/index.mjs";
 import { canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
+import { validStyles } from "./style-storage.mjs";
 
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
@@ -189,6 +190,7 @@ function compareScreenshots(a, b, lossy, stats) {
 }
 
 function compareState(a, b, lossy, stats) {
+  if (!validStyles(a) || !validStyles(b)) throw new Error("invalid computed style storage");
   const issues = [];
   if (a.unchanged || b.unchanged) {
     if (a.digest !== b.digest) issues.push("the page changed differently after this interaction");
@@ -225,7 +227,7 @@ function compareState(a, b, lossy, stats) {
   }
   const beforeStyles = a.styles ?? [];
   const afterStyles = b.styles ?? [];
-  const styleAt = (state, styles, index) => state.styleValues ? state.styleValues[styles[index]] ?? "" : styles[index] ?? "";
+  const styleAt = (state, styles, index) => index >= styles.length ? "" : state.styleValues === undefined ? styles[index] : state.styleValues[styles[index]];
   if (beforeStyles.length !== afterStyles.length) issues.push(`style count ${beforeStyles.length} vs ${afterStyles.length}`);
   const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, i) => i).filter((i) => {
     const before = styleAt(a, beforeStyles, i);
