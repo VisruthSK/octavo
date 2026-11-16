@@ -4,15 +4,17 @@ import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeBrowser, verify } from "./verify.mjs";
+import { engineName } from "./engines/index.mjs";
 import { baseHtml, mutations, equivalentPairs } from "./adversary/mutations.mjs";
 
 after(closeBrowser);
 
 const manifest = JSON.parse(readFileSync(new URL("./adversary/manifest.json", import.meta.url), "utf8"));
-const misses = new Set(manifest.chromium.missed);
-const falseAlarms = new Set(manifest.chromium.falseAlarms);
-const scenarios = manifest.chromium.scenarios;
-
+// Preserve the existing baseline for every engine until each has been calibrated.
+const baseline = manifest[engineName({})];
+const misses = new Set(baseline.missed);
+const falseAlarms = new Set(baseline.falseAlarms);
+const scenarios = baseline.scenarios;
 const directory = mkdtempSync(join(tmpdir(), "octavo-adversary-test-"));
 
 const write = (name, html) => {
