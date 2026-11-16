@@ -1,8 +1,10 @@
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import { engine } from "./engines/index.mjs";
+import { scrollbarPseudo } from "./engines/pseudos.mjs";
 import { isMissingFile } from "./linked-artifacts.mjs";
 import { canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
+import { validStyles } from "./style-storage.mjs";
 
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
@@ -67,7 +69,7 @@ const canonical = (declaration) => {
       if (replaced) text = text.slice(0, start) + replaced + text.slice(end + 1);
     }
   }
-  const pseudo = ["::before", "::after", "::marker", "::placeholder"].find((prefix) => text.startsWith(prefix)) ?? "";
+  const pseudo = ["::before", "::after", "::marker", "::placeholder", "::selection", scrollbarPseudo].find((prefix) => text.startsWith(prefix)) ?? "";
   const colon = text.indexOf(":", pseudo ? 2 : 0);
   if (colon < 0 || text.slice(pseudo.length, colon) === "font-family") return text;
   return `${text.slice(0, colon + 1)}${canonicalCssValue(text.slice(colon + 1))}`;
@@ -190,6 +192,7 @@ function compareScreenshots(a, b, lossy, stats) {
 }
 
 function compareState(a, b, lossy, stats) {
+  if (!validStyles(a) || !validStyles(b)) throw new Error("invalid computed style storage");
   const issues = [];
   if (a.unchanged || b.unchanged) {
     if (a.digest !== b.digest) issues.push("the page changed differently after this interaction");
@@ -226,14 +229,18 @@ function compareState(a, b, lossy, stats) {
   }
   const beforeStyles = a.styles ?? [];
   const afterStyles = b.styles ?? [];
+  const styleAt = (state, styles, index) => index >= styles.length ? "" : state.styleValues === undefined ? styles[index] : state.styleValues[styles[index]];
   if (beforeStyles.length !== afterStyles.length) issues.push(`style count ${beforeStyles.length} vs ${afterStyles.length}`);
-  const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, i) => i).filter((i) =>
-    !sameStyle(canonicalStyle(beforeStyles[i] ?? "", a.writingModes?.[i]), canonicalStyle(afterStyles[i] ?? "", b.writingModes?.[i])),
-  );
+  const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, i) => i).filter((i) => {
+    const before = styleAt(a, beforeStyles, i);
+    const after = styleAt(b, afterStyles, i);
+    if (before === after && a.writingModes?.[i] === b.writingModes?.[i]) return false;
+    return !sameStyle(canonicalStyle(before, a.writingModes?.[i]), canonicalStyle(after, b.writingModes?.[i]));
+  });
   if (differing.length) {
     const [first] = differing;
-    const before = beforeStyles[first] ?? "";
-    const after = afterStyles[first] ?? "";
+    const before = styleAt(a, beforeStyles, first);
+    const after = styleAt(b, afterStyles, first);
     const lost = missingFrom(before, after).slice(0, 3);
     const gained = missingFrom(after, before).slice(0, 3);
     issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first] ?? ""}: lost ${JSON.stringify(lost)} gained ${JSON.stringify(gained)}`);

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
+import { scrollbarPseudo } from "./engines/pseudos.mjs";
 import { isLinkedFileLoadFailure, isMissingFile } from "./linked-artifacts.mjs";
 import { canonicalFontFamily } from "./styles.mjs";
 
@@ -119,10 +120,10 @@ async function fingerprints({ lossy, linked }) {
   return Promise.all(embedded.map((value) => fingerprint(value).catch(() => value)));
 }
 
-function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true }) {
+function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true, scrollbarPseudo }) {
   const describe = (element, pseudo, baseStyle) => {
     const style = pseudo === null && baseStyle ? baseStyle : getComputedStyle(element, pseudo);
-    if (pseudo && style.content === "none") return "";
+    if ((pseudo === "::before" || pseudo === "::after") && style.content === "none") return "";
     const noImage = style.backgroundImage === "none";
     const legacyBox = style.display.includes("box");
     const prefix = pseudo ?? "";
@@ -178,7 +179,11 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
     img.removeAttribute(attribute);
     img.setAttribute(`pixels-${attribute}`, prints[at] ?? "skipped");
   }
-  const elements = [...document.body.querySelectorAll("*:not(script):not(style):not(link):not(noscript)")];
+  const roots = [document.documentElement, document.body].filter(Boolean);
+  const elements = [
+    ...roots,
+    ...document.body.querySelectorAll("*:not(script):not(style):not(link):not(noscript)"),
+  ];
   const animations = motion
     ? (() => {
         const list = document.getAnimations();
@@ -204,6 +209,8 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       animation.currentTime = 0;
     }
   }
+  const styleValues = [];
+  const styleIndexes = new Map();
   return {
     animations,
     title: document.title,
@@ -213,17 +220,33 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       const { x, y, width, height } = el.getBoundingClientRect();
       return [x, y, width, height].map((n) => Math.round(n * 100) / 100);
     }),
-    styles: elements.map((el) => {
-      const base = getComputedStyle(el);
-      const pseudos = [
-        null,
-        "::before",
-        "::after",
-        ...(base.display === "list-item" ? ["::marker"] : []),
-        ...(placeholderStyle && el.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
-      ];
-      return pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
-    }),
+    styles: (() => {
+      const sampleTags = new Set(["p", "a", "h1", "h2", "h3", "h4", "h5", "h6", "li", "code"]);
+      const sampled = new Set();
+      return elements.map((el) => {
+        const base = getComputedStyle(el);
+        const tag = el.tagName.toLowerCase();
+        const isRoot = el === document.documentElement || el === document.body;
+        const isSample = sampleTags.has(tag);
+        const hasScroll = isRoot || isSample || el.matches?.(".custom-scroll, [style*='overflow']") || (base.overflow && base.overflow !== "visible");
+        const pseudos = [
+          null,
+          "::before",
+          "::after",
+          ...(base.display === "list-item" || tag === "li" ? ["::marker"] : []),
+          ...(placeholderStyle && el.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
+          ...(isRoot || isSample ? ["::selection"] : []),
+          ...(hasScroll ? [scrollbarPseudo] : []),
+        ];
+        const value = pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
+        if (!styleIndexes.has(value)) {
+          styleIndexes.set(value, styleValues.length);
+          styleValues.push(value);
+        }
+        return styleIndexes.get(value);
+      });
+    })(),
+    styleValues,
     writingModes: elements.map((el) => getComputedStyle(el).writingMode),
     fonts: (() => {
       const weights = { normal: "400", bold: "700" };
@@ -722,7 +745,7 @@ export async function capture(
       phase = `image fingerprints ${label}`;
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       phase = `page observation ${label}`;
-      const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle });
+      const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
     };
@@ -736,6 +759,51 @@ export async function capture(
     states[0].forced = forced.states;
     states[0].accessibility = accessibility;
     const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
+    if (scripted && scenario.name === "desktop-light") {
+      phase = "resize viewport";
+      await page.setViewportSize({ width: 900, height: 700 });
+      await wait("after resize");
+      await record("resize");
+      await page.setViewportSize(scenario.viewport);
+      await wait("after restore viewport");
+    }
+    if (interact && scripted && scenario.name === "desktop-light") {
+      phase = "behaviour sweep selection";
+      const handles = await page.$$("button, summary, [role=button], [role=tab], input[type=checkbox], input[type=radio], select");
+      const safe = [];
+      for (const handle of handles) {
+        if (safe.length >= 8) break;
+        const valid = await handle.evaluate((el) => {
+          if (el.closest("a[href]")) return false;
+          if (el.tagName === "BUTTON" && el.type === "submit" && el.form?.getAttribute("action")) return false;
+          if (el.getAttribute("target") === "_blank") return false;
+          const rect = el.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return false;
+          const s = getComputedStyle(el);
+          return s.visibility !== "hidden" && s.display !== "none" && s.pointerEvents !== "none";
+        }).catch(() => false);
+        if (valid) safe.push(handle);
+      }
+      if (safe.length > 0) {
+        for (const [index, handle] of safe.entries()) {
+          phase = `behaviour sweep element ${index}`;
+          const isSelect = await handle.evaluate((el) => el.tagName === "SELECT").catch(() => false);
+          if (isSelect) {
+            await handle.evaluate((el) => {
+              if (el.options.length > 1) {
+                el.selectedIndex = el.selectedIndex === 0 ? 1 : 0;
+                el.dispatchEvent(new Event("change", { bubbles: true }));
+              }
+            }).catch(() => {});
+          } else {
+            await handle.click({ timeout: 1000 }).catch(() => {});
+          }
+        }
+        await page.keyboard.press("Escape").catch(() => {});
+        await wait("after behaviour sweep");
+        await record("behaviour");
+      }
+    }
     if (interact && scripted && scenario.sweep) {
       phase = "reveal slide number lookup";
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));

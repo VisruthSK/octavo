@@ -33,7 +33,7 @@ for (const m of mutations) {
     }
     const pair = m.create(base);
     const targetScenario = scenarios[m.id] ?? "desktop-light";
-    const needsInteract = m.id.startsWith("state-") || m.id.startsWith("script-");
+    const needsInteract = m.id.startsWith("state-") || m.id.startsWith("script-") || m.id === "css-drop-checked" || m.id === "css-remove-unused-looking-class";
     const report = await verify(write(`${m.id}-orig`, pair.original), write(`${m.id}-mut`, pair.mutated), {
       only: [targetScenario],
       interact: needsInteract,

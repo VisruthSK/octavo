@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { PNG } from "pngjs";
 import { compare, differences, missingFrom } from "./compare.mjs";
 import { canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
+import { scrollbarPseudo } from "./engines/pseudos.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -301,6 +302,12 @@ test("declarations without gradients still compare exactly", () => {
   assert.deepEqual(missingFrom("color:red;width:10px", "width:10px"), ["color:red"]);
 });
 
+test("scrollbar pseudo styles remain distinct and comparable", () => {
+  const before = `${scrollbarPseudo}width:8px;`;
+  const after = `${scrollbarPseudo}width:9px;`;
+  assert.deepEqual(missingFrom(canonicalStyle(before), canonicalStyle(after)), [`${scrollbarPseudo}width:8px`]);
+});
+
 test("a mirrored gradient makes two style strings the same, an extra declaration does not", async () => {
   const { sameStyle } = await import("./compare.mjs");
   assert.equal(sameStyle(`color:red;${up}`, `${down};color:red`), true);
@@ -330,6 +337,36 @@ test("missing and extra computed style entries are reported instead of throwing"
     );
     assert.ok(issues.some((issue) => issue.includes("style count")));
   }
+});
+
+test("interned styles retain late element and pseudo-style differences", () => {
+  const state = (styles, styleValues) => ({
+    title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0,
+    scroll: [0, 0], labels: ["P", "P", "P"], rects: [[0, 0, 1, 1], [0, 0, 1, 1], [0, 0, 1, 1]],
+    styles, styleValues, screenshot: Buffer.from("same"),
+  });
+  const a = state([0, 0, 0], ["color:red;::selectioncolor:blue"]);
+  const b = state([1, 1, 0], ["color:red;::selectioncolor:green", "color:red;::selectioncolor:blue"]);
+  const result = compare({ states: [a], errors: [], requests: [] }, { states: [b], errors: [], requests: [] }, false);
+  assert.ok(result.some((issue) => issue.includes("1 elements with different computed style")));
+  const same = state([1, 1, 1], b.styleValues);
+  assert.deepEqual(compare({ states: [a], errors: [], requests: [] }, { states: [same], errors: [], requests: [] }, false), []);
+});
+
+test("interned and legacy styles compare with each element's writing mode", () => {
+  const state = (styles, styleValues, writingModes) => ({
+    title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0,
+    scroll: [0, 0], labels: ["P"], rects: [[0, 0, 1, 1]], styles, styleValues, writingModes,
+    screenshot: Buffer.from("same"),
+  });
+  const style = "width:40px;inline-size:40px";
+  const original = state([style], undefined, ["horizontal-tb"]);
+  const same = state([0], [style], ["horizontal-tb"]);
+  const otherMode = state([0], [style], ["vertical-rl"]);
+  const check = (a, b) => compare({ states: [a], errors: [], requests: [] }, { states: [b], errors: [], requests: [] }, false);
+  assert.deepEqual(check(original, same), []);
+  assert.ok(check(original, otherMode).some((issue) => issue.includes("different computed style")));
+  assert.throws(() => check(original, state([1], [style], ["horizontal-tb"])), /invalid computed style storage/);
 });
 
 test("the requests comparison ignores order and lazily fetched font files and keeps everything else", () => {

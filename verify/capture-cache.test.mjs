@@ -83,7 +83,27 @@ test("a corrupted cache file is ignored and recaptured", async () => {
   });
   assert.equal(calls, 1);
   assert.equal(outcome.cached, false);
-  assert.deepEqual(readCapture(key, folder).states.length, 1);
+  assert.deepEqual(payloadOf(readCapture(key, folder)), payloadOf(outcome.result));
+});
+
+test("interned styles survive a capture cache round trip", () => {
+  const cacheKey = captureKey({ ...parts, scenario: "interned" });
+  const state = { label: "load", screenshot: null, styles: [0, 0, 1], styleValues: ["color:red", "color:blue"] };
+  const result = { states: [state], errors: [], requests: [], checks: {} };
+  writeCapture(cacheKey, result, folder);
+  assert.deepEqual(payloadOf(readCapture(cacheKey, folder)), payloadOf(result));
+});
+
+test("invalid interned style indices are rejected and recaptured", async () => {
+  const cacheKey = captureKey({ ...parts, scenario: "invalid-interned" });
+  const result = { states: [{ label: "load", screenshot: null, styles: [1], styleValues: ["color:red"] }], errors: [], requests: [], checks: {} };
+  writeCapture(cacheKey, result, folder);
+  assert.equal(readCapture(cacheKey, folder), null);
+  let calls = 0;
+  const recaptured = await cachedCapture({ key: cacheKey, folder, capture: async () => { calls++; return fresh(); } });
+  assert.equal(calls, 1);
+  assert.equal(recaptured.cached, false);
+  assert.deepEqual(payloadOf(readCapture(cacheKey, folder)), payloadOf(recaptured.result));
 });
 
 test("a capture without every screenshot is not cached", async () => {
