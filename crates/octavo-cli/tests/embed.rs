@@ -56,7 +56,7 @@ fn a_page_that_links_local_files_is_embedded_then_optimized() {
         page_path.as_os_str(),
         out.as_os_str(),
         "--level".as_ref(),
-        "safe".as_ref(),
+        "serve".as_ref(),
     ]);
     assert!(output.status.success(), "{output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -84,7 +84,7 @@ fn a_root_relative_site_libs_link_is_found_in_a_parent_directory() {
         page_path.as_os_str(),
         out.as_os_str(),
         "--level".as_ref(),
-        "safe".as_ref(),
+        "serve".as_ref(),
     ]);
     assert!(output.status.success(), "{output:?}");
     assert!(
@@ -110,7 +110,7 @@ fn a_quarto_files_directory_is_found_beside_the_page() {
         page_path.as_os_str(),
         out.as_os_str(),
         "--level".as_ref(),
-        "safe".as_ref(),
+        "serve".as_ref(),
     ]);
     assert!(output.status.success(), "{output:?}");
     let _ = fs::remove_dir_all(&root);
@@ -137,7 +137,7 @@ fn resource_path_says_where_to_look() {
         "--resource-path".as_ref(),
         elsewhere.as_os_str(),
         "--level".as_ref(),
-        "safe".as_ref(),
+        "serve".as_ref(),
     ]);
     assert!(found.status.success(), "{found:?}");
     let _ = fs::remove_dir_all(&root);
@@ -210,7 +210,7 @@ fn files_linked_from_the_web_are_downloaded_and_embedded() {
         page_path.as_os_str(),
         out.as_os_str(),
         "--level".as_ref(),
-        "safe".as_ref(),
+        "serve".as_ref(),
     ]);
     assert!(output.status.success(), "{output:?}");
     let html = fs::read_to_string(&out).unwrap();
@@ -237,7 +237,7 @@ fn no_fetch_leaves_web_links_alone() {
         out.as_os_str(),
         "--no-fetch".as_ref(),
         "--level".as_ref(),
-        "safe".as_ref(),
+        "serve".as_ref(),
     ]);
     assert!(output.status.success(), "{output:?}");
     assert!(fs::read_to_string(&out).unwrap().contains("127.0.0.1:9"));

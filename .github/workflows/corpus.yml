@@ -34,7 +34,7 @@ on:
         default: tablet
       diagnose_level:
         description: Which level of the document to capture
-        default: packed
+        default: archive
       diagnose_browser:
         description: Which browser to capture for the diagnosis
         default: chromium

@@ -14,7 +14,7 @@
 //!
 //! let html = "<!DOCTYPE html><html><head><style>.a{color:red}.b{color:blue}</style>\
 //!             </head><body><p class=a>hi</body></html>";
-//! let out = optimize(html, Mode::Safe)?;
+//! let out = optimize(html, Mode::Serve)?;
 //! assert!(out.html.contains(".a{color:red}") && !out.html.contains(".b"));
 //! # Ok::<(), octavo::Error>(())
 //! ```
@@ -56,31 +56,31 @@ use std::{
 /// ```
 /// use octavo::{optimize, Mode};
 ///
-/// let safe = optimize("<html><head></head><body></body></html>", Mode::Safe)?;
-/// # assert_eq!(safe.html, "<html><head></head><body></body></html>");
+/// let serve = optimize("<html><head></head><body></body></html>", Mode::Serve)?;
+/// # assert_eq!(serve.html, "<html><head></head><body></body></html>");
 /// # Ok::<(), octavo::Error>(())
 /// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Mode {
-    /// Minify and prune. The output needs nothing the original did not.
-    Safe,
-    /// Additionally compress scripts and data blocks into one blob that a
-    /// small loader restores while the page is parsed. Stylesheets and
-    /// inline SVG stay real elements, so the page works with JavaScript off.
-    Scripts,
-    /// Additionally compress stylesheets, inline SVG and images into the
-    /// same blob. The loader needs JavaScript, so the page is unstyled when
-    /// JavaScript is off.
-    Packed,
+    /// Smallest output when the server compresses it (removes what the page does
+    /// not use, minifies, ordinary elements).
+    #[default]
+    Serve,
+    /// Smallest standalone file that still works with JavaScript off (Serve plus
+    /// scripts and data compressed into one blob, styles stay real).
+    Portable,
+    /// Smallest standalone file, needs JavaScript (everything including styles,
+    /// SVG and images in the blob).
+    Archive,
 }
 
 impl fmt::Display for Mode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
-            Mode::Safe => "safe",
-            Mode::Scripts => "scripts",
-            Mode::Packed => "packed",
+            Mode::Serve => "serve",
+            Mode::Portable => "portable",
+            Mode::Archive => "archive",
         })
     }
 }
@@ -88,14 +88,14 @@ impl fmt::Display for Mode {
 impl FromStr for Mode {
     type Err = String;
 
-    /// Parses the lowercase names `safe`, `scripts` and `packed`.
+    /// Parses the lowercase names `serve`, `portable` and `archive`.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "safe" => Ok(Mode::Safe),
-            "scripts" => Ok(Mode::Scripts),
-            "packed" => Ok(Mode::Packed),
+            "serve" => Ok(Mode::Serve),
+            "portable" => Ok(Mode::Portable),
+            "archive" => Ok(Mode::Archive),
             other => Err(format!(
-                "unknown level '{other}', expected one of: safe, scripts, packed"
+                "unknown level '{other}', expected one of: serve, portable, archive"
             )),
         }
     }
@@ -521,7 +521,7 @@ impl fmt::Display for Target {
 /// use octavo::optimize;
 /// use octavo::Mode;
 ///
-/// let out = optimize("<html><head></head><body></body></html>", Mode::Safe)?;
+/// let out = optimize("<html><head></head><body></body></html>", Mode::Serve)?;
 /// assert!(out.applied.iter().all(|step| step.after <= step.before));
 /// # Ok::<(), octavo::Error>(())
 /// ```
@@ -561,7 +561,7 @@ pub struct Skipped {
 ///
 /// let remote = "<!DOCTYPE html><html><head>\
 ///     <script src=\"https://cdn.example.com/lib.js\"></script></head><body></body></html>";
-/// let out = optimize(remote, Mode::Safe)?;
+/// let out = optimize(remote, Mode::Serve)?;
 /// assert!(out.warnings.iter().any(|warning| matches!(warning, Warning::RemoteResource(_))));
 /// # Ok::<(), octavo::Error>(())
 /// ```
@@ -592,7 +592,7 @@ impl fmt::Display for Warning {
 /// use octavo::{optimize, Mode};
 ///
 /// let html = "<!DOCTYPE html><html><head></head><body><p>hi</p></body></html>";
-/// let out = optimize(html, Mode::Safe)?;
+/// let out = optimize(html, Mode::Serve)?;
 /// assert!(out.applied.is_empty());
 /// # Ok::<(), octavo::Error>(())
 /// ```
@@ -619,7 +619,7 @@ pub struct Output {
 /// ```
 /// use octavo::{optimize, Error, Mode};
 ///
-/// assert_eq!(optimize("just some words", Mode::Safe).unwrap_err(), Error::NotHtml);
+/// assert_eq!(optimize("just some words", Mode::Serve).unwrap_err(), Error::NotHtml);
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -688,7 +688,7 @@ pub fn is_self_contained(src: &str) -> bool {
 ///
 /// let html = "<!DOCTYPE html><html><head><style>.a{color:red}.b{color:blue}</style>\
 ///             </head><body><p class=a>hi</p></body></html>";
-/// let out = optimize(html, Mode::Safe)?;
+/// let out = optimize(html, Mode::Serve)?;
 /// assert!(out.html.contains(".a{color:red}") && !out.html.contains(".b"));
 /// # Ok::<(), octavo::Error>(())
 /// ```
@@ -708,7 +708,7 @@ pub fn optimize(src: &str, mode: Mode) -> Result<Output, Error> {
 /// use octavo::{simplify, Mode, Options};
 ///
 /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
-/// for mode in [Mode::Safe, Mode::Scripts, Mode::Packed] {
+/// for mode in [Mode::Serve, Mode::Portable, Mode::Archive] {
 ///     let out = simplified.pack(mode);
 ///     println!("{mode}: {} bytes", out.html.len());
 /// }
@@ -819,7 +819,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
 ///
 /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
 /// assert_eq!(simplified.warnings().len(), 0);
-/// let out = simplified.pack(Mode::Scripts);
+/// let out = simplified.pack(Mode::Portable);
 /// # assert_eq!(out.html, "<html><head></head><body></body></html>");
 /// # Ok::<(), octavo::Error>(())
 /// ```
@@ -871,7 +871,7 @@ impl Simplified {
     /// use octavo::{simplify, Mode, Options};
     ///
     /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
-    /// let out = simplified.pack(Mode::Packed);
+    /// let out = simplified.pack(Mode::Archive);
     /// assert_eq!(out.html, "<html><head></head><body></body></html>");
     /// # Ok::<(), octavo::Error>(())
     /// ```
@@ -883,7 +883,7 @@ impl Simplified {
             skipped: self.skipped.clone(),
             warnings: self.warnings.clone(),
         };
-        if mode == Mode::Safe {
+        if mode == Mode::Serve {
             return unpacked();
         }
         let Some(packed) = pack::run(&self.scanned, mode, self.compression.tuning())
@@ -907,8 +907,8 @@ impl Simplified {
     }
 
     /// Produces the final document for `mode`, but only if `accept` approves
-    /// it. A rejected result is replaced by the next safer mode (`Packed`,
-    /// then `Scripts`, then `Safe`), and `None` means every mode was
+    /// it. A rejected result is replaced by the next safer mode (`Archive`,
+    /// then `Portable`, then `Serve`), and `None` means every mode was
     /// rejected, so the caller should keep the original. `accept` sees each
     /// candidate with the mode that produced it, and the mode returned is the
     /// one that was accepted.
@@ -921,12 +921,12 @@ impl Simplified {
     ///
     /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
     /// let mut tried = Vec::new();
-    /// let accepted = simplified.pack_checked(Mode::Packed, |mode, _| {
+    /// let accepted = simplified.pack_checked(Mode::Archive, |mode, _| {
     ///     tried.push(mode);
-    ///     mode == Mode::Safe
+    ///     mode == Mode::Serve
     /// });
-    /// assert_eq!(tried, [Mode::Packed, Mode::Scripts, Mode::Safe]);
-    /// assert_eq!(accepted.map(|(mode, _)| mode), Some(Mode::Safe));
+    /// assert_eq!(tried, [Mode::Archive, Mode::Portable, Mode::Serve]);
+    /// assert_eq!(accepted.map(|(mode, _)| mode), Some(Mode::Serve));
     /// # Ok::<(), octavo::Error>(())
     /// ```
     pub fn pack_checked(
@@ -935,9 +935,9 @@ impl Simplified {
         mut accept: impl FnMut(Mode, &Output) -> bool,
     ) -> Option<(Mode, Output)> {
         let ladder: &[Mode] = match mode {
-            Mode::Packed => &[Mode::Packed, Mode::Scripts, Mode::Safe],
-            Mode::Scripts => &[Mode::Scripts, Mode::Safe],
-            Mode::Safe => &[Mode::Safe],
+            Mode::Archive => &[Mode::Archive, Mode::Portable, Mode::Serve],
+            Mode::Portable => &[Mode::Portable, Mode::Serve],
+            Mode::Serve => &[Mode::Serve],
         };
         ladder.iter().find_map(|&step| {
             let candidate = self.pack(step);

@@ -33,15 +33,15 @@ test("buildCosts aggregates progress log seconds per engine and fills missing wi
   rmSync(tmpDir, { recursive: true, force: true });
   mkdirSync(tmpDir, { recursive: true });
   const sampleLog = [
-    "Chromium checks (smoke, shard 1)\t[1/2] doc-a safe 10s",
-    "Chromium checks (smoke, shard 1)\t[2/2] doc-a packed 15s",
-    "Chromium checks (smoke, shard 1)\t[1/1] doc-b safe 25s",
-    "Firefox checks (smoke, shard 1)\t[1/2] doc-a safe 20s",
-    "Firefox checks (smoke, shard 1)\t[2/2] doc-a packed 30s",
-    "Firefox checks (smoke, shard 1)\t[1/1] doc-b safe 12s (cached)",
-    "WebKit checks (smoke, shard 1)\t[1/2] doc-a safe 5s",
-    "WebKit checks (smoke, shard 1)\t[2/2] doc-a packed 5s",
-    "WebKit checks (smoke, shard 1)\t[1/1] doc-b safe 40s",
+    "Chromium checks (smoke, shard 1)\t[1/2] doc-a serve 10s",
+    "Chromium checks (smoke, shard 1)\t[2/2] doc-a archive 15s",
+    "Chromium checks (smoke, shard 1)\t[1/1] doc-b serve 25s",
+    "Firefox checks (smoke, shard 1)\t[1/2] doc-a serve 20s",
+    "Firefox checks (smoke, shard 1)\t[2/2] doc-a archive 30s",
+    "Firefox checks (smoke, shard 1)\t[1/1] doc-b serve 12s (cached)",
+    "WebKit checks (smoke, shard 1)\t[1/2] doc-a serve 5s",
+    "WebKit checks (smoke, shard 1)\t[2/2] doc-a archive 5s",
+    "WebKit checks (smoke, shard 1)\t[1/1] doc-b serve 40s",
   ].join("\n");
   writeFileSync(join(tmpDir, "sample.log"), sampleLog);
 

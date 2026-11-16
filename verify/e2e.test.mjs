@@ -47,8 +47,8 @@ async function load(file, { javaScriptEnabled = true } = {}) {
   return { page, errors, close: () => browser.close() };
 }
 
-test("packed output executes scripts in order and restores every resource kind", async () => {
-  const { output, bytes, original } = build("doc", document, "packed");
+test("archive output executes scripts in order and restores every resource kind", async () => {
+  const { output, bytes, original } = build("doc", document, "archive");
   assert.ok(bytes < original / 2, `${bytes} vs ${original}`);
   const { page, errors, close } = await load(output);
   try {
@@ -67,7 +67,7 @@ test("packed output executes scripts in order and restores every resource kind",
 });
 
 test("a restored stylesheet link can be disabled through rel like the original", async () => {
-  const { output } = build("toggle", document, "packed");
+  const { output } = build("toggle", document, "archive");
   const { page, close } = await load(output);
   try {
     const color = () => page.evaluate(() => getComputedStyle(document.querySelector(".probe")).color);
@@ -79,8 +79,8 @@ test("a restored stylesheet link can be disabled through rel like the original",
   }
 });
 
-test("scripts level keeps styling and content without JavaScript", async () => {
-  const { output } = build("nojs", document, "scripts");
+test("portable level keeps styling and content without JavaScript", async () => {
+  const { output } = build("nojs", document, "portable");
   const { page, close } = await load(output, { javaScriptEnabled: false });
   try {
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".probe")).color), "rgb(9, 9, 9)");
@@ -94,7 +94,7 @@ test("long-range repetition selects brotli and still restores exact text", async
   const block = Array.from({ length: 60000 }, (_, i) => String.fromCharCode(97 + ((i * i * 7 + (i >> 3)) % 26))).join("");
   const code = `window.big=${JSON.stringify(block)};window.copies=[${Array(8).fill(JSON.stringify(block)).join(",")}].length;`;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><script>${code}</script></head><body><p>x</p></body></html>`;
-  const { output, bytes, original } = build("brotli", html, "packed");
+  const { output, bytes, original } = build("brotli", html, "archive");
   assert.ok(bytes < original / 3, `${bytes} vs ${original}`);
   const { page, errors, close } = await load(output);
   try {
@@ -108,7 +108,7 @@ test("long-range repetition selects brotli and still restores exact text", async
 
 test("a Content-Security-Policy document is left byte-identical", () => {
   const html = `<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'"><script>${filler(200)}</script></head><body></body></html>`;
-  const { output, original } = build("csp", html, "packed");
+  const { output, original } = build("csp", html, "archive");
   assert.equal(statSync(output).size <= original, true);
   assert.ok(!execFileSync("node", ["-e", `process.stdout.write(require("fs").readFileSync(${JSON.stringify(output)},"utf8").includes("$o(")?"packed":"plain")`]).toString().includes("packed"));
 });

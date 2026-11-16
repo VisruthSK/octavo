@@ -27,9 +27,9 @@ fn each_format_has_its_own_default_quality() {
 #[test]
 fn each_mode_has_a_name_and_parses_back() {
     for (mode, name) in [
-        (Mode::Safe, "safe"),
-        (Mode::Scripts, "scripts"),
-        (Mode::Packed, "packed"),
+        (Mode::Serve, "serve"),
+        (Mode::Portable, "portable"),
+        (Mode::Archive, "archive"),
     ] {
         assert_eq!(mode.to_string(), name);
         assert_eq!(name.parse::<Mode>(), Ok(mode));
@@ -94,7 +94,7 @@ fn a_remote_resource_warning_carries_the_url() {
         "<script src=\"https://cdn.example.com/lib.js\"></script>",
         "<p>hi",
     );
-    let out = octavo::optimize(&src, Mode::Safe).expect("supported");
+    let out = octavo::optimize(&src, Mode::Serve).expect("supported");
     let [warning] = out.warnings.as_slice() else {
         panic!("expected one warning");
     };
