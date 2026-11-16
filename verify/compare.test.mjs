@@ -304,6 +304,20 @@ test("missing and extra computed style entries are reported instead of throwing"
   }
 });
 
+test("interned styles retain late element and pseudo-style differences", () => {
+  const state = (styles, styleValues) => ({
+    title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0,
+    scroll: [0, 0], labels: ["P", "P", "P"], rects: [[0, 0, 1, 1], [0, 0, 1, 1], [0, 0, 1, 1]],
+    styles, styleValues, screenshot: Buffer.from("same"),
+  });
+  const a = state([0, 0, 0], ["color:red;::selectioncolor:blue"]);
+  const b = state([1, 1, 0], ["color:red;::selectioncolor:green", "color:red;::selectioncolor:blue"]);
+  const result = compare({ states: [a], errors: [], requests: [] }, { states: [b], errors: [], requests: [] }, false);
+  assert.ok(result.some((issue) => issue.includes("1 elements with different computed style")));
+  const same = state([1, 1, 1], b.styleValues);
+  assert.deepEqual(compare({ states: [a], errors: [], requests: [] }, { states: [same], errors: [], requests: [] }, false), []);
+});
+
 test("the requests comparison ignores order and lazily fetched font files and keeps everything else", () => {
   const state = {
     title: "",

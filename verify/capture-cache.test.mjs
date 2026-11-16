@@ -86,6 +86,14 @@ test("a corrupted cache file is ignored and recaptured", async () => {
   assert.deepEqual(payloadOf(readCapture(key, folder)), payloadOf(outcome.result));
 });
 
+test("interned styles survive a capture cache round trip", () => {
+  const cacheKey = captureKey({ ...parts, scenario: "interned" });
+  const state = { label: "load", screenshot: null, styles: [0, 0, 1], styleValues: ["color:red", "color:blue"] };
+  const result = { states: [state], errors: [], requests: [], checks: {} };
+  writeCapture(cacheKey, result, folder);
+  assert.deepEqual(payloadOf(readCapture(cacheKey, folder)), payloadOf(result));
+});
+
 test("a capture without every screenshot is not cached", async () => {
   const missing = captureKey({ ...parts, scenario: "motion" });
   let calls = 0;

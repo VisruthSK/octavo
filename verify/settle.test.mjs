@@ -53,7 +53,7 @@ test("the capture sees the state after the timeout and the transition", async ()
   try {
     const [state] = (await capture(browser, file, scenariosFor("safe")[0], false)).states;
     assert.match(state.dom, /Settled/);
-    assert.match(state.styles.join(""), /width:150px/);
+    assert.match(state.styleValues.join(""), /width:150px/);
   } finally {
     await browser.close();
   }

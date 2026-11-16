@@ -225,14 +225,18 @@ function compareState(a, b, lossy, stats) {
   }
   const beforeStyles = a.styles ?? [];
   const afterStyles = b.styles ?? [];
+  const styleAt = (state, styles, index) => state.styleValues ? state.styleValues[styles[index]] ?? "" : styles[index] ?? "";
   if (beforeStyles.length !== afterStyles.length) issues.push(`style count ${beforeStyles.length} vs ${afterStyles.length}`);
-  const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, i) => i).filter((i) =>
-    !sameStyle(canonicalStyle(beforeStyles[i] ?? "", a.writingModes?.[i]), canonicalStyle(afterStyles[i] ?? "", b.writingModes?.[i])),
-  );
+  const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, i) => i).filter((i) => {
+    const before = styleAt(a, beforeStyles, i);
+    const after = styleAt(b, afterStyles, i);
+    if (before === after && a.writingModes?.[i] === b.writingModes?.[i]) return false;
+    return !sameStyle(canonicalStyle(before, a.writingModes?.[i]), canonicalStyle(after, b.writingModes?.[i]));
+  });
   if (differing.length) {
     const [first] = differing;
-    const before = beforeStyles[first] ?? "";
-    const after = afterStyles[first] ?? "";
+    const before = styleAt(a, beforeStyles, first);
+    const after = styleAt(b, afterStyles, first);
     const lost = missingFrom(before, after).slice(0, 3);
     const gained = missingFrom(after, before).slice(0, 3);
     issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first] ?? ""}: lost ${JSON.stringify(lost)} gained ${JSON.stringify(gained)}`);

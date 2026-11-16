@@ -207,6 +207,8 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       animation.currentTime = 0;
     }
   }
+  const styleValues = [];
+  const styleIndexes = new Map();
   return {
     animations,
     title: document.title,
@@ -234,9 +236,15 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
           ...(isRoot || isSample ? ["::selection"] : []),
           ...(hasScroll ? ["::-webkit-scrollbar"] : []),
         ];
-        return pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
+        const value = pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
+        if (!styleIndexes.has(value)) {
+          styleIndexes.set(value, styleValues.length);
+          styleValues.push(value);
+        }
+        return styleIndexes.get(value);
       });
     })(),
+    styleValues,
     writingModes: elements.map((el) => getComputedStyle(el).writingMode),
     fonts: (() => {
       const weights = { normal: "400", bold: "700" };
