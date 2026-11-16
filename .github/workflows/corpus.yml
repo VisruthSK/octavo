@@ -165,14 +165,18 @@ jobs:
         include:
           - browser: chromium
             label: Chromium
+            pages: 4
           - browser: firefox
             label: Firefox
+            pages: 4
           - browser: webkit
             label: WebKit
+            pages: 4
     env:
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
       OCTAVO_BROWSER: ${{ matrix.browser }}
+      OCTAVO_PAGES: ${{ matrix.pages }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -286,6 +290,7 @@ jobs:
     env:
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
+      OCTAVO_PAGES: 4
     steps:
       - uses: actions/checkout@v7
         with:
