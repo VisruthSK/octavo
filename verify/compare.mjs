@@ -240,7 +240,8 @@ function compareState(a, b, lossy, stats) {
   }
   if (!a.screenshot || !b.screenshot) {
     const missing = [!a.screenshot && "original", !b.screenshot && "optimized"].filter(Boolean);
-    issues.push(`screenshot missing in ${missing.join(" and ")} capture`);
+    const details = [!a.screenshot && a.screenshotError && `original: ${a.screenshotError}`, !b.screenshot && b.screenshotError && `optimized: ${b.screenshotError}`].filter(Boolean);
+    issues.push(`screenshot missing in ${missing.join(" and ")} capture${details.length ? ` (${details.join("; ")})` : ""}`);
   } else {
     issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy, stats));
   }

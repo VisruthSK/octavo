@@ -1,3 +1,4 @@
+import { captureScreenshot } from "./capture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PNG } from "pngjs";
@@ -181,6 +182,33 @@ test("a missing screenshot is an issue when either or both captures lack one", (
   }
 });
 
+test("screenshot errors report both failed capture attempts", async () => {
+  let evaluations = 0;
+  const page = {
+    evaluate: async () => {
+      evaluations++;
+      if (evaluations === 1) return { width: 100, height: 100 };
+      if (evaluations === 2 || evaluations === 4) return [0, 0];
+    },
+    screenshot: async (options) => {
+      throw new Error(options.fullPage ? "full page failed" : "tile failed");
+    },
+  };
+  await assert.rejects(captureScreenshot(page, { width: 100, height: 100 }), /full-page screenshot: full page failed; tiled screenshot: tile failed/);
+});
+
+test("missing screenshot reports its capture error", () => {
+  const state = (screenshot, screenshotError) => ({
+    title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0,
+    scroll: [0, 0], labels: [], rects: [], styles: [], screenshot, screenshotError,
+  });
+  const issues = compare(
+    { states: [state(Buffer.from("png"))], errors: [], requests: [] },
+    { states: [state(null, "tile failed")], errors: [], requests: [] },
+    false,
+  );
+  assert.ok(issues.some((issue) => issue.includes("screenshot missing in optimized capture (optimized: tile failed)")));
+});
 test("matching screenshot limits pass and one-sided or different limits fail", () => {
   const state = (screenshot) => ({
     title: "",
