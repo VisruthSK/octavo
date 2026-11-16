@@ -63,7 +63,7 @@ test("the capture sees the state after the timeout and the transition", async ()
 test("a capture with JavaScript disabled produces a stable digest", async () => {
   const browser = await launch();
   try {
-    const scenario = scenariosFor("safe").find(({ name }) => name === "no-js");
+    const scenario = scenariosFor("serve").find(({ name }) => name === "no-js");
     const result = await capture(browser, file, scenario, false, { timeoutMs: 10000 });
     assert.match(result.states[0].digest, /^[a-f0-9]{64}$/);
     assert.match(result.states[0].dom, /Title/);
@@ -181,7 +181,7 @@ setTimeout(() => {
   );
   const browser = await launch();
   try {
-    const [state] = (await capture(browser, delayedFile, scenariosFor("safe")[0], false)).states;
+    const [state] = (await capture(browser, delayedFile, scenariosFor("serve")[0], false)).states;
     assert.match(state.dom, /data-status="ready"/);
     assert.match(state.dom, /Settled Attribute/);
   } finally {
