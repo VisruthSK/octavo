@@ -45,7 +45,7 @@ export const check = (row, expect, result, output, input) => {
     problems.push(`expected the ${expect.error} error, got: ${result.stderr.trim().slice(0, 120)}`);
   }
   if (outcome !== "rejects" && output.length > input.length) problems.push(`output grew from ${input.length} to ${output.length} bytes`);
-  if (row.level === "safe") {
+  if (row.level === "serve") {
     for (const text of expect.retains ?? []) if (!output.includes(text)) problems.push(`lost required text: ${text.slice(0, 60)}`);
     for (const text of expect.removes ?? []) if (output.includes(text)) problems.push(`kept text that should go: ${text.slice(0, 60)}`);
   }
@@ -105,7 +105,7 @@ export function formatReport(results, options = {}) {
   const {
     tier = "smoke",
     selectedCount = results.length,
-    levels = ["safe", "packed"],
+    levels = ["serve", "archive"],
     browser = false,
     engineNoticeText = "",
     jobs = 1,
@@ -234,7 +234,7 @@ export async function runCorpus() {
   const deadlineAt = deadlineMinutes ? Date.now() + deadlineMinutes * 60_000 : Infinity;
   const deadlineReached = () => Date.now() >= deadlineAt;
   const revalidatePercent = Number(flag("revalidate", process.env.CI && tier === "full" ? "5" : "0"));
-  const levels = flag("levels", tier === "full" ? "safe,scripts,packed" : "safe,packed").split(",");
+  const levels = flag("levels", tier === "full" ? "serve,portable,archive" : "serve,archive").split(",");
   const filter = new RegExp(flag("filter", "."));
   const cores = cpus().length;
   const jobs = Number(flag("jobs", Math.max(1, Math.floor(cores / 2))));
@@ -496,7 +496,7 @@ export async function runCorpus() {
                 plan.key,
                 true,
                 async () => report.every(({ scenario, issues }) =>
-                  plan.level === "packed" && scenario === "no-js"
+                  plan.level === "archive" && scenario === "no-js"
                     ? !issues.some((issue) => issue.startsWith("check incomplete:") || issue.includes("screenshot missing"))
                     : !issues.length,
                 ),
@@ -509,7 +509,7 @@ export async function runCorpus() {
           const issues = [];
           for (const { scenario, issues: found } of report) {
             for (const issue of found) {
-              if (entry.level === "packed" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
+              if (entry.level === "archive" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
               issues.push(`${engineTag}${scenario}: ${issue}`);
             }
           }

@@ -17,4 +17,4 @@ Octavo needs self-contained pages, so `embed-resources: true` is required. Each 
 
 | Environment variable | Values | Default |
 |---|---|---|
-| `OCTAVO_LEVEL` | `safe`, `scripts` or `packed` | `packed` |
+| `OCTAVO_LEVEL` | `serve`, `portable` or `archive` | `archive` |

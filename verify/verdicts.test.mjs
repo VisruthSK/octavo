@@ -11,7 +11,7 @@ const key = (overrides = {}) =>
   verdictKey({
     original: "a".repeat(64),
     optimized: "b".repeat(64),
-    level: "safe",
+    level: "serve",
     verifier: "c".repeat(64),
     browser: "Browser A 140.0.0.1",
     scenarios: "d".repeat(64),
@@ -24,7 +24,7 @@ test("the key depends on the original, the optimized file, the level, the verifi
   assert.equal(base, key());
   assert.notEqual(base, key({ original: "d".repeat(64) }));
   assert.notEqual(base, key({ optimized: "e".repeat(64) }));
-  assert.notEqual(base, key({ level: "packed" }));
+  assert.notEqual(base, key({ level: "archive" }));
   assert.notEqual(base, key({ verifier: "f".repeat(64) }));
   assert.notEqual(base, key({ browser: "Browser A 141.0.0.1" }));
   assert.notEqual(base, key({ scenarios: "e".repeat(64) }));
@@ -34,11 +34,11 @@ test("the key depends on the original, the optimized file, the level, the verifi
 test("a verdict is stored and read back", () => {
   const name = key();
   assert.equal(readVerdict(name, folder), null);
-  writeVerdict(name, { level: "safe" }, folder);
+  writeVerdict(name, { level: "serve" }, folder);
   const verdict = readVerdict(name, folder);
   assert.equal(verdict.key, name);
-  assert.equal(verdict.level, "safe");
-  assert.equal(readVerdict(key({ level: "packed" }), folder), null);
+  assert.equal(verdict.level, "serve");
+  assert.equal(readVerdict(key({ level: "archive" }), folder), null);
 });
 
 test("the verifier hash covers the verifier sources", () => {
@@ -69,7 +69,7 @@ test("revalidation selection is deterministic from the key", () => {
 
 test("a cached verdict mismatch deletes the stale entry and fails", async () => {
   const name = key();
-  writeVerdict(name, { level: "safe" }, folder);
+  writeVerdict(name, { level: "serve" }, folder);
   await assert.rejects(revalidateVerdict(name, true, async () => false, folder), /disagrees/);
   assert.equal(readVerdict(name, folder), null);
 });

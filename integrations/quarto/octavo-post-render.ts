@@ -1,5 +1,5 @@
 const files = (Deno.env.get("QUARTO_PROJECT_OUTPUT_FILES") ?? "").split(/\r?\n/).filter((f) => f.endsWith(".html"));
-const level = Deno.env.get("OCTAVO_LEVEL") ?? "packed";
+const level = Deno.env.get("OCTAVO_LEVEL") ?? "archive";
 
 for (const file of files) {
   const candidate = `${file}.octavo`;

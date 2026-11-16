@@ -4,7 +4,7 @@ use proptest::{prelude::*, test_runner::FileFailurePersistence};
 use regex::Regex;
 use std::sync::LazyLock;
 
-const MODES: [Mode; 3] = [Mode::Safe, Mode::Scripts, Mode::Packed];
+const MODES: [Mode; 3] = [Mode::Serve, Mode::Portable, Mode::Archive];
 
 static TARGETS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?is)<script\b.*?</script\s*>|<style\b.*?</style\s*>|<svg\b.*?</svg\s*>|<link\b[^>]*>|<img\b[^>]*>")
@@ -61,7 +61,7 @@ proptest! {
 
     #[test]
     fn everything_outside_the_targeted_elements_is_left_exactly_as_it_was(src in document()) {
-        let out = optimize(&src, Mode::Safe).expect("supported").html;
+        let out = optimize(&src, Mode::Serve).expect("supported").html;
         prop_assert_eq!(outside_targets(&out), outside_targets(&src));
     }
 
@@ -138,7 +138,7 @@ proptest! {
             }
         }
         let head = format!("<style>{rules}</style><script>{script}</script>");
-        let out = optimize(&page(&head, &markup), Mode::Safe).expect("supported").html;
+        let out = optimize(&page(&head, &markup), Mode::Serve).expect("supported").html;
         for (i, usage) in uses.iter().enumerate() {
             let (name, kept) = match usage {
                 Use::Nowhere => (format!(".gone{i}{{"), false),

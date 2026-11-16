@@ -16,20 +16,20 @@ export const SCENARIOS = {
 };
 
 export const SCENARIO_SETS = {
-  safe: {
+  serve: {
     scenarios: ["desktop-light", "desktop-dark", "mobile", "tablet", "motion", "no-js", "print"],
     sweep: ["desktop-light", "desktop-dark", "mobile", "tablet"],
   },
-  scripts: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
-  packed: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
+  portable: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
+  archive: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
 };
 
 export const scenariosFor = (level) => {
-  const set = SCENARIO_SETS[level] ?? SCENARIO_SETS.safe;
+  const set = SCENARIO_SETS[level] ?? SCENARIO_SETS.serve;
   return set.scenarios.map((name) => ({ ...SCENARIOS[name], sweep: set.sweep.includes(name) }));
 };
 
-export const scenarios = scenariosFor("safe");
+export const scenarios = scenariosFor("serve");
 
 const INTERACTIVE = "a[href], button, input, select, summary, [role=tab], [tabindex]";
 const NO_MOTION = "*,*::before,*::after{transition:none!important;animation:none!important}";
