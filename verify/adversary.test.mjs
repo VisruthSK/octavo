@@ -5,16 +5,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeBrowser, verify } from "./verify.mjs";
 import { engineName } from "./engines/index.mjs";
+import { calibrationFor } from "./adversary/calibration.mjs";
 import { baseHtml, mutations, equivalentPairs } from "./adversary/mutations.mjs";
 
 after(closeBrowser);
 
 const manifest = JSON.parse(readFileSync(new URL("./adversary/manifest.json", import.meta.url), "utf8"));
-// Preserve the existing baseline for every engine until each has been calibrated.
-const baseline = manifest[engineName({})];
-const misses = new Set(baseline.missed);
-const falseAlarms = new Set(baseline.falseAlarms);
-const scenarios = baseline.scenarios;
+// Every engine runs every check. An engine without its own measured section shares the
+// baseline recorded for the default engine, so coverage does not depend on the active engine.
+const calibration = calibrationFor(manifest, engineName(), engineName({}));
+const misses = new Set(calibration.missed);
+const falseAlarms = new Set(calibration.falseAlarms);
+const scenarios = calibration.scenarios;
 const directory = mkdtempSync(join(tmpdir(), "octavo-adversary-test-"));
 
 const write = (name, html) => {
