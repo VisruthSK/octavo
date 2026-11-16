@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
@@ -247,7 +248,7 @@ const emptyChecks = (elements) => ({
 const QUIET = 150;
 const LIMIT = 3000;
 
-const probe = () => {
+const probe = ({ javaScriptEnabled = true } = {}) => {
   const state = globalThis[Symbol.for("octavo.timers")];
   const now = Date.now();
   let due = 0;
@@ -274,6 +275,16 @@ const probe = () => {
   const hub = window.MathJax?.Hub;
   const mathjax =
     Boolean(hub?.queue) && (Boolean(hub.queue.running) || Boolean(hub.queue.pending));
+  let revealReady = false;
+  try {
+    revealReady = typeof window.Reveal?.isReady === "function" ? Boolean(window.Reveal.isReady()) : false;
+  } catch {
+    revealReady = false;
+  }
+  const hasRevealScript = javaScriptEnabled && [...document.querySelectorAll("script")].some((script) =>
+    /reveal/i.test(script.src || "") || /reveal/i.test(script.textContent || "")
+  );
+  const reveal = Boolean(element) && javaScriptEnabled && (typeof window.Reveal !== "undefined" || hasRevealScript);
   const inspectable = (doc) => {
     const list = [];
     try {
@@ -309,7 +320,8 @@ const probe = () => {
     iframes,
     transitioning,
     indices,
-    reveal: typeof window.Reveal?.isReady === "function",
+    reveal,
+    revealReady,
     mathjax,
     mathjax3: Boolean(window.MathJax?.startup?.promise),
   };
@@ -402,9 +414,12 @@ export function trackNetwork(page, requests = []) {
   page.on("requestfailed", finished);
   return network;
 }
-export async function settle(page, { quiet = QUIET, limit = LIMIT, network, longLived } = {}) {
+export async function settle(page, { quiet = QUIET, limit = LIMIT, network, longLived, javaScriptEnabled, scripted } = {}) {
+  const enabled = javaScriptEnabled ?? scripted ?? true;
   const deadline = Date.now() + limit;
-  await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
+  if (enabled) {
+    await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
+  }
   await page.evaluate(watch).catch(() => {});
   const isNetworkQuiet = () => {
     if (!network) return true;
@@ -425,14 +440,13 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network, long
         await page.waitForTimeout(50);
       }
     }
-    const state = await page.evaluate(probe).catch(() => null);
+    const state = await page.evaluate(probe, { javaScriptEnabled: enabled }).catch(() => null);
     if (!state) {
       await page.waitForTimeout(50);
       continue;
     }
     if (state.reveal) {
-      const ready = await page.evaluate(() => Promise.resolve(window.Reveal.isReady())).catch(() => false);
-      if (ready !== true || state.transitioning || state.indices !== previous) {
+      if (state.revealReady !== true || state.transitioning || state.indices !== previous) {
         previous = state.indices;
         await page.waitForTimeout(100);
         continue;
@@ -504,7 +518,7 @@ const NAVIGATION = 4;
 const ALWAYS_OBSERVED = new Set([HOVER]);
 
 async function digestOf(page, forms = [], linked = false) {
-  return page.evaluate(async ({ forms, linked }) => {
+  const text = await page.evaluate(({ forms, linked }) => {
     const clone = document.documentElement.cloneNode(true);
     clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
     for (const node of clone.querySelectorAll(linked ? "[src], [data-src], [srcset]" : '[src^="data:"], [data-src^="data:"]')) {
@@ -513,10 +527,9 @@ async function digestOf(page, forms = [], linked = false) {
       if (linked) node.removeAttribute("srcset");
     }
     const html = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
-    const text = forms.reduce((current, form) => current.split(form).join("{site}"), html);
-    const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return forms.reduce((current, form) => current.split(form).join("{site}"), html);
   }, { forms, linked });
+  return createHash("sha256").update(text).digest("hex");
 }
 
 function rootForms(root) {
@@ -652,7 +665,15 @@ export async function capture(
     const waits = [];
     const wait = async (name, options = {}) => {
       phase = `settle ${name}`;
-      waits.push(await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: (options.limit ?? LIMIT) * pace, network, longLived: knownLongLived }));
+      waits.push(
+        await engine.settle(page, settle, {
+          quiet: (options.quiet ?? QUIET) * pace,
+          limit: (options.limit ?? LIMIT) * pace,
+          network,
+          longLived: knownLongLived,
+          javaScriptEnabled: options.javaScriptEnabled ?? scripted,
+        }),
+      );
     };
     phase = "goto";
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
@@ -664,8 +685,20 @@ export async function capture(
     phase = "fonts ready";
     if (scripted) await page.evaluate(() => document.fonts.ready);
     else await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 3000 }).catch(() => {});
+    await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: "instant" })).catch(() => {});
+    await frames(page);
     await wait("initial page");
     for (const request of openRequests) knownLongLived.add(request);
+
+    let previousDigest = await digestOf(page, forms, linked);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await page.waitForTimeout(50);
+      await frames(page);
+      const currentDigest = await digestOf(page, forms, linked);
+      if (currentDigest === previousDigest) break;
+      previousDigest = currentDigest;
+      await wait(`stability ${attempt}`);
+    }
 
     const states = [];
     const record = async (label, extra = {}) => {
@@ -679,21 +712,20 @@ export async function capture(
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...extra });
     };
-    await wait("before forced states");
+    await record("load", { digest: previousDigest });
     phase = "forcedStates element count";
     const forced = scripted && !scenario.motion
       ? await engine.forcedStates(page, INTERACTIVE, observe, (detail) => { phase = detail; })
       : emptyChecks(0);
     phase = "accessibility snapshot";
     const accessibility = await settledAccessibilityTree(page);
-    await wait("before initial capture");
-    await record("load", { forced: forced.states, accessibility });
+    states[0].forced = forced.states;
+    states[0].accessibility = accessibility;
     const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
     if (interact && scripted && scenario.sweep) {
       phase = "reveal slide number lookup";
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
-      let previous = await digestOf(page, forms, linked);
-      states[0].digest = previous;
+      let previous = previousDigest;
       for (const [index, interact] of interactions.entries()) {
         phase = `interaction sweep step ${index} slide number lookup`;
         const slideNumber = await page.evaluate(() => {
