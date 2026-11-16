@@ -15,7 +15,7 @@ test("computeWireSizes selects q11 when within time budget", () => {
     {
       id: "doc-1",
       category: "cat1",
-      level: "safe",
+      level: "serve",
       inBytes: 1000,
       outBytes: 500,
       ms: 100,
@@ -35,7 +35,7 @@ test("computeWireSizes falls back to q9 when q11 exceeds time budget", () => {
     {
       id: "doc-1",
       category: "cat1",
-      level: "safe",
+      level: "serve",
       inBytes: 10000,
       outBytes: 5000,
       ms: 1,
@@ -55,7 +55,7 @@ test("generateReport includes wire size columns for q11", () => {
     {
       id: "doc-1",
       category: "cat1",
-      level: "safe",
+      level: "serve",
       inBytes: 2048,
       outBytes: 1024,
       ms: 50,
@@ -68,10 +68,10 @@ test("generateReport includes wire size columns for q11", () => {
       problems: [],
     },
   ];
-  const text = generateReport(results, { brotliQuality: 11, levels: ["safe"] });
+  const text = generateReport(results, { brotliQuality: 11, levels: ["serve"] });
   assert.ok(text.includes("| Level | Docs | Input MiB | Output MiB | Brotli q11 MiB | Gzip 9 MiB | Output as % of input | Octavo seconds | MiB/s |"));
   assert.ok(text.includes("| Category / level | Docs | Input KiB | Output KiB | Brotli q11 KiB | Gzip 9 KiB | Median ratio | p50 ms | p95 ms | Naive KiB | Brotli(original) KiB |"));
-  assert.ok(text.includes("| cat1 / safe | 1 | 2.0 | 1.0 | 0.4 | 0.5 | 2.00 | 50 | 50 | 1.8 | 0.6 |"));
+  assert.ok(text.includes("| cat1 / serve | 1 | 2.0 | 1.0 | 0.4 | 0.5 | 2.00 | 50 | 50 | 1.8 | 0.6 |"));
 });
 
 test("generateReport includes wire size columns for q9", () => {
@@ -79,7 +79,7 @@ test("generateReport includes wire size columns for q9", () => {
     {
       id: "doc-1",
       category: "cat1",
-      level: "safe",
+      level: "serve",
       inBytes: 2048,
       outBytes: 1024,
       ms: 50,
@@ -92,8 +92,8 @@ test("generateReport includes wire size columns for q9", () => {
       problems: [],
     },
   ];
-  const text = generateReport(results, { brotliQuality: 9, levels: ["safe"] });
+  const text = generateReport(results, { brotliQuality: 9, levels: ["serve"] });
   assert.ok(text.includes("| Level | Docs | Input MiB | Output MiB | Brotli q9 MiB | Gzip 9 MiB | Output as % of input | Octavo seconds | MiB/s |"));
   assert.ok(text.includes("| Category / level | Docs | Input KiB | Output KiB | Brotli q9 KiB | Gzip 9 KiB | Median ratio | p50 ms | p95 ms | Naive KiB | Brotli(original) KiB |"));
-  assert.ok(text.includes("| cat1 / safe | 1 | 2.0 | 1.0 | 0.4 | 0.5 | 2.00 | 50 | 50 | 1.8 | 0.6 |"));
+  assert.ok(text.includes("| cat1 / serve | 1 | 2.0 | 1.0 | 0.4 | 0.5 | 2.00 | 50 | 50 | 1.8 | 0.6 |"));
 });

@@ -133,7 +133,7 @@ fn a_small_glyf_table_is_encoded_with_the_transform() {
     let html = font_page_with(font);
     let out = simplify(&html, whole_font())
         .expect("supported")
-        .pack(Mode::Safe)
+        .pack(Mode::Serve)
         .html;
     let woff2 = woff2_from(&out);
     assert_eq!(glyf_transform_version(&woff2), 0);
@@ -189,7 +189,7 @@ fn a_font_with_a_prep_table_is_kept_whole_when_subsetting_is_requested() {
     let html = font_page_with(&font);
     let out = simplify(&html, Options::default())
         .expect("supported")
-        .pack(Mode::Safe)
+        .pack(Mode::Serve)
         .html;
     let woff2 = woff2_from(&out);
     let sfnt = wuff::decompress_woff2(&woff2).expect("valid sfnt");
@@ -207,7 +207,7 @@ fn a_glyf_table_beyond_the_short_loca_range_is_stored_without_the_transform() {
     let html = font_page_with(&font);
     let out = simplify(&html, whole_font())
         .expect("supported")
-        .pack(Mode::Safe)
+        .pack(Mode::Serve)
         .html;
     let woff2 = woff2_from(&out);
     assert_eq!(glyf_transform_version(&woff2), 3);

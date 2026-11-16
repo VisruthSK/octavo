@@ -165,7 +165,7 @@ test("a linked verification ignores the capture cache", async () => {
   try {
     const linked = join(folder, "linked.html");
     writeFileSync(linked, html);
-    const { timing } = await verifyLevels(linked, [{ level: "scripts", path: linked, only: ["desktop-light"] }], {
+    const { timing } = await verifyLevels(linked, [{ level: "portable", path: linked, only: ["desktop-light"] }], {
       captureCache: true,
       linked: true,
     });

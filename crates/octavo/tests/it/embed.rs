@@ -136,7 +136,7 @@ fn an_embedded_page_can_be_optimized() {
         &page(r#"<link rel="stylesheet" href="style.css"><p class="used">x</p>"#),
         &mut files,
     );
-    let out = optimize(&embedded.html, Mode::Safe).expect("self-contained after embedding");
+    let out = optimize(&embedded.html, Mode::Serve).expect("self-contained after embedding");
     assert!(
         out.html.contains(".used{color:red}") && !out.html.contains("unused"),
         "{}",

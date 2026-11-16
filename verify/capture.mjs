@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
-import { isLinkedFileLoadFailure } from "./linked-artifacts.mjs";
+import { isLinkedFileLoadFailure, isMissingFile } from "./linked-artifacts.mjs";
 import { canonicalFontFamily } from "./styles.mjs";
 
 export const SCENARIOS = {
@@ -16,20 +17,20 @@ export const SCENARIOS = {
 };
 
 export const SCENARIO_SETS = {
-  safe: {
+  serve: {
     scenarios: ["desktop-light", "desktop-dark", "mobile", "tablet", "motion", "no-js", "print"],
     sweep: ["desktop-light", "desktop-dark", "mobile", "tablet"],
   },
-  scripts: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
-  packed: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
+  portable: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
+  archive: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
 };
 
 export const scenariosFor = (level) => {
-  const set = SCENARIO_SETS[level] ?? SCENARIO_SETS.safe;
+  const set = SCENARIO_SETS[level] ?? SCENARIO_SETS.serve;
   return set.scenarios.map((name) => ({ ...SCENARIOS[name], sweep: set.sweep.includes(name) }));
 };
 
-export const scenarios = scenariosFor("safe");
+export const scenarios = scenariosFor("serve");
 
 const INTERACTIVE = "a[href], button, input, select, summary, [role=tab], [tabindex]";
 const NO_MOTION = "*,*::before,*::after{transition:none!important;animation:none!important}";
@@ -270,7 +271,7 @@ const emptyChecks = (elements) => ({
 const QUIET = 150;
 const LIMIT = 3000;
 
-const probe = () => {
+const probe = ({ javaScriptEnabled = true } = {}) => {
   const state = globalThis[Symbol.for("octavo.timers")];
   const now = Date.now();
   let due = 0;
@@ -297,6 +298,16 @@ const probe = () => {
   const hub = window.MathJax?.Hub;
   const mathjax =
     Boolean(hub?.queue) && (Boolean(hub.queue.running) || Boolean(hub.queue.pending));
+  let revealReady = false;
+  try {
+    revealReady = typeof window.Reveal?.isReady === "function" ? Boolean(window.Reveal.isReady()) : false;
+  } catch {
+    revealReady = false;
+  }
+  const hasRevealScript = javaScriptEnabled && [...document.querySelectorAll("script")].some((script) =>
+    /reveal/i.test(script.src || "") || /reveal/i.test(script.textContent || "")
+  );
+  const reveal = Boolean(element) && javaScriptEnabled && (typeof window.Reveal !== "undefined" || hasRevealScript);
   const inspectable = (doc) => {
     const list = [];
     try {
@@ -332,7 +343,8 @@ const probe = () => {
     iframes,
     transitioning,
     indices,
-    reveal: typeof window.Reveal?.isReady === "function",
+    reveal,
+    revealReady,
     mathjax,
     mathjax3: Boolean(window.MathJax?.startup?.promise),
   };
@@ -405,26 +417,59 @@ const frames = async (page) => {
   ]);
 };
 
-export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {}) {
+export function trackNetwork(page, requests = []) {
+  const openRequests = new Set();
+  const network = { pending: 0, count: 0, last: 0, openRequests };
+  page.on("request", (request) => {
+    if (/^(data|blob|about):/.test(request.url())) return;
+    network.pending += 1;
+    network.count += 1;
+    network.last = Date.now();
+    openRequests.add(request);
+    if (!/^file:/.test(request.url())) requests.push(request.url());
+  });
+  const finished = (request) => {
+    if (!openRequests.delete(request)) return;
+    network.pending -= 1;
+    network.last = Date.now();
+  };
+  page.on("requestfinished", finished);
+  page.on("requestfailed", finished);
+  return network;
+}
+export async function settle(page, { quiet = QUIET, limit = LIMIT, network, longLived, javaScriptEnabled, scripted } = {}) {
+  const enabled = javaScriptEnabled ?? scripted ?? true;
   const deadline = Date.now() + limit;
-  await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
+  if (enabled) {
+    await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
+  }
   await page.evaluate(watch).catch(() => {});
+  const isNetworkQuiet = () => {
+    if (!network) return true;
+    if (Date.now() - network.last < quiet) return false;
+    if (!network.pending) return true;
+    if (!network.openRequests) return false;
+    if (!network.openRequests.size) return false;
+    for (const request of network.openRequests) {
+      if (!longLived?.has(request)) return false;
+    }
+    return true;
+  };
   let previous = null;
   while (Date.now() < deadline) {
     if (network) {
       while (Date.now() < deadline) {
-        if (!network.pending && Date.now() - network.last >= quiet) break;
+        if (isNetworkQuiet()) break;
         await page.waitForTimeout(50);
       }
     }
-    const state = await page.evaluate(probe).catch(() => null);
+    const state = await page.evaluate(probe, { javaScriptEnabled: enabled }).catch(() => null);
     if (!state) {
       await page.waitForTimeout(50);
       continue;
     }
     if (state.reveal) {
-      const ready = await page.evaluate(() => Promise.resolve(window.Reveal.isReady())).catch(() => false);
-      if (ready !== true || state.transitioning || state.indices !== previous) {
+      if (state.revealReady !== true || state.transitioning || state.indices !== previous) {
         previous = state.indices;
         await page.waitForTimeout(100);
         continue;
@@ -471,7 +516,7 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {
     }
     await frames(page);
     const settled = await page.evaluate(() => globalThis[Symbol.for("octavo.quiet")]?.changed ?? Date.now()).catch(() => 0);
-    if (network && (network.pending || Date.now() - network.last < quiet)) continue;
+    if (!isNetworkQuiet()) continue;
     if (Date.now() - settled >= quiet) return true;
   }
   return false;
@@ -496,7 +541,7 @@ const NAVIGATION = 4;
 const ALWAYS_OBSERVED = new Set([HOVER]);
 
 async function digestOf(page, forms = [], linked = false) {
-  return page.evaluate(async ({ forms, linked }) => {
+  const text = await page.evaluate(({ forms, linked }) => {
     const clone = document.documentElement.cloneNode(true);
     clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
     for (const node of clone.querySelectorAll(linked ? "[src], [data-src], [srcset]" : '[src^="data:"], [data-src^="data:"]')) {
@@ -505,10 +550,9 @@ async function digestOf(page, forms = [], linked = false) {
       if (linked) node.removeAttribute("srcset");
     }
     const html = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
-    const text = forms.reduce((current, form) => current.split(form).join("{site}"), html);
-    const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return forms.reduce((current, form) => current.split(form).join("{site}"), html);
   }, { forms, linked });
+  return createHash("sha256").update(text).digest("hex");
 }
 
 function rootForms(root) {
@@ -563,16 +607,19 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
   };
 }
 
-async function captureScreenshot(page, viewport) {
+export async function captureScreenshot(page, viewport) {
   const pageSize = await page.evaluate(() => ({
     width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
     height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
   }));
   const width = Math.max(viewport.width, pageSize.width);
   const height = Math.max(viewport.height, pageSize.height);
+  let fullPageError;
   try {
     return await page.screenshot({ fullPage: true, animations: "disabled", timeout: SCREENSHOT_TIMEOUT_MS });
-  } catch {}
+  } catch (error) {
+    fullPageError = error.message;
+  }
   if (width * height > MAX_SCREENSHOT_PIXELS) {
     return { kind: "limit", width, height, limit: MAX_SCREENSHOT_PIXELS };
   }
@@ -599,6 +646,8 @@ async function captureScreenshot(page, viewport) {
         tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
       }
     }
+  } catch (error) {
+    throw new Error(`full-page screenshot: ${fullPageError}; tiled screenshot: ${error.message}`);
   } finally {
     await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), originalScroll);
   }
@@ -610,7 +659,7 @@ export async function capture(
   file,
   scenario,
   lossy,
-  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS } = {},
+  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS, longLived } = {},
 ) {
   const pace = patient ? PATIENCE : 1;
   const forms = rootForms(root);
@@ -632,30 +681,32 @@ export async function capture(
     const page = await context.newPage();
     const errors = [];
     const requests = [];
-    const network = { pending: 0, count: 0, last: 0 };
+    const network = trackNetwork(page, requests);
+    const { openRequests } = network;
+    let missingFiles = linked ? 0 : undefined;
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
     page.on("console", (message) => {
       if (message.type() !== "error") return;
       if (linkedOriginal && isLinkedFileLoadFailure(message.text(), message.location())) return;
+      if (linked && isMissingFile(message.text(), message.location())) {
+        missingFiles += 1;
+        return;
+      }
       errors.push(engine.normalizeError(message.text()));
     });
-    page.on("request", (request) => {
-      if (/^(data|blob|about):/.test(request.url())) return;
-      network.pending += 1;
-      network.count += 1;
-      network.last = Date.now();
-      if (!/^file:/.test(request.url())) requests.push(request.url());
-    });
-    const finished = () => {
-      network.pending = Math.max(0, network.pending - 1);
-      network.last = Date.now();
-    };
-    page.on("requestfinished", finished);
-    page.on("requestfailed", finished);
+    const knownLongLived = new Set(longLived ?? []);
     const waits = [];
     const wait = async (name, options = {}) => {
       phase = `settle ${name}`;
-      waits.push(await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: (options.limit ?? LIMIT) * pace, network }));
+      waits.push(
+        await engine.settle(page, settle, {
+          quiet: (options.quiet ?? QUIET) * pace,
+          limit: (options.limit ?? LIMIT) * pace,
+          network,
+          longLived: knownLongLived,
+          javaScriptEnabled: options.javaScriptEnabled ?? scripted,
+        }),
+      );
     };
     phase = "goto";
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
@@ -667,29 +718,46 @@ export async function capture(
     phase = "fonts ready";
     if (scripted) await page.evaluate(() => document.fonts.ready);
     else await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 3000 }).catch(() => {});
+    await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: "instant" })).catch(() => {});
+    await frames(page);
     await wait("initial page");
+    for (const request of openRequests) knownLongLived.add(request);
+
+    let previousDigest = await digestOf(page, forms, linked);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await page.waitForTimeout(50);
+      await frames(page);
+      const currentDigest = await digestOf(page, forms, linked);
+      if (currentDigest === previousDigest) break;
+      previousDigest = currentDigest;
+      await wait(`stability ${attempt}`);
+    }
 
     const states = [];
     const record = async (label, extra = {}) => {
       phase = `screenshot ${label}`;
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
-      const screenshot = await captureScreenshot(page, scenario.viewport).catch(() => null);
+      let screenshotError;
+      const screenshot = await captureScreenshot(page, scenario.viewport).catch((error) => {
+        screenshotError = error.message;
+        return null;
+      });
       phase = `image fingerprints ${label}`;
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       phase = `page observation ${label}`;
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
-      states.push({ label, ...observation, screenshot, ...extra });
+      states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
     };
-    await wait("before forced states");
+    await record("load", { digest: previousDigest });
     phase = "forcedStates element count";
     const forced = scripted && !scenario.motion
       ? await engine.forcedStates(page, INTERACTIVE, observe, (detail) => { phase = detail; })
       : emptyChecks(0);
     phase = "accessibility snapshot";
     const accessibility = await settledAccessibilityTree(page);
-    await wait("before initial capture");
-    await record("load", { forced: forced.states, accessibility });
+    states[0].forced = forced.states;
+    states[0].accessibility = accessibility;
     const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
     if (scripted && scenario.name === "desktop-light") {
       phase = "resize viewport";
@@ -739,8 +807,7 @@ export async function capture(
     if (interact && scripted && scenario.sweep) {
       phase = "reveal slide number lookup";
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
-      let previous = await digestOf(page, forms, linked);
-      states[0].digest = previous;
+      let previous = previousDigest;
       for (const [index, interact] of interactions.entries()) {
         phase = `interaction sweep step ${index} slide number lookup`;
         const slideNumber = await page.evaluate(() => {
@@ -769,10 +836,12 @@ export async function capture(
       states,
       errors,
       requests,
+      openRequests: new Set([...openRequests].map((request) => request.url())),
       base,
       checks: {
         ...forced.checks,
         settled: waits.every((outcome) => outcome !== false),
+        ...(linked ? { missingFiles } : {}),
         screenshots: {
           taken: recorded.filter((state) => state.screenshot).length,
           total: recorded.length,

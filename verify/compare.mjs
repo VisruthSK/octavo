@@ -2,6 +2,7 @@ import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import { engine } from "./engines/index.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
+import { isMissingFile } from "./linked-artifacts.mjs";
 import { canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 import { validStyles } from "./style-storage.mjs";
 
@@ -246,7 +247,8 @@ function compareState(a, b, lossy, stats) {
   }
   if (!a.screenshot || !b.screenshot) {
     const missing = [!a.screenshot && "original", !b.screenshot && "optimized"].filter(Boolean);
-    issues.push(`screenshot missing in ${missing.join(" and ")} capture`);
+    const details = [!a.screenshot && a.screenshotError && `original: ${a.screenshotError}`, !b.screenshot && b.screenshotError && `optimized: ${b.screenshotError}`].filter(Boolean);
+    issues.push(`screenshot missing in ${missing.join(" and ")} capture${details.length ? ` (${details.join("; ")})` : ""}`);
   } else {
     issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy, stats));
   }
@@ -257,8 +259,18 @@ export function compare(before, after, lossy, stats) {
   if (before.crashed || after.crashed) return [`crashed: original=${before.crashed ?? "no"} optimized=${after.crashed ?? "no"}`];
   const issues = [];
   if (!before.states.length) issues.push("original produced no states");
-  if (JSON.stringify(before.errors) !== JSON.stringify(after.errors)) {
-    issues.push(`console errors: ${JSON.stringify(before.errors)} vs ${JSON.stringify(after.errors)}`);
+  const linked = before.checks?.missingFiles !== undefined || after.checks?.missingFiles !== undefined;
+  const beforeErrors = linked ? before.errors.filter((error) => !isMissingFile(error)) : before.errors;
+  const afterErrors = linked ? after.errors.filter((error) => !isMissingFile(error)) : after.errors;
+  if (JSON.stringify(beforeErrors) !== JSON.stringify(afterErrors)) {
+    issues.push(`console errors: ${JSON.stringify(beforeErrors)} vs ${JSON.stringify(afterErrors)}`);
+  }
+  if (linked) {
+    const beforeCount = before.checks?.missingFiles ?? 0;
+    const afterCount = after.checks?.missingFiles ?? 0;
+    if (afterCount > beforeCount) {
+      issues.push(`${afterCount - beforeCount} more missing files on the optimized page`);
+    }
   }
   const requestsBefore = significantRequests(before.requests);
   const requestsAfter = significantRequests(after.requests);

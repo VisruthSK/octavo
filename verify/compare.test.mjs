@@ -1,3 +1,4 @@
+import { captureScreenshot } from "./capture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PNG } from "pngjs";
@@ -182,6 +183,33 @@ test("a missing screenshot is an issue when either or both captures lack one", (
   }
 });
 
+test("screenshot errors report both failed capture attempts", async () => {
+  let evaluations = 0;
+  const page = {
+    evaluate: async () => {
+      evaluations++;
+      if (evaluations === 1) return { width: 100, height: 100 };
+      if (evaluations === 2 || evaluations === 4) return [0, 0];
+    },
+    screenshot: async (options) => {
+      throw new Error(options.fullPage ? "full page failed" : "tile failed");
+    },
+  };
+  await assert.rejects(captureScreenshot(page, { width: 100, height: 100 }), /full-page screenshot: full page failed; tiled screenshot: tile failed/);
+});
+
+test("missing screenshot reports its capture error", () => {
+  const state = (screenshot, screenshotError) => ({
+    title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0,
+    scroll: [0, 0], labels: [], rects: [], styles: [], screenshot, screenshotError,
+  });
+  const issues = compare(
+    { states: [state(Buffer.from("png"))], errors: [], requests: [] },
+    { states: [state(null, "tile failed")], errors: [], requests: [] },
+    false,
+  );
+  assert.ok(issues.some((issue) => issue.includes("screenshot missing in optimized capture (optimized: tile failed)")));
+});
 test("matching screenshot limits pass and one-sided or different limits fail", () => {
   const state = (screenshot) => ({
     title: "",
@@ -365,6 +393,54 @@ test("the requests comparison ignores order and lazily fetched font files and ke
   assert.ok(run([script, style], [script]).some((issue) => issue.startsWith("requests:")));
   assert.ok(run([script], [script, "https://cdn.example/extra.js"]).some((issue) => issue.startsWith("requests:")));
   assert.ok(run([script], [script, "https://cdn.example/image.png"]).some((issue) => issue.startsWith("requests:")));
+});
+
+test("linked mode missing file count comparisons", () => {
+  const state = {
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [100, 100],
+    labels: ["DIV"],
+    rects: [[0, 0, 100, 100]],
+    styles: ["width:100px"],
+    screenshot: Buffer.from("same"),
+  };
+  const make = (errors, missingFiles) => ({
+    states: [state],
+    errors,
+    requests: [],
+    checks: missingFiles !== undefined ? { missingFiles } : {},
+  });
+
+  assert.deepEqual(compare(make([], 2), make([], 2), false), []);
+  assert.deepEqual(compare(make([], 2), make([], 1), false), []);
+  assert.deepEqual(compare(make([], 1), make([], 3), false), [
+    "2 more missing files on the optimized page",
+  ]);
+  assert.deepEqual(compare(make(["TypeError: x is undefined"], 1), make([], 1), false), [
+    'console errors: ["TypeError: x is undefined"] vs []',
+  ]);
+  assert.deepEqual(
+    compare(
+      make(["Failed to load resource: net::ERR_FILE_NOT_FOUND"], 1),
+      make(["Failed to load resource: net::ERR_FILE_NOT_FOUND"], 1),
+      false,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    compare(
+      { states: [state], errors: ["Failed to load resource: net::ERR_FILE_NOT_FOUND"], requests: [] },
+      { states: [state], errors: [], requests: [] },
+      false,
+    ),
+    ['console errors: ["Failed to load resource: net::ERR_FILE_NOT_FOUND"] vs []'],
+  );
 });
 
 test("lazily loaded math renderer fonts are not part of the loaded fonts comparison and other fonts are", () => {
