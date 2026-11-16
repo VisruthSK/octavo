@@ -32,7 +32,7 @@ const emptyChecks = (elements) => ({
   unreachable: { elements: 0, hover: 0, focus: 0, focusVisible: 0, active: 0, details: [] },
 });
 
-async function reasonFor(element, state) {
+async function staticReason(element, state) {
   return element.evaluate((target, state) => {
     const style = getComputedStyle(target);
     if (target.closest("[inert]")) return "inside inert subtree";
@@ -43,6 +43,14 @@ async function reasonFor(element, state) {
     if (state !== "hover" && state !== "active") return "";
     if (style.pointerEvents === "none") return "pointer-events none";
     if (style.clipPath.includes("inset(50%") || style.clip.replaceAll(" ", "") === "rect(0px,0px,0px,0px)") return "clipped by CSS clip";
+    return "";
+  }, state);
+}
+
+async function reasonFor(element, state) {
+  const blocked = await staticReason(element, state);
+  if (blocked) return blocked;
+  return element.evaluate((target, state) => {
     const rect = target.getBoundingClientRect();
     for (let ancestor = target.parentElement; ancestor; ancestor = ancestor.parentElement) {
       const parentStyle = getComputedStyle(ancestor);
@@ -178,42 +186,50 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       );
       const detail = (state, reason) => `${info}, selector "${selector}", index ${index}: ${reason || "state did not apply although the target was reachable"}`;
       const unreachableStates = new Set();
-      onPhase(`forcedStates element ${index} boundingBox`);
-      let box = await element.boundingBox().catch(() => null);
-      if (!box || !box.width || !box.height) {
-        for (const state of STATES) states.push([`:${state} on interactive #${index}`, "unavailable"]);
-        for (const state of CHECKS) noteFailure(checks, state, detail(state, "visible element has no usable bounding box"));
-        continue;
-      }
-      onPhase(`forcedStates element ${index} locator hover`);
-      let spot = await ownPoint(element);
-      await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
-      onPhase(`forcedStates element ${index} hover probe`);
-      let seen = await probe(index);
-      for (let attempt = 0; attempt < 3 && !seen.states.hover; attempt++) {
-        onPhase(`forcedStates element ${index} hover retry ${attempt}`);
-        spot = await ownPoint(element);
-        await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
-        await page.waitForTimeout(50);
-        seen = await probe(index);
-      }
-      if (!seen.states.hover) {
-        await element.evaluate((target) => target.scrollIntoView({ block: "center", inline: "center", behavior: "instant" })).catch(() => {});
-        spot = await ownPoint(element);
-        await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
-        seen = await probe(index);
-      }
-      if (seen.states.hover) {
-        checks.hover += 1;
-        states.push([`:hover on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
+      const hoverReason = await staticReason(element, "hover");
+      let seen;
+      let spot;
+      if (hoverReason) {
+        states.push([`:hover on interactive #${index}`, "unreachable"]);
+        noteUnreachable(checks, "hover", detail("hover", hoverReason), unreachableStates);
       } else {
-        const reason = await reasonFor(element, "hover");
-        if (reason) {
-          states.push([`:hover on interactive #${index}`, "unreachable"]);
-          noteUnreachable(checks, "hover", detail("hover", reason), unreachableStates);
-        } else {
+        onPhase(`forcedStates element ${index} boundingBox`);
+        const box = await element.boundingBox().catch(() => null);
+        if (!box || !box.width || !box.height) {
+          for (const state of STATES) states.push([`:${state} on interactive #${index}`, "unavailable"]);
+          for (const state of CHECKS) noteFailure(checks, state, detail(state, "visible element has no usable bounding box"));
+          continue;
+        }
+        onPhase(`forcedStates element ${index} locator hover`);
+        spot = await ownPoint(element);
+        await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
+        onPhase(`forcedStates element ${index} hover probe`);
+        seen = await probe(index);
+        for (let attempt = 0; attempt < 3 && !seen.states.hover; attempt++) {
+          onPhase(`forcedStates element ${index} hover retry ${attempt}`);
+          spot = await ownPoint(element);
+          await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
+          await page.waitForTimeout(50);
+          seen = await probe(index);
+        }
+        if (!seen.states.hover) {
+          await element.evaluate((target) => target.scrollIntoView({ block: "center", inline: "center", behavior: "instant" })).catch(() => {});
+          spot = await ownPoint(element);
+          await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
+          seen = await probe(index);
+        }
+        if (seen.states.hover) {
+          checks.hover += 1;
           states.push([`:hover on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-          noteFailure(checks, "hover", detail("hover", ""));
+        } else {
+          const reason = await reasonFor(element, "hover");
+          if (reason) {
+            states.push([`:hover on interactive #${index}`, "unreachable"]);
+            noteUnreachable(checks, "hover", detail("hover", reason), unreachableStates);
+          } else {
+            states.push([`:hover on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
+            noteFailure(checks, "hover", detail("hover", ""));
+          }
         }
       }
       await page.evaluate(() => document.activeElement?.blur());
@@ -245,33 +261,39 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         }
       }
       await page.evaluate(() => document.activeElement?.blur());
-      onPhase(`forcedStates element ${index} active target`);
-      await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
-      spot = await ownPoint(element);
-      await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
-      onPhase(`forcedStates element ${index} active`);
-      await page.mouse.down();
-      seen = await probe(index);
-      for (let attempt = 0; attempt < 3 && !seen.states.active; attempt++) {
-        await page.mouse.up();
-        await page.waitForTimeout(50);
+      const activeReason = hoverReason || (await staticReason(element, "active"));
+      if (activeReason) {
+        states.push([`:active on interactive #${index}`, "unreachable"]);
+        noteUnreachable(checks, "active", detail("active", activeReason), unreachableStates);
+      } else {
+        onPhase(`forcedStates element ${index} active target`);
         await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
         spot = await ownPoint(element);
         await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
+        onPhase(`forcedStates element ${index} active`);
         await page.mouse.down();
         seen = await probe(index);
-      }
-      if (seen.states.active) {
-        checks.active += 1;
-        states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-      } else {
-        const reason = await reasonFor(element, "active");
-        if (reason) {
-          states.push([`:active on interactive #${index}`, "unreachable"]);
-          noteUnreachable(checks, "active", detail("active", reason), unreachableStates);
-        } else {
+        for (let attempt = 0; attempt < 3 && !seen.states.active; attempt++) {
+          await page.mouse.up();
+          await page.waitForTimeout(50);
+          await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+          spot = await ownPoint(element);
+          await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
+          await page.mouse.down();
+          seen = await probe(index);
+        }
+        if (seen.states.active) {
+          checks.active += 1;
           states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-          noteFailure(checks, "active", detail("active", ""));
+        } else {
+          const reason = await reasonFor(element, "active");
+          if (reason) {
+            states.push([`:active on interactive #${index}`, "unreachable"]);
+            noteUnreachable(checks, "active", detail("active", reason), unreachableStates);
+          } else {
+            states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
+            noteFailure(checks, "active", detail("active", ""));
+          }
         }
       }
       if (unreachableStates.size) checks.elements -= 1;
