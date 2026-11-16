@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
-import { isLinkedFileLoadFailure } from "./linked-artifacts.mjs";
+import { isLinkedFileLoadFailure, isMissingFile } from "./linked-artifacts.mjs";
 import { canonicalFontFamily } from "./styles.mjs";
 
 export const SCENARIOS = {
@@ -584,16 +584,19 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
   };
 }
 
-async function captureScreenshot(page, viewport) {
+export async function captureScreenshot(page, viewport) {
   const pageSize = await page.evaluate(() => ({
     width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
     height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
   }));
   const width = Math.max(viewport.width, pageSize.width);
   const height = Math.max(viewport.height, pageSize.height);
+  let fullPageError;
   try {
     return await page.screenshot({ fullPage: true, animations: "disabled", timeout: SCREENSHOT_TIMEOUT_MS });
-  } catch {}
+  } catch (error) {
+    fullPageError = error.message;
+  }
   if (width * height > MAX_SCREENSHOT_PIXELS) {
     return { kind: "limit", width, height, limit: MAX_SCREENSHOT_PIXELS };
   }
@@ -620,6 +623,8 @@ async function captureScreenshot(page, viewport) {
         tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
       }
     }
+  } catch (error) {
+    throw new Error(`full-page screenshot: ${fullPageError}; tiled screenshot: ${error.message}`);
   } finally {
     await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), originalScroll);
   }
@@ -655,10 +660,15 @@ export async function capture(
     const requests = [];
     const network = trackNetwork(page, requests);
     const { openRequests } = network;
+    let missingFiles = linked ? 0 : undefined;
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
     page.on("console", (message) => {
       if (message.type() !== "error") return;
       if (linkedOriginal && isLinkedFileLoadFailure(message.text(), message.location())) return;
+      if (linked && isMissingFile(message.text(), message.location())) {
+        missingFiles += 1;
+        return;
+      }
       errors.push(engine.normalizeError(message.text()));
     });
     const knownLongLived = new Set(longLived ?? []);
@@ -704,13 +714,17 @@ export async function capture(
     const record = async (label, extra = {}) => {
       phase = `screenshot ${label}`;
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
-      const screenshot = await captureScreenshot(page, scenario.viewport).catch(() => null);
+      let screenshotError;
+      const screenshot = await captureScreenshot(page, scenario.viewport).catch((error) => {
+        screenshotError = error.message;
+        return null;
+      });
       phase = `image fingerprints ${label}`;
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       phase = `page observation ${label}`;
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
-      states.push({ label, ...observation, screenshot, ...extra });
+      states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
     };
     await record("load", { digest: previousDigest });
     phase = "forcedStates element count";
@@ -759,6 +773,7 @@ export async function capture(
       checks: {
         ...forced.checks,
         settled: waits.every((outcome) => outcome !== false),
+        ...(linked ? { missingFiles } : {}),
         screenshots: {
           taken: recorded.filter((state) => state.screenshot).length,
           total: recorded.length,
