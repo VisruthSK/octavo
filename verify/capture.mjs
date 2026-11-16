@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
+import { scrollbarPseudo } from "./engines/pseudos.mjs";
 import { isLinkedFileLoadFailure } from "./linked-artifacts.mjs";
 import { canonicalFontFamily } from "./styles.mjs";
 
@@ -118,7 +119,7 @@ async function fingerprints({ lossy, linked }) {
   return Promise.all(embedded.map((value) => fingerprint(value).catch(() => value)));
 }
 
-function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true }) {
+function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true, scrollbarPseudo }) {
   const describe = (element, pseudo, baseStyle) => {
     const style = pseudo === null && baseStyle ? baseStyle : getComputedStyle(element, pseudo);
     if ((pseudo === "::before" || pseudo === "::after") && style.content === "none") return "";
@@ -234,7 +235,7 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
           ...(base.display === "list-item" || tag === "li" ? ["::marker"] : []),
           ...(placeholderStyle && el.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
           ...(isRoot || isSample ? ["::selection"] : []),
-          ...(hasScroll ? ["::-webkit-scrollbar"] : []),
+          ...(hasScroll ? [scrollbarPseudo] : []),
         ];
         const value = pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
         if (!styleIndexes.has(value)) {
@@ -676,7 +677,7 @@ export async function capture(
       phase = `image fingerprints ${label}`;
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       phase = `page observation ${label}`;
-      const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle });
+      const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...extra });
     };

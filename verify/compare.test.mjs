@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { PNG } from "pngjs";
 import { compare, differences, missingFrom } from "./compare.mjs";
 import { canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
+import { scrollbarPseudo } from "./engines/pseudos.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -271,6 +272,12 @@ test("quotes elsewhere in a declaration still matter", () => {
 
 test("declarations without gradients still compare exactly", () => {
   assert.deepEqual(missingFrom("color:red;width:10px", "width:10px"), ["color:red"]);
+});
+
+test("scrollbar pseudo styles remain distinct and comparable", () => {
+  const before = `${scrollbarPseudo}width:8px;`;
+  const after = `${scrollbarPseudo}width:9px;`;
+  assert.deepEqual(missingFrom(canonicalStyle(before), canonicalStyle(after)), [`${scrollbarPseudo}width:8px`]);
 });
 
 test("a mirrored gradient makes two style strings the same, an extra declaration does not", async () => {
