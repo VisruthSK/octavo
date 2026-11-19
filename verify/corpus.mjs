@@ -100,6 +100,8 @@ export function computeWireSizes(results, jobMs = Infinity) {
   return quality;
 }
 
+export const ignoredArchiveNoJsIssue = (issue) => !issue.startsWith("check incomplete:") && !issue.startsWith("crashed:") && !issue.includes("screenshot missing") && !issue.includes("capture timed out") && !issue.includes("verification deadline reached");
+
 export const generateReport = formatReport;
 export function formatReport(results, options = {}) {
   const {
@@ -507,7 +509,7 @@ export async function runCorpus() {
                 true,
                 async () => report.every(({ scenario, issues }) =>
                   plan.level === "archive" && scenario === "no-js"
-                    ? !issues.some((issue) => issue.startsWith("check incomplete:") || issue.includes("screenshot missing"))
+                    ? issues.every(ignoredArchiveNoJsIssue)
                     : !issues.length,
                 ),
               );
@@ -519,7 +521,7 @@ export async function runCorpus() {
           const issues = [];
           for (const { scenario, issues: found } of report) {
             for (const issue of found) {
-              if (entry.level === "archive" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
+              if (entry.level === "archive" && scenario === "no-js" && ignoredArchiveNoJsIssue(issue)) continue;
               issues.push(`${engineTag}${scenario}: ${issue}`);
             }
           }
