@@ -590,7 +590,7 @@ const CAPTURE_TIMEOUT_MS = 300_000;
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
 const MAX_SCREENSHOT_PIXELS = 20_000_000;
-const MAX_SCREENSHOT_TILES = 512;
+const MAX_SCREENSHOT_TILES = 2048;
 const MAX_SCREENSHOT_BYTES = 128 * 1024 * 1024;
 
 export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture") {
