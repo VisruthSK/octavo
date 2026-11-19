@@ -172,7 +172,7 @@ function compareScreenshots(a, b, lossy, stats) {
       return [`page too large for screenshots limit on ${limited}: ${limitDescription(screenshot)}`];
     }
     return a.width === b.width && a.height === b.height && a.limit === b.limit
-      ? []
+      ? [`check incomplete: screenshot pixels not compared for page too large for screenshots limit: ${limitDescription(a)}`]
       : [`page too large for screenshots limit differs: original ${limitDescription(a)}, optimized ${limitDescription(b)}`];
   }
   if (a.kind !== "tiles" && b.kind !== "tiles") return compareImageBytes(a, b, lossy, stats);
