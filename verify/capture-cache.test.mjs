@@ -189,7 +189,7 @@ test("failed captures cannot pass verification", async () => {
   try {
     const missing = join(folder, "missing.html");
     const { reports } = await verifyLevels(missing, [{ level: "portable", path: missing, only: ["desktop-light"] }]);
-    assert.match(reports[0][0].issues.join("; "), /crashed: original=capture failed.*optimized=capture failed/);
+    assert.match(reports[0][0].issues.join("; "), /crashed: original=capture failed.*optimized=capture failed/s);
   } finally {
     await closeBrowser();
   }
