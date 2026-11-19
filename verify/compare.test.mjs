@@ -193,10 +193,25 @@ test("screenshot errors report both failed capture attempts", async () => {
       if (evaluations === 2 || evaluations === 4) return [0, 0];
     },
     screenshot: async (options) => {
-      throw new Error(options.fullPage ? "full page failed" : "tile failed");
+      throw new Error(options.fullPage && !options.clip ? "full page failed" : "tile failed");
     },
   };
   await assert.rejects(captureScreenshot(page, { width: 100, height: 100 }), /full-page screenshot: full page failed; tiled screenshot: tile failed/);
+});
+
+test("oversized pages skip the full-page screenshot", async () => {
+  const optionsSeen = [];
+  const timings = [];
+  let evaluations = 0;
+  const page = {
+    evaluate: async () => ++evaluations === 1 ? { width: 100, height: 16385 } : [0, 0],
+    screenshot: async (options) => { optionsSeen.push(options); return Buffer.from("tile"); },
+  };
+  const result = await captureScreenshot(page, { width: 100, height: 100 }, (tile) => timings.push(tile));
+  assert.equal(result.kind, "tiles");
+  assert.equal(result.tiles.length, 3);
+  assert.ok(optionsSeen.every((options) => options.fullPage && options.clip));
+  assert.equal(timings.length, 3);
 });
 
 test("missing screenshot reports its capture error", () => {
@@ -475,7 +490,7 @@ test("a synthetic tall page compares the last tile and reports a tile cap", asyn
     await page.setContent('<style>body { margin: 0; height: 16000px } #pixel { position: absolute; top: 15999px; left: 0; width: 1px; height: 1px; background: white }</style><div id="pixel"></div>');
     const capture = () => captureScreenshot({
       evaluate: (...args) => page.evaluate(...args),
-      screenshot: (options) => options.fullPage ? Promise.reject(new Error("screenshot too large")) : page.screenshot(options),
+      screenshot: (options) => options.fullPage && !options.clip ? Promise.reject(new Error("screenshot too large")) : page.screenshot(options),
     }, viewport);
     const before = await capture();
     await page.locator("#pixel").evaluate((pixel) => pixel.style.background = "black");
@@ -487,12 +502,31 @@ test("a synthetic tall page compares the last tile and reports a tile cap", asyn
     const result = (screenshot) => ({ states: [state(screenshot)], errors: [], requests: [] });
     assert.deepEqual(compare(result(before), result(before), false), []);
     assert.ok(compare(result(before), result(after), false).some((issue) => issue.includes(`tile at 0,${before.tiles.at(-1).y}: screenshot: 1 pixels differ`)));
-    await page.evaluate(() => document.body.style.height = "2000000px");
+    await page.evaluate(() => document.body.style.height = "17000000px");
     const limited = await capture();
     assert.equal(limited.kind, "limit");
     assert.equal(limited.reason, "tile count");
     const checks = { elements: 0, screenshots: { taken: 1, total: 1, limits: [{ label: "load", ...limited }] } };
     assert.ok(incompleteChecks(checks).some((issue) => issue.startsWith("check incomplete: screenshot pixels not compared")));
+  } finally {
+    await browser.close();
+  }
+});
+
+test("script-disabled tall pages compare their last tile", { timeout: 10000 }, async () => {
+  const browser = await launch();
+  try {
+    const viewport = { width: 100, height: 100 };
+    const page = await browser.newPage({ viewport, javaScriptEnabled: false });
+    await page.setContent('<style>body{margin:0;height:16385px} #pixel{position:absolute;top:16384px;width:1px;height:1px;background:white}</style><div id="pixel"></div>');
+    const before = await captureScreenshot(page, viewport, () => {}, false);
+    await page.locator("#pixel").evaluate((pixel) => pixel.style.background = "black");
+    const after = await captureScreenshot(page, viewport, () => {}, false);
+    assert.equal(before.kind, "tiles");
+    assert.equal(before.tiles.at(-1).y + before.tiles.at(-1).height, 16385);
+    const state = (screenshot) => ({ label: "load", title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0, scroll: [0, 0], labels: [], rects: [], styles: [], screenshot });
+    const result = (screenshot) => ({ states: [state(screenshot)], errors: [], requests: [] });
+    assert.ok(compare(result(before), result(after), false).some((issue) => issue.includes(`tile at 0,${before.tiles.at(-1).y}: screenshot: 1 pixels differ`)));
   } finally {
     await browser.close();
   }
