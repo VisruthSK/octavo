@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
@@ -607,6 +608,19 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
   };
 }
 
+export async function loadDocument(page, file) {
+  const url = pathToFileURL(file).href;
+  if (engine.name !== "webkit") return page.goto(url, { waitUntil: "load" });
+  const body = await readFile(file);
+  const fulfill = (route) => route.fulfill({ body, contentType: "text/html" });
+  await page.route(url, fulfill);
+  try {
+    return await page.goto(url, { waitUntil: "load" });
+  } finally {
+    await page.unroute(url, fulfill);
+  }
+}
+
 export async function captureScreenshot(page, viewport) {
   const pageSize = await page.evaluate(() => ({
     width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
@@ -711,7 +725,7 @@ export async function capture(
       );
     };
     setPhase("goto");
-    const response = await page.goto(pathToFileURL(file).href, { waitUntil: "load" }).catch((error) => {
+    const response = await loadDocument(page, file).catch((error) => {
       throw new Error(`navigation failed: ${JSON.stringify({ url: page.url(), error: error.message })}`);
     });
     setPhase("document body ready");
