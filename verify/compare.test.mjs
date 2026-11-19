@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import { compare, differences, missingFrom } from "./compare.mjs";
 import { canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
+import { launch, incompleteChecks } from "./engines/index.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -192,10 +193,25 @@ test("screenshot errors report both failed capture attempts", async () => {
       if (evaluations === 2 || evaluations === 4) return [0, 0];
     },
     screenshot: async (options) => {
-      throw new Error(options.fullPage ? "full page failed" : "tile failed");
+      throw new Error(options.fullPage && !options.clip ? "full page failed" : "tile failed");
     },
   };
   await assert.rejects(captureScreenshot(page, { width: 100, height: 100 }), /full-page screenshot: full page failed; tiled screenshot: tile failed/);
+});
+
+test("oversized pages skip the full-page screenshot", async () => {
+  const optionsSeen = [];
+  const timings = [];
+  let evaluations = 0;
+  const page = {
+    evaluate: async () => ++evaluations === 1 ? { width: 100, height: 16385 } : [0, 0],
+    screenshot: async (options) => { optionsSeen.push(options); return Buffer.from("tile"); },
+  };
+  const result = await captureScreenshot(page, { width: 100, height: 100 }, (tile) => timings.push(tile));
+  assert.equal(result.kind, "tiles");
+  assert.equal(result.tiles.length, 3);
+  assert.ok(optionsSeen.every((options) => options.fullPage && options.clip));
+  assert.equal(timings.length, 3);
 });
 
 test("missing screenshot reports its capture error", () => {
@@ -210,7 +226,7 @@ test("missing screenshot reports its capture error", () => {
   );
   assert.ok(issues.some((issue) => issue.includes("screenshot missing in optimized capture (optimized: tile failed)")));
 });
-test("matching screenshot limits pass and one-sided or different limits fail", () => {
+test("screenshot limits report incomplete comparison", () => {
   const state = (screenshot) => ({
     title: "",
     accessibility: "",
@@ -231,7 +247,7 @@ test("matching screenshot limits pass and one-sided or different limits fail", (
     false,
   );
   const limited = (height, limit = 20_000_000) => ({ kind: "limit", width: 1280, height, limit });
-  assert.deepEqual(compareScreenshots(limited(200_000), limited(200_000)), []);
+  assert.ok(compareScreenshots(limited(200_000), limited(200_000)).some((issue) => issue.includes("check incomplete: screenshot pixels not compared")));
   assert.ok(compareScreenshots(limited(200_000), Buffer.from("not a screenshot"))[0].includes("page too large for screenshots limit"));
   assert.ok(compareScreenshots(limited(200_000), limited(210_000))[0].includes("page too large for screenshots limit differs"));
 });
@@ -463,4 +479,55 @@ test("lazily loaded math renderer fonts are not part of the loaded fonts compari
   assert.deepEqual(run(["KaTeX_Main", "Inter"], ["Inter"]), []);
   assert.ok(run(["Inter", "Source Sans Pro"], ["Inter"]).some((issue) => issue.includes("fonts ")));
   assert.ok(run(["Inter"], ["Inter", "Source Sans Pro"]).some((issue) => issue.includes("fonts ")));
+});
+
+
+test("a synthetic tall page compares the last tile and reports a tile cap", async () => {
+  const browser = await launch();
+  try {
+    const viewport = { width: 1280, height: 720 };
+    const page = await browser.newPage({ viewport });
+    await page.setContent('<style>body { margin: 0; height: 16000px } #pixel { position: absolute; top: 15999px; left: 0; width: 1px; height: 1px; background: white }</style><div id="pixel"></div>');
+    const capture = () => captureScreenshot({
+      evaluate: (...args) => page.evaluate(...args),
+      screenshot: (options) => options.fullPage && !options.clip ? Promise.reject(new Error("screenshot too large")) : page.screenshot(options),
+    }, viewport);
+    const before = await capture();
+    await page.locator("#pixel").evaluate((pixel) => pixel.style.background = "black");
+    const after = await capture();
+    assert.equal(before.kind, "tiles");
+    assert.equal(before.height, 16000);
+    assert.equal(before.tiles.at(-1).y + before.tiles.at(-1).height, 16000);
+    const state = (screenshot) => ({ label: "load", title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0, scroll: [0, 0], labels: [], rects: [], styles: [], screenshot });
+    const result = (screenshot) => ({ states: [state(screenshot)], errors: [], requests: [] });
+    assert.deepEqual(compare(result(before), result(before), false), []);
+    assert.ok(compare(result(before), result(after), false).some((issue) => issue.includes(`tile at 0,${before.tiles.at(-1).y}: screenshot: 1 pixels differ`)));
+    await page.evaluate(() => document.body.style.height = "17000000px");
+    const limited = await capture();
+    assert.equal(limited.kind, "limit");
+    assert.equal(limited.reason, "tile count");
+    const checks = { elements: 0, screenshots: { taken: 1, total: 1, limits: [{ label: "load", ...limited }] } };
+    assert.ok(incompleteChecks(checks).some((issue) => issue.startsWith("check incomplete: screenshot pixels not compared")));
+  } finally {
+    await browser.close();
+  }
+});
+
+test("script-disabled tall pages compare their last tile", { timeout: 10000 }, async () => {
+  const browser = await launch();
+  try {
+    const viewport = { width: 100, height: 100 };
+    const page = await browser.newPage({ viewport, javaScriptEnabled: false });
+    await page.setContent('<style>body{margin:0;height:16385px} #pixel{position:absolute;top:16384px;width:1px;height:1px;background:white}</style><div id="pixel"></div>');
+    const before = await captureScreenshot(page, viewport, () => {}, false);
+    await page.locator("#pixel").evaluate((pixel) => pixel.style.background = "black");
+    const after = await captureScreenshot(page, viewport, () => {}, false);
+    assert.equal(before.kind, "tiles");
+    assert.equal(before.tiles.at(-1).y + before.tiles.at(-1).height, 16385);
+    const state = (screenshot) => ({ label: "load", title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0, scroll: [0, 0], labels: [], rects: [], styles: [], screenshot });
+    const result = (screenshot) => ({ states: [state(screenshot)], errors: [], requests: [] });
+    assert.ok(compare(result(before), result(after), false).some((issue) => issue.includes(`tile at 0,${before.tiles.at(-1).y}: screenshot: 1 pixels differ`)));
+  } finally {
+    await browser.close();
+  }
 });

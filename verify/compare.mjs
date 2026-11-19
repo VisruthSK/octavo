@@ -145,10 +145,10 @@ const getPng = (buf) => {
   return png;
 };
 
-function compareImageBytes(a, b, lossy, stats) {
+function compareImageBytes(a, b, lossy, stats, cache = true) {
   if (a.equals(b)) return [];
-  const left = getPng(a);
-  const right = getPng(b);
+  const left = cache ? getPng(a) : PNG.sync.read(a);
+  const right = cache ? getPng(b) : PNG.sync.read(b);
   if (left.width !== right.width || left.height !== right.height) {
     return [`screenshot size ${left.width}x${left.height} vs ${right.width}x${right.height}`];
   }
@@ -162,7 +162,7 @@ function compareImageBytes(a, b, lossy, stats) {
 }
 
 const screenshotLimit = (screenshot) => screenshot?.kind === "limit";
-const limitDescription = (screenshot) => `${screenshot.width}x${screenshot.height} at ${screenshot.limit} pixels`;
+const limitDescription = (screenshot) => `${screenshot.width}x${screenshot.height}, ${screenshot.reason ?? "pixels"} limit ${screenshot.limit}`;
 
 function compareScreenshots(a, b, lossy, stats) {
   if (screenshotLimit(a) || screenshotLimit(b)) {
@@ -172,7 +172,7 @@ function compareScreenshots(a, b, lossy, stats) {
       return [`page too large for screenshots limit on ${limited}: ${limitDescription(screenshot)}`];
     }
     return a.width === b.width && a.height === b.height && a.limit === b.limit
-      ? []
+      ? [`check incomplete: screenshot pixels not compared for page too large for screenshots limit: ${limitDescription(a)}`]
       : [`page too large for screenshots limit differs: original ${limitDescription(a)}, optimized ${limitDescription(b)}`];
   }
   if (a.kind !== "tiles" && b.kind !== "tiles") return compareImageBytes(a, b, lossy, stats);
@@ -186,7 +186,7 @@ function compareScreenshots(a, b, lossy, stats) {
       issues.push(`screenshot tile ${index} region differs: ${left.x},${left.y} ${left.width}x${left.height} vs ${right.x},${right.y} ${right.width}x${right.height}`);
       continue;
     }
-    issues.push(...compareImageBytes(left.png, right.png, lossy, stats).map((issue) => `tile at ${left.x},${left.y}: ${issue}`));
+    issues.push(...compareImageBytes(left.png, right.png, lossy, stats, false).map((issue) => `tile at ${left.x},${left.y}: ${issue}`));
   }
   return issues;
 }
