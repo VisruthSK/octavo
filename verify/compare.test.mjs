@@ -487,7 +487,7 @@ test("a synthetic tall page compares the last tile and reports a tile cap", asyn
     const result = (screenshot) => ({ states: [state(screenshot)], errors: [], requests: [] });
     assert.deepEqual(compare(result(before), result(before), false), []);
     assert.ok(compare(result(before), result(after), false).some((issue) => issue.includes(`tile at 0,${before.tiles.at(-1).y}: screenshot: 1 pixels differ`)));
-    await page.evaluate(() => document.body.style.height = "400000px");
+    await page.evaluate(() => document.body.style.height = "2000000px");
     const limited = await capture();
     assert.equal(limited.kind, "limit");
     assert.equal(limited.reason, "tile count");
