@@ -1,0 +1,94 @@
+[
+  {
+    "id": "twenty-thousand-paragraphs",
+    "category": "scale",
+    "level": "serve",
+    "inBytes": 669994,
+    "outBytes": 669014,
+    "ms": 19.601985,
+    "outcome": "optimizes",
+    "baselines": {
+      "naive": 649994,
+      "brotliOriginal": 26879,
+      "brotliOptimized": 26348,
+      "gzipOptimized": 57332
+    },
+    "problems": [
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on resize: 1280x700016, tile count limit 512",
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on resize: 1280x700016, tile count limit 512",
+      "[firefox] desktop-dark: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] desktop-dark: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] mobile: check incomplete: screenshot pixels not compared on load: 390x700016, tile count limit 512",
+      "[firefox] mobile: check incomplete: screenshot pixels not compared on load: 390x700016, tile count limit 512",
+      "[firefox] tablet: check incomplete: screenshot pixels not compared on load: 768x700016, tile count limit 512",
+      "[firefox] tablet: check incomplete: screenshot pixels not compared on load: 768x700016, tile count limit 512",
+      "[firefox] motion: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] motion: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] no-js: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] no-js: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] print: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] print: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512"
+    ],
+    "excluded": null,
+    "browser": true,
+    "roundedPixels": 0
+  },
+  {
+    "id": "twenty-thousand-paragraphs",
+    "category": "scale",
+    "level": "portable",
+    "inBytes": 669994,
+    "outBytes": 669014,
+    "ms": 752.626387,
+    "outcome": "optimizes",
+    "baselines": {
+      "naive": 649994,
+      "brotliOriginal": 26879,
+      "brotliOptimized": 26348,
+      "gzipOptimized": 57332
+    },
+    "problems": [
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on resize: 1280x700016, tile count limit 512",
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on resize: 1280x700016, tile count limit 512",
+      "[firefox] mobile: check incomplete: screenshot pixels not compared on load: 390x700016, tile count limit 512",
+      "[firefox] mobile: check incomplete: screenshot pixels not compared on load: 390x700016, tile count limit 512",
+      "[firefox] no-js: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] no-js: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512"
+    ],
+    "excluded": null,
+    "browser": true,
+    "roundedPixels": 0
+  },
+  {
+    "id": "twenty-thousand-paragraphs",
+    "category": "scale",
+    "level": "archive",
+    "inBytes": 669994,
+    "outBytes": 669014,
+    "ms": 735.707253,
+    "outcome": "optimizes",
+    "baselines": {
+      "naive": 649994,
+      "brotliOriginal": 26879,
+      "brotliOptimized": 26348,
+      "gzipOptimized": 57332
+    },
+    "problems": [
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on resize: 1280x700016, tile count limit 512",
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] desktop-light: check incomplete: screenshot pixels not compared on resize: 1280x700016, tile count limit 512",
+      "[firefox] mobile: check incomplete: screenshot pixels not compared on load: 390x700016, tile count limit 512",
+      "[firefox] mobile: check incomplete: screenshot pixels not compared on load: 390x700016, tile count limit 512",
+      "[firefox] no-js: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512",
+      "[firefox] no-js: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512"
+    ],
+    "excluded": null,
+    "browser": true,
+    "roundedPixels": 0
+  }
+]

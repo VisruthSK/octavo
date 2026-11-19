@@ -1,0 +1,59 @@
+[
+  {
+    "id": "parsing-very-long-line",
+    "category": "parsing",
+    "level": "serve",
+    "inBytes": 300166,
+    "outBytes": 300141,
+    "ms": 14.729793,
+    "outcome": "optimizes",
+    "baselines": {
+      "naive": 300166,
+      "brotliOriginal": 99,
+      "brotliOptimized": 85,
+      "gzipOptimized": 598
+    },
+    "problems": [],
+    "excluded": null,
+    "browser": true,
+    "roundedPixels": 0
+  },
+  {
+    "id": "parsing-very-long-line",
+    "category": "parsing",
+    "level": "portable",
+    "inBytes": 300166,
+    "outBytes": 300141,
+    "ms": 25.441298,
+    "outcome": "optimizes",
+    "baselines": {
+      "naive": 300166,
+      "brotliOriginal": 99,
+      "brotliOptimized": 85,
+      "gzipOptimized": 598
+    },
+    "problems": [],
+    "excluded": null,
+    "browser": true,
+    "roundedPixels": 0
+  },
+  {
+    "id": "parsing-very-long-line",
+    "category": "parsing",
+    "level": "archive",
+    "inBytes": 300166,
+    "outBytes": 300141,
+    "ms": 18.74038,
+    "outcome": "optimizes",
+    "baselines": {
+      "naive": 300166,
+      "brotliOriginal": 99,
+      "brotliOptimized": 85,
+      "gzipOptimized": 598
+    },
+    "problems": [],
+    "excluded": null,
+    "browser": true,
+    "roundedPixels": 0
+  }
+]

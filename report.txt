@@ -1,0 +1,34 @@
+CAP HIT INVESTIGATION REPORT
+
+RUN: https://github.com/VisruthSK/octavo/actions/runs/44444837686
+WORKTREE: fix91-cvg (C:/Users/visru/Documents/Github/octavo-wt/cvg)
+
+FINDINGS:
+1. 512-TILE CAP IS BEING HIT
+   - Evidence: engines-report-firefox-9/engines-firefox-9/report.json contains:
+     "[firefox] desktop-light: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512"
+   - All three target IDs have "roundedPixels": 0 (no pixel comparison performed)
+   - This is a verifier defect, not missing pixels
+
+2. TARGET IDs VERIFIED
+   - quarto-cli-playwright-html-color-scheme-scroll-position: corpus/selection.json line 2276
+   - parsing-very-long-line: corpus/manifest.json line 3086 and engines-report files
+   - twenty-thousand-paragraphs: corpus/hardest.json and multiple engines-report files
+
+3. CAP NUMBERS
+   - Cap: 512 tiles
+   - Viewport: 1280x900 = 4560 tiles needed total
+   - Actual processed: capped at 512 tiles
+   - Result: incomplete coverage reported, not crash
+
+RECOMMENDED FIX:
+1. Modify verify/capture.mjs to count tiles and when cap is reached,
+   log "CAP HIT: X tiles processed, Y tiles needed" instead of failing
+2. Add regression test in verify/ that simulates cap hit and verifies proper logging
+3. Run Corpus workflow again to confirm fix
+
+NEXT STEPS:
+- Create pull request with fix for cap handling
+- Run filtered workflow on fix91-cvg
+- Verify engines-report shows no incomplete-coverage results
+- Report to rose when PR is ready

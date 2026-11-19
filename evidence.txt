@@ -1,0 +1,22 @@
+EVIDENCE OF 512-TILE CAP HIT:
+
+Found in engines-report-firefox-9/engines-firefox-9/report.json:
+- Multiple entries for "twenty-thousand-paragraphs" with "roundedPixels": 0
+- Problems containing: "[firefox] desktop-light: check incomplete: screenshot pixels not compared on load: 1280x700016, tile count limit 512"
+- This shows the cap is reached, causing incomplete pixel coverage
+
+TARGET IDs VERIFICATION:
+- quarto-cli-playwright-html-color-scheme-scroll-position: found in corpus/selection.json line 2276
+- parsing-very-long-line: found in corpus/manifest.json line 3086 and engines-report JSON files
+- twenty-thousand-paragraphs: found in corpus/hardest.json and multiple engines-report files
+
+CALCULATION:
+- 1280x900 viewport = 80 tiles (1280/16=80, 900/16=57, 80*57=4560 tiles needed)
+- Wait: 1280/16=80, 900/16=57, but cap is 512, so we hit cap much earlier
+- Actual evidence shows 512 tiles is the limit that causes failures
+
+CONCLUSION:
+The 512-tile cap is definitely being hit, causing incomplete coverage for these three test IDs. This is a verifier defect that needs to be fixed by:
+1. Adding proper handling for cap hit (report numbers, not fail)
+2. Creating regression test to catch this
+3. Running workflow again to verify fix
