@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import { compare, differences, missingFrom } from "./compare.mjs";
 import { canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
+import { launch, incompleteChecks } from "./engines/index.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -210,7 +211,7 @@ test("missing screenshot reports its capture error", () => {
   );
   assert.ok(issues.some((issue) => issue.includes("screenshot missing in optimized capture (optimized: tile failed)")));
 });
-test("matching screenshot limits pass and one-sided or different limits fail", () => {
+test("screenshot limits report incomplete comparison", () => {
   const state = (screenshot) => ({
     title: "",
     accessibility: "",
@@ -231,7 +232,7 @@ test("matching screenshot limits pass and one-sided or different limits fail", (
     false,
   );
   const limited = (height, limit = 20_000_000) => ({ kind: "limit", width: 1280, height, limit });
-  assert.deepEqual(compareScreenshots(limited(200_000), limited(200_000)), []);
+  assert.ok(compareScreenshots(limited(200_000), limited(200_000)).some((issue) => issue.includes("check incomplete: screenshot pixels not compared")));
   assert.ok(compareScreenshots(limited(200_000), Buffer.from("not a screenshot"))[0].includes("page too large for screenshots limit"));
   assert.ok(compareScreenshots(limited(200_000), limited(210_000))[0].includes("page too large for screenshots limit differs"));
 });
@@ -463,4 +464,26 @@ test("lazily loaded math renderer fonts are not part of the loaded fonts compari
   assert.deepEqual(run(["KaTeX_Main", "Inter"], ["Inter"]), []);
   assert.ok(run(["Inter", "Source Sans Pro"], ["Inter"]).some((issue) => issue.includes("fonts ")));
   assert.ok(run(["Inter"], ["Inter", "Source Sans Pro"]).some((issue) => issue.includes("fonts ")));
+});
+
+
+test("a synthetic tall page reports incomplete pixel coverage when full capture fails", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    await page.setContent('<style>body { margin: 0; height: 200000px }</style><div>top</div>');
+    const screenshot = await captureScreenshot({
+      evaluate: (...args) => page.evaluate(...args),
+      screenshot: async () => { throw new Error("screenshot too large"); },
+    }, { width: 1280, height: 720 });
+    assert.equal(screenshot.kind, "limit");
+    assert.equal(screenshot.height, 200000);
+    const state = { label: "load", title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0, scroll: [0, 0], labels: [], rects: [], styles: [], screenshot };
+    const result = { states: [state], errors: [], requests: [] };
+    assert.ok(compare(result, result, false).some((issue) => issue.includes("check incomplete: screenshot pixels not compared")));
+    const checks = { elements: 0, screenshots: { taken: 1, total: 1, limits: [{ label: "load", ...screenshot }] } };
+    assert.ok(incompleteChecks(checks).some((issue) => issue.startsWith("check incomplete: screenshot pixels not compared")));
+  } finally {
+    await browser.close();
+  }
 });

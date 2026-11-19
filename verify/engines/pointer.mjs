@@ -37,7 +37,7 @@ async function staticReason(element, state) {
     const style = getComputedStyle(target);
     if (target.closest("[inert]")) return "inside inert subtree";
     if (style.visibility === "hidden") return "visibility hidden";
-    if ((state === "focus" || state === "focusVisible") && (target.matches(":disabled") || target.tabIndex < 0)) {
+    if ((state === "focus" || state === "focusVisible") && (target.matches(":disabled") || (target.tabIndex < 0 && !target.hasAttribute("tabindex")))) {
       return "not focusable";
     }
     if (state !== "hover" && state !== "active") return "";
@@ -49,7 +49,7 @@ async function staticReason(element, state) {
 
 async function reasonFor(element, state) {
   const blocked = await staticReason(element, state);
-  if (blocked) return blocked;
+  if (blocked || state === "focus" || state === "focusVisible") return blocked;
   return element.evaluate((target, state) => {
     const rect = target.getBoundingClientRect();
     for (let ancestor = target.parentElement; ancestor; ancestor = ancestor.parentElement) {
