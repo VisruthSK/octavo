@@ -52,7 +52,7 @@ async function reasonFor(element, state) {
   if (blocked) return blocked;
   return element.evaluate((target, state) => {
     const rect = target.getBoundingClientRect();
-    for (let ancestor = target.parentElement; ancestor; ancestor = target.parentElement) {
+    for (let ancestor = target.parentElement; ancestor; ancestor = ancestor.parentElement) {
       const parentStyle = getComputedStyle(ancestor);
       const parentRect = ancestor.getBoundingClientRect();
       const left = parentRect.left + ancestor.clientLeft;
@@ -154,9 +154,8 @@ export async function focus(page, element) {
   await page.keyboard.down("Tab");
   await element.focus({ timeout: 1000 }).catch(() => {});
   await page.keyboard.up("Tab");
-  await page.evaluate(() => document.activeElement === element).catch(() => false);
-  return true;
-};
+  return element.evaluate((target) => document.activeElement === target).catch(() => false);
+}
 
 export async function forcedStates(page, selector, observe, onPhase = () => {}) {
   const snapshot = await page.evaluateHandle((selector) => {
@@ -295,6 +294,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
           const reason = await reasonFor(element, "active");
           if (reason) {
             states.push([`:active on interactive #${index}`, "unreachable"]);
+            noteUnreachable(checks, "active", detail("active", reason), unreachableStates);
           } else {
             states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
             noteFailure(checks, "active", detail("active", ""));
