@@ -193,7 +193,7 @@ test("screenshot errors report both failed capture attempts", async () => {
       if (evaluations === 2 || evaluations === 4) return [0, 0];
     },
     screenshot: async (options) => {
-      throw new Error(options.fullPage ? "full page failed" : "tile failed");
+      throw new Error(options.fullPage && !options.clip ? "full page failed" : "tile failed");
     },
   };
   await assert.rejects(captureScreenshot(page, { width: 100, height: 100 }), /full-page screenshot: full page failed; tiled screenshot: tile failed/);
@@ -475,7 +475,7 @@ test("a synthetic tall page compares the last tile and reports a tile cap", asyn
     await page.setContent('<style>body { margin: 0; height: 16000px } #pixel { position: absolute; top: 15999px; left: 0; width: 1px; height: 1px; background: white }</style><div id="pixel"></div>');
     const capture = () => captureScreenshot({
       evaluate: (...args) => page.evaluate(...args),
-      screenshot: (options) => options.fullPage ? Promise.reject(new Error("screenshot too large")) : page.screenshot(options),
+      screenshot: (options) => options.fullPage && !options.clip ? Promise.reject(new Error("screenshot too large")) : page.screenshot(options),
     }, viewport);
     const before = await capture();
     await page.locator("#pixel").evaluate((pixel) => pixel.style.background = "black");
@@ -487,7 +487,7 @@ test("a synthetic tall page compares the last tile and reports a tile cap", asyn
     const result = (screenshot) => ({ states: [state(screenshot)], errors: [], requests: [] });
     assert.deepEqual(compare(result(before), result(before), false), []);
     assert.ok(compare(result(before), result(after), false).some((issue) => issue.includes(`tile at 0,${before.tiles.at(-1).y}: screenshot: 1 pixels differ`)));
-    await page.evaluate(() => document.body.style.height = "2000000px");
+    await page.evaluate(() => document.body.style.height = "17000000px");
     const limited = await capture();
     assert.equal(limited.kind, "limit");
     assert.equal(limited.reason, "tile count");

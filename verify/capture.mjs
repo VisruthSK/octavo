@@ -623,7 +623,7 @@ export async function captureScreenshot(page, viewport) {
     fullPageError = error.message;
   }
   const tileWidth = Math.min(viewport.width, MAX_SCREENSHOT_TILE_HEIGHT);
-  const tileHeight = Math.min(viewport.height, MAX_SCREENSHOT_TILE_HEIGHT, Math.floor(MAX_SCREENSHOT_PIXELS / tileWidth));
+  const tileHeight = Math.min(MAX_SCREENSHOT_TILE_HEIGHT, Math.floor(MAX_SCREENSHOT_PIXELS / tileWidth));
   const positions = (size, step) => Array.from({ length: Math.ceil(size / step) }, (_, index) => index * step);
   if (Math.ceil(width / tileWidth) * Math.ceil(height / tileHeight) > MAX_SCREENSHOT_TILES) {
     return { kind: "limit", width, height, limit: MAX_SCREENSHOT_TILES, reason: "tile count" };
@@ -634,15 +634,15 @@ export async function captureScreenshot(page, viewport) {
   try {
     for (const y of positions(height, tileHeight)) {
       for (const x of positions(width, tileWidth)) {
-        await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), [x, y]);
-        const [left, top] = await page.evaluate(() => [window.scrollX, window.scrollY]);
-        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-        const clipX = x - left;
-        const clipY = y - top;
+        await page.evaluate(([left, top]) => {
+          window.scrollTo({ left, top, behavior: "instant" });
+          return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }, [x, y]);
         const clipWidth = Math.min(tileWidth, width - x);
         const clipHeight = Math.min(tileHeight, height - y);
         const png = await page.screenshot({
-          clip: { x: clipX, y: clipY, width: clipWidth, height: clipHeight },
+          fullPage: true,
+          clip: { x, y, width: clipWidth, height: clipHeight },
           animations: "disabled",
           timeout: SCREENSHOT_TIMEOUT_MS,
         });
