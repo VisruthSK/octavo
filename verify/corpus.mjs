@@ -164,6 +164,15 @@ export function formatReport(results, options = {}) {
       ``,
     );
   }
+  if (browser) {
+    lines.push("## Scenario timings (milliseconds)", "", "| Document | Level | Scenario | Slot wait | Confirmation wait | Recaptures | Capture phases |", "|---|---|---|---:|---:|---:|---|");
+    for (const entry of results) for (const item of entry.scenarios ?? []) {
+      if (!item.metrics) continue;
+      const m = item.metrics;
+      lines.push(`| ${entry.id} | ${entry.level} | ${item.scenario} | ${m.slotWait.toFixed(0)} | ${m.confirmationWait.toFixed(0)} | ${m.recaptures} | ${Object.entries(m.phases).map(([phase, ms]) => `${phase}: ${ms.toFixed(0)}`).join(", ")} |`);
+    }
+    lines.push("");
+  }
   lines.push(`| Category / level | Docs | Input KiB | Output KiB | Brotli ${brotliLabel} KiB | Gzip 9 KiB | Median ratio | p50 ms | p95 ms | Naive KiB | Brotli(original) KiB |`);
   lines.push(`|---|---|---|---|---|---|---|---|---|---|---|`);
   for (const [name, entries] of [...categories].sort(([a], [b]) => a.localeCompare(b))) {
@@ -470,6 +479,7 @@ export async function runCorpus() {
         for (const [at, plan] of plans.entries()) {
           const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
           const report = measured.reports[at];
+          entry.scenarios = report.map(({ scenario, metrics }) => ({ scenario, metrics }));
           for (const { scenario, checks, optimizedChecks } of report) {
             if (!checks) continue;
             browserChecks.scenarios.add(scenario);

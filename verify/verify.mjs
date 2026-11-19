@@ -28,9 +28,11 @@ class Slots {
     for (const wake of this.waiting.splice(0)) wake();
   }
 
-  async using(task, count = 1) {
+  async using(task, count = 1, onWait = () => {}) {
     if (count === pages) this.exclusive += 1;
+    const started = process.hrtime.bigint();
     await this.take(count);
+    onWait(Number(process.hrtime.bigint() - started) / 1e6);
     if (count === pages) this.exclusive -= 1;
     try {
       return await task();
@@ -135,7 +137,7 @@ async function take(file, scenario, lossy, options) {
   }
 }
 
-async function confirmed(original, file, scenario, before, after, lossy, interact, sweep, isDeadlineReached, rootFor, linked) {
+async function confirmed(original, file, scenario, before, after, lossy, interact, sweep, isDeadlineReached, rootFor, linked, metrics) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
   if (!issues.length || issues.some((issue) => issue.includes("capture timed out") || issue.includes("screenshot missing"))) {
@@ -145,10 +147,11 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
     const pairs = [{ before, after }];
     for (let round = 0; round < RECAPTURES; round++) {
       if (isDeadlineReached()) return [...issues, "verification deadline reached during document comparison"];
+      metrics.recaptures += 1;
       const patient = round > 0;
       const [again, optimizedAgain] = await Promise.all([
-        take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, linkedOriginal: linked }).catch(crashed),
-        take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked }).catch(crashed),
+        take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, linkedOriginal: linked, onPhase: metrics.phase("confirmation original") }).catch(crashed),
+        take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked, onPhase: metrics.phase("confirmation optimized") }).catch(crashed),
       ]);
       if ([again.crashed, optimizedAgain.crashed].some((message) => message?.includes("capture timed out"))) {
         return ["capture timed out during confirmation"];
@@ -168,7 +171,7 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
       const key = signature(issue);
       return across.every((set) => set.has(key)) && within.every((set) => !set.has(key));
     });
-  }, pages);
+  }, pages, (ms) => { metrics.confirmationWait += ms; });
   return { issues: kept, rounded: stats.roundedPixels };
 }
 
@@ -221,9 +224,9 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
         sweep: Boolean(scenario.sweep),
       }),
     });
-  const run = (file, scenario, cache = false) =>
+  const run = (file, scenario, metrics, side, cache = false) =>
     slots.using(async () => {
-      const options = { interact, root: rootFor(file), linked, linkedOriginal: linked && file === original };
+      const options = { interact, root: rootFor(file), linked, linkedOriginal: linked && file === original, onPhase: metrics.phase(side) };
       try {
         return await withTimeout(
           async () => {
@@ -238,7 +241,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
       } catch (error) {
         return crashed(error);
       }
-    });
+    }, 1, (ms) => { metrics.slotWait += ms; });
   const scenarios = unionOf(plans);
   const failRemainder = (from, reason) => {
     for (const [index, plan] of plans.entries()) {
@@ -254,8 +257,16 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
       failRemainder(scenarioAt, "verification deadline reached before document comparison");
       break;
     }
+    const metrics = { slotWait: 0, confirmationWait: 0, recaptures: 0, phases: {}, phase(side) {
+      let previous, started;
+      return (next) => {
+        const now = process.hrtime.bigint();
+        if (previous) this.phases[`${side}: ${previous}`] = (this.phases[`${side}: ${previous}`] ?? 0) + Number(now - started) / 1e6;
+        previous = next; started = now;
+      };
+    } };
     const startedOriginal = process.hrtime.bigint();
-    const before = await run(original, scenario, caching);
+    const before = await run(original, scenario, metrics, "original", caching);
     timing.original += elapsed(startedOriginal);
     if (before.crashed?.includes("capture timed out")) {
       failRemainder(scenarioAt, before.crashed);
@@ -271,7 +282,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
       if (!wanted.length) continue;
       const sweep = wanted.some((plan) => plan.set.some((entry) => entry.name === scenario.name && entry.sweep));
       const startedOptimized = process.hrtime.bigint();
-      const after = await run(group[0].path, { ...scenario, sweep });
+      const after = await run(group[0].path, { ...scenario, sweep }, metrics, "optimized");
       timing.optimized += elapsed(startedOptimized);
       if (after.crashed?.includes("capture timed out")) {
         failRemainder(scenarioAt, after.crashed);
@@ -298,12 +309,14 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
           deadlineReached,
           rootFor,
           linked,
+          metrics,
         );
         timing.compare += elapsed(startedCompare);
         reports[planIndex.get(plan)].push({
           scenario: scenario.name,
           issues: withIncompleteCheckIssues(issues, before.checks, after.checks),
           rounded,
+          metrics: structuredClone({ slotWait: metrics.slotWait, confirmationWait: metrics.confirmationWait, recaptures: metrics.recaptures, phases: metrics.phases }),
           checks: before.checks,
           optimizedChecks: after.checks,
         });
