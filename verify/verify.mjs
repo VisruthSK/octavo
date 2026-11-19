@@ -140,7 +140,7 @@ async function take(file, scenario, lossy, options) {
 async function confirmed(original, file, scenario, before, after, lossy, interact, sweep, isDeadlineReached, rootFor, linked, metrics) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
-  if (!issues.length || issues.some((issue) => issue.includes("capture timed out") || issue.includes("screenshot missing"))) {
+  if (before.crashed || after.crashed || !issues.length || issues.some((issue) => issue.includes("capture timed out") || issue.includes("screenshot missing"))) {
     return { issues, rounded: stats.roundedPixels };
   }
   const kept = await slots.using(async () => {
@@ -153,9 +153,7 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
         take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, linkedOriginal: linked, onPhase: metrics.phase("confirmation original") }).catch(crashed),
         take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked, onPhase: metrics.phase("confirmation optimized") }).catch(crashed),
       ]);
-      if ([again.crashed, optimizedAgain.crashed].some((message) => message?.includes("capture timed out"))) {
-        return ["capture timed out during confirmation"];
-      }
+      if (again.crashed || optimizedAgain.crashed) return compare(again, optimizedAgain, lossy);
       pairs.push({ before: view(again, sweep), after: view(optimizedAgain, sweep) });
       if (!compare(view(again, sweep), view(optimizedAgain, sweep), lossy).length) break;
     }

@@ -182,3 +182,15 @@ test("a mismatched key in the file is ignored", async () => {
   assert.equal(readCapture(key, folder), null);
   assert.match(directory, /corpus[\\/]\.cache[\\/]captures$/);
 });
+
+
+test("failed captures cannot pass verification", async () => {
+  const { closeBrowser, verifyLevels } = await import("./verify.mjs");
+  try {
+    const missing = join(folder, "missing.html");
+    const { reports } = await verifyLevels(missing, [{ level: "portable", path: missing, only: ["desktop-light"] }]);
+    assert.match(reports[0][0].issues.join("; "), /crashed: original=capture failed.*optimized=capture failed/);
+  } finally {
+    await closeBrowser();
+  }
+});
