@@ -193,7 +193,7 @@ jobs:
         working-directory: verify
       - run: |
           for attempt in 1 2 3 4; do
-            npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
+            timeout 600 npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
             sleep $((attempt * 20))
           done
           exit 1
@@ -269,7 +269,7 @@ jobs:
         working-directory: verify
       - run: |
           for attempt in 1 2 3 4; do
-            npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
+            timeout 600 npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
             sleep $((attempt * 20))
           done
           exit 1
@@ -307,7 +307,7 @@ jobs:
         working-directory: verify
       - run: |
           for attempt in 1 2 3 4; do
-            npx playwright-core install --with-deps chromium && exit 0
+            timeout 600 npx playwright-core install --with-deps chromium && exit 0
             sleep $((attempt * 20))
           done
           exit 1
@@ -358,7 +358,7 @@ jobs:
         working-directory: verify
       - run: |
           for attempt in 1 2 3 4; do
-            npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
+            timeout 600 npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
             sleep $((attempt * 20))
           done
           exit 1
