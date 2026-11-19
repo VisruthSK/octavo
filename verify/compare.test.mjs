@@ -199,6 +199,21 @@ test("screenshot errors report both failed capture attempts", async () => {
   await assert.rejects(captureScreenshot(page, { width: 100, height: 100 }), /full-page screenshot: full page failed; tiled screenshot: tile failed/);
 });
 
+test("oversized pages skip the full-page screenshot", async () => {
+  const optionsSeen = [];
+  const timings = [];
+  let evaluations = 0;
+  const page = {
+    evaluate: async () => ++evaluations === 1 ? { width: 100, height: 16385 } : [0, 0],
+    screenshot: async (options) => { optionsSeen.push(options); return Buffer.from("tile"); },
+  };
+  const result = await captureScreenshot(page, { width: 100, height: 100 }, (tile) => timings.push(tile));
+  assert.equal(result.kind, "tiles");
+  assert.equal(result.tiles.length, 3);
+  assert.ok(optionsSeen.every((options) => options.fullPage && options.clip));
+  assert.equal(timings.length, 3);
+});
+
 test("missing screenshot reports its capture error", () => {
   const state = (screenshot, screenshotError) => ({
     title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0,

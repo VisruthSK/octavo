@@ -588,6 +588,7 @@ export async function hasInteractions(browser, file) {
 const PATIENCE = 4;
 const CAPTURE_TIMEOUT_MS = 300_000;
 const SCREENSHOT_TIMEOUT_MS = 5_000;
+const MAX_FULL_PAGE_HEIGHT = 16384;
 const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
 const MAX_SCREENSHOT_PIXELS = 20_000_000;
 const MAX_SCREENSHOT_TILES = 2048;
@@ -609,18 +610,20 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
   };
 }
 
-export async function captureScreenshot(page, viewport) {
+export async function captureScreenshot(page, viewport, onTile = () => {}) {
   const pageSize = await page.evaluate(() => ({
     width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
     height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
   }));
   const width = Math.max(viewport.width, pageSize.width);
   const height = Math.max(viewport.height, pageSize.height);
-  let fullPageError;
-  try {
-    return await page.screenshot({ fullPage: true, animations: "disabled", timeout: SCREENSHOT_TIMEOUT_MS });
-  } catch (error) {
-    fullPageError = error.message;
+  let fullPageError = `page height exceeds ${MAX_FULL_PAGE_HEIGHT} pixels`;
+  if (height <= MAX_FULL_PAGE_HEIGHT) {
+    try {
+      return await page.screenshot({ fullPage: true, animations: "disabled", timeout: SCREENSHOT_TIMEOUT_MS });
+    } catch (error) {
+      fullPageError = error.message;
+    }
   }
   const tileWidth = Math.min(viewport.width, MAX_SCREENSHOT_TILE_HEIGHT);
   const tileHeight = Math.min(MAX_SCREENSHOT_TILE_HEIGHT, Math.floor(MAX_SCREENSHOT_PIXELS / tileWidth));
@@ -634,21 +637,29 @@ export async function captureScreenshot(page, viewport) {
   try {
     for (const y of positions(height, tileHeight)) {
       for (const x of positions(width, tileWidth)) {
-        await page.evaluate(([left, top]) => {
-          window.scrollTo({ left, top, behavior: "instant" });
-          return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        }, [x, y]);
-        const clipWidth = Math.min(tileWidth, width - x);
-        const clipHeight = Math.min(tileHeight, height - y);
-        const png = await page.screenshot({
-          fullPage: true,
-          clip: { x, y, width: clipWidth, height: clipHeight },
-          animations: "disabled",
-          timeout: SCREENSHOT_TIMEOUT_MS,
-        });
-        bytes += png.length;
-        if (bytes > MAX_SCREENSHOT_BYTES) return { kind: "limit", width, height, limit: MAX_SCREENSHOT_BYTES, reason: "tile bytes" };
-        tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
+        const started = performance.now();
+        let evaluated;
+        try {
+          await page.evaluate(([left, top]) => {
+            window.scrollTo({ left, top, behavior: "instant" });
+            return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          }, [x, y]);
+          evaluated = performance.now();
+          const clipWidth = Math.min(tileWidth, width - x);
+          const clipHeight = Math.min(tileHeight, height - y);
+          const png = await page.screenshot({
+            fullPage: true,
+            clip: { x, y, width: clipWidth, height: clipHeight },
+            animations: "disabled",
+            timeout: SCREENSHOT_TIMEOUT_MS,
+          });
+          bytes += png.length;
+          if (bytes > MAX_SCREENSHOT_BYTES) return { kind: "limit", width, height, limit: MAX_SCREENSHOT_BYTES, reason: "tile bytes" };
+          tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
+        } finally {
+          const ended = performance.now();
+          onTile({ x, y, evaluateMs: (evaluated ?? ended) - started, screenshotMs: evaluated ? ended - evaluated : 0 });
+        }
       }
     }
   } catch (error) {
@@ -678,9 +689,19 @@ export async function capture(
     ...engine.contextOptions,
   });
   let phase = "new page";
+  let phaseStarted = performance.now();
+  const trace = process.env.OCTAVO_CAPTURE_TRACE === "1";
+  const log = (detail) => {
+    if (trace) console.error(`[capture] ${JSON.stringify({ file, scenario: scenario.name, rss: process.memoryUsage().rss, ...detail })}`);
+  };
+  const setPhase = (next) => {
+    log({ phase, ms: performance.now() - phaseStarted });
+    phase = next;
+    phaseStarted = performance.now();
+  };
   const deadline = captureDeadline(context, timeoutMs, () => phase);
   try {
-    phase = "install init scripts";
+    setPhase("install init scripts");
     await context.addInitScript(seedRandom);
     await context.addInitScript(trackTimers);
     const page = await context.newPage();
@@ -702,7 +723,7 @@ export async function capture(
     const knownLongLived = new Set(longLived ?? []);
     const waits = [];
     const wait = async (name, options = {}) => {
-      phase = `settle ${name}`;
+      setPhase(`settle ${name}`);
       waits.push(
         await engine.settle(page, settle, {
           quiet: (options.quiet ?? QUIET) * pace,
@@ -713,14 +734,14 @@ export async function capture(
         }),
       );
     };
-    phase = "goto";
+    setPhase("goto");
     await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
-    phase = "document body ready";
+    setPhase("document body ready");
     await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch(() => {});
     if (!(await page.evaluate(() => Boolean(document.body)).catch(() => false))) throw new Error("document body did not appear after page load");
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
-    phase = "fonts ready";
+    setPhase("fonts ready");
     if (scripted) await page.evaluate(() => document.fonts.ready);
     else await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 3000 }).catch(() => {});
     await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: "instant" })).catch(() => {});
@@ -740,32 +761,32 @@ export async function capture(
 
     const states = [];
     const record = async (label, extra = {}) => {
-      phase = `screenshot ${label}`;
+      setPhase(`screenshot ${label}`);
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
       let screenshotError;
-      const screenshot = await captureScreenshot(page, scenario.viewport).catch((error) => {
+      const screenshot = await captureScreenshot(page, scenario.viewport, (tile) => log({ phase, tile })).catch((error) => {
         screenshotError = error.message;
         return null;
       });
-      phase = `image fingerprints ${label}`;
+      setPhase(`image fingerprints ${label}`);
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
-      phase = `page observation ${label}`;
+      setPhase(`page observation ${label}`);
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
     };
     await record("load", { digest: previousDigest });
-    phase = "forcedStates element count";
+    setPhase("forcedStates element count");
     const forced = scripted && !scenario.motion
-      ? await engine.forcedStates(page, INTERACTIVE, observe, (detail) => { phase = detail; })
+      ? await engine.forcedStates(page, INTERACTIVE, observe, setPhase)
       : emptyChecks(0);
-    phase = "accessibility snapshot";
+    setPhase("accessibility snapshot");
     const accessibility = await settledAccessibilityTree(page);
     states[0].forced = forced.states;
     states[0].accessibility = accessibility;
     const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
     if (scripted && scenario.name === "desktop-light") {
-      phase = "resize viewport";
+      setPhase("resize viewport");
       await page.setViewportSize({ width: 900, height: 700 });
       await wait("after resize");
       await record("resize");
@@ -773,7 +794,7 @@ export async function capture(
       await wait("after restore viewport");
     }
     if (interact && scripted && scenario.name === "desktop-light") {
-      phase = "behaviour sweep selection";
+      setPhase("behaviour sweep selection");
       const handles = await page.$$("button, summary, [role=button], [role=tab], input[type=checkbox], input[type=radio], select");
       const safe = [];
       for (const handle of handles) {
@@ -791,7 +812,7 @@ export async function capture(
       }
       if (safe.length > 0) {
         for (const [index, handle] of safe.entries()) {
-          phase = `behaviour sweep element ${index}`;
+          setPhase(`behaviour sweep element ${index}`);
           const isSelect = await handle.evaluate((el) => el.tagName === "SELECT").catch(() => false);
           if (isSelect) {
             await handle.evaluate((el) => {
@@ -810,16 +831,16 @@ export async function capture(
       }
     }
     if (interact && scripted && scenario.sweep) {
-      phase = "reveal slide number lookup";
+      setPhase("reveal slide number lookup");
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
       let previous = previousDigest;
       for (const [index, interact] of interactions.entries()) {
-        phase = `interaction sweep step ${index} slide number lookup`;
+        setPhase(`interaction sweep step ${index} slide number lookup`);
         const slideNumber = await page.evaluate(() => {
           const index = window.Reveal?.getIndices?.();
           return index ? `${index.h}.${index.v}` : "none";
         }).catch(() => "unknown");
-        phase = `interaction sweep step ${index} slide ${slideNumber}`;
+        setPhase(`interaction sweep step ${index} slide ${slideNumber}`);
         const acted = await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
         const cursorDelay = slideDeck && index === HOVER
           ? await page.evaluate(() => window.Reveal?.getConfig?.().hideCursorTime ?? 0).catch(() => 0)
@@ -860,6 +881,7 @@ export async function capture(
     if (deadline.timedOut()) throw new Error(`capture timed out during ${deadline.phase()} after ${timeoutMs} ms`);
     throw new Error(`capture failed during ${phase}: ${error.message}`);
   } finally {
+    setPhase("closed");
     await deadline.close();
   }
 }
