@@ -192,6 +192,7 @@ jobs:
       - run: npm ci
         working-directory: verify
       - run: |
+          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-network >/dev/null
           for attempt in 1 2 3 4; do
             npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
             sleep $((attempt * 20))
@@ -268,6 +269,7 @@ jobs:
       - run: npm ci
         working-directory: verify
       - run: |
+          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-network >/dev/null
           for attempt in 1 2 3 4; do
             npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
             sleep $((attempt * 20))
@@ -306,6 +308,7 @@ jobs:
       - run: npm ci
         working-directory: verify
       - run: |
+          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-network >/dev/null
           for attempt in 1 2 3 4; do
             npx playwright-core install --with-deps chromium && exit 0
             sleep $((attempt * 20))
@@ -357,6 +360,7 @@ jobs:
       - run: npm ci
         working-directory: verify
       - run: |
+          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-network >/dev/null
           for attempt in 1 2 3 4; do
             npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
             sleep $((attempt * 20))
