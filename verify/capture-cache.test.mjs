@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureKey, cachedCapture, directory, payloadOf, readCapture, writeCapture } from "./capture-cache.mjs";
-import { SCENARIOS, capture } from "./capture.mjs";
+import { SCENARIOS, capture, loadDocument } from "./capture.mjs";
 import { launch } from "./engines/index.mjs";
 
 const browser = await launch();
@@ -181,4 +181,30 @@ test("a mismatched key in the file is ignored", async () => {
   writeFileSync(join(folder, `${key}.json.br`), readFileSync(join(folder, `${other}.json.br`)));
   assert.equal(readCapture(key, folder), null);
   assert.match(directory, /corpus[\\/]\.cache[\\/]captures$/);
+});
+
+
+test("failed captures cannot pass verification", async () => {
+  const { closeBrowser, verifyLevels } = await import("./verify.mjs");
+  try {
+    const missing = join(folder, "missing.html");
+    const { reports } = await verifyLevels(missing, [{ level: "portable", path: missing, only: ["desktop-light"] }]);
+    assert.match(reports[0][0].issues.join("; "), /crashed: original=capture failed.*optimized=capture failed/s);
+  } finally {
+    await closeBrowser();
+  }
+});
+
+
+test("HTML file navigation keeps its URL and HTML content type", async () => {
+  const page = await browser.newPage();
+  try {
+    const response = await loadDocument(page, file);
+    assert.equal(new URL(page.url()).protocol, "file:");
+    assert.match(response.headers()["content-type"], /^text\/html/);
+    assert.equal(await page.evaluate(() => document.contentType), "text/html");
+    assert.equal(await page.locator("h1").textContent(), "Title");
+  } finally {
+    await page.close();
+  }
 });

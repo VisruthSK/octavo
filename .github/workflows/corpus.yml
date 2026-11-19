@@ -23,6 +23,16 @@ on:
         type: choice
         options: [smoke, full, select]
         default: smoke
+      engine_browser:
+        description: Limit engine diagnostics to one browser
+        type: choice
+        options: [all, chromium, firefox, webkit]
+        default: all
+      engine_shard:
+        description: Limit engine diagnostics to one shard
+        type: choice
+        options: [all, "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+        default: all
       filter:
         description: Only verify documents whose id matches this regular expression
         default: "."
@@ -152,7 +162,7 @@ jobs:
           retention-days: 3
 
   engines:
-    name: ${{ matrix.label }} checks (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
+    name: ${{ matrix.browser }} checks (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select' && inputs.diagnose != 'experiment'
     runs-on: ubuntu-24.04
@@ -160,18 +170,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
-        shard: ${{ fromJSON(needs.plan.outputs.engine_shards) }}
-        include:
-          - browser: chromium
-            label: Chromium
-            pages: 4
-          - browser: firefox
-            label: Firefox
-            pages: 4
-          - browser: webkit
-            label: WebKit
-            pages: 4
+        browser: ${{ fromJSON(inputs.engine_browser && inputs.engine_browser != 'all' && format('["{0}"]', inputs.engine_browser) || '["chromium","firefox","webkit"]') }}
+        shard: ${{ fromJSON(inputs.engine_shard && inputs.engine_shard != 'all' && format('[{0}]', inputs.engine_shard) || needs.plan.outputs.engine_shards) }}
     env:
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
@@ -250,7 +250,7 @@ jobs:
   selftest:
     name: ${{ matrix.browser }} self-test
     needs: plan
-    if: needs.plan.outputs.tier != 'select' && (github.event_name != 'workflow_dispatch' || inputs.filter == '.') && inputs.diagnose != 'experiment'
+    if: needs.plan.outputs.tier != 'select' && (github.event_name != 'workflow_dispatch' || (inputs.filter == '.' && inputs.engine_browser == 'all' && inputs.engine_shard == 'all')) && inputs.diagnose != 'experiment'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -283,7 +283,7 @@ jobs:
   linked:
     name: Linked renders (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
     needs: [plan, build]
-    if: needs.plan.outputs.tier != 'select' && inputs.diagnose != 'experiment'
+    if: needs.plan.outputs.tier != 'select' && inputs.diagnose != 'experiment' && (!inputs.engine_browser || inputs.engine_browser == 'all') && (!inputs.engine_shard || inputs.engine_shard == 'all')
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 45 || 300 }}
     strategy:

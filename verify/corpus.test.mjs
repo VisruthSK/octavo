@@ -97,3 +97,12 @@ test("generateReport includes wire size columns for q9", () => {
   assert.ok(text.includes("| Category / level | Docs | Input KiB | Output KiB | Brotli q9 KiB | Gzip 9 KiB | Median ratio | p50 ms | p95 ms | Naive KiB | Brotli(original) KiB |"));
   assert.ok(text.includes("| cat1 / serve | 1 | 2.0 | 1.0 | 0.4 | 0.5 | 2.00 | 50 | 50 | 1.8 | 0.6 |"));
 });
+
+
+test("archive no-js capture failures are not ignored", async () => {
+  const { ignoredArchiveNoJsIssue } = await import("./corpus.mjs");
+  for (const issue of ["crashed: original=failed optimized=failed", "capture timed out during confirmation", "verification deadline reached during document comparison", "screenshot missing", "check incomplete: focus"]) {
+    assert.equal(ignoredArchiveNoJsIssue(issue), false);
+  }
+  assert.equal(ignoredArchiveNoJsIssue("pixels differ"), true);
+});

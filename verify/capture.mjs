@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engine } from "./engines/index.mjs";
@@ -610,6 +611,19 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
   };
 }
 
+export async function loadDocument(page, file) {
+  const url = pathToFileURL(file).href;
+  if (engine.name !== "webkit") return page.goto(url, { waitUntil: "load" });
+  const body = await readFile(file);
+  const fulfill = (route) => route.fulfill({ body, contentType: "text/html" });
+  await page.route(url, fulfill);
+  try {
+    return await page.goto(url, { waitUntil: "load" });
+  } finally {
+    await page.unroute(url, fulfill);
+  }
+}
+
 export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
   const pageSize = await page.evaluate(() => ({
     width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
@@ -675,7 +689,7 @@ export async function capture(
   file,
   scenario,
   lossy,
-  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS, longLived } = {},
+  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS, longLived, onPhase = () => {} } = {},
 ) {
   const pace = patient ? PATIENCE : 1;
   const forms = rootForms(root);
@@ -697,8 +711,10 @@ export async function capture(
   const setPhase = (next) => {
     log({ phase, ms: performance.now() - phaseStarted });
     phase = next;
+    onPhase(next);
     phaseStarted = performance.now();
   };
+  onPhase(phase);
   const deadline = captureDeadline(context, timeoutMs, () => phase);
   try {
     setPhase("install init scripts");
@@ -735,10 +751,31 @@ export async function capture(
       );
     };
     setPhase("goto");
-    await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
+    const response = await loadDocument(page, file).catch((error) => {
+      throw new Error(`navigation failed: ${JSON.stringify({ url: page.url(), error: error.message })}`);
+    });
     setPhase("document body ready");
-    await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch(() => {});
-    if (!(await page.evaluate(() => Boolean(document.body)).catch(() => false))) throw new Error("document body did not appear after page load");
+    let waitError;
+    await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch((error) => { waitError = error.message; });
+    let body;
+    let evaluateError;
+    try {
+      body = await page.evaluate(() => Boolean(document.body));
+    } catch (error) {
+      evaluateError = error.message;
+    }
+    if (!body) {
+      let documentState;
+      try {
+        documentState = await page.evaluate(() => {
+          const html = document.documentElement?.outerHTML ?? "";
+          return { readyState: document.readyState, bodyNull: document.body === null, htmlLength: html.length, htmlStart: html.slice(0, 200) };
+        });
+      } catch (error) {
+        documentState = { error: error.message };
+      }
+      throw new Error(`document body did not appear after page load: ${JSON.stringify({ waitError, evaluateError, url: page.url(), document: documentState, response: response ? { url: response.url(), status: response.status() } : null })}`);
+    }
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
     setPhase("fonts ready");
@@ -881,7 +918,7 @@ export async function capture(
     if (deadline.timedOut()) throw new Error(`capture timed out during ${deadline.phase()} after ${timeoutMs} ms`);
     throw new Error(`capture failed during ${phase}: ${error.message}`);
   } finally {
-    setPhase("closed");
+    onPhase(null);
     await deadline.close();
   }
 }
