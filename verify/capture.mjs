@@ -711,10 +711,31 @@ export async function capture(
       );
     };
     setPhase("goto");
-    await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
+    const response = await page.goto(pathToFileURL(file).href, { waitUntil: "load" }).catch((error) => {
+      throw new Error(`navigation failed: ${JSON.stringify({ url: page.url(), error: error.message })}`);
+    });
     setPhase("document body ready");
-    await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch(() => {});
-    if (!(await page.evaluate(() => Boolean(document.body)).catch(() => false))) throw new Error("document body did not appear after page load");
+    let waitError;
+    await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch((error) => { waitError = error.message; });
+    let body;
+    let evaluateError;
+    try {
+      body = await page.evaluate(() => Boolean(document.body));
+    } catch (error) {
+      evaluateError = error.message;
+    }
+    if (!body) {
+      let documentState;
+      try {
+        documentState = await page.evaluate(() => {
+          const html = document.documentElement?.outerHTML ?? "";
+          return { readyState: document.readyState, bodyNull: document.body === null, htmlLength: html.length, htmlStart: html.slice(0, 200) };
+        });
+      } catch (error) {
+        documentState = { error: error.message };
+      }
+      throw new Error(`document body did not appear after page load: ${JSON.stringify({ waitError, evaluateError, url: page.url(), document: documentState, response: response ? { url: response.url(), status: response.status() } : null })}`);
+    }
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
     setPhase("fonts ready");

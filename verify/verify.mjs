@@ -90,7 +90,7 @@ export async function browserIdentity() {
   }
 }
 
-const crashed = (error) => ({ crashed: error.message.slice(0, 200), states: [] });
+const crashed = (error) => ({ crashed: error.message, states: [] });
 
 let engineIdentity;
 const captureIdentity = () => (engineIdentity ??= browserIdentity());
