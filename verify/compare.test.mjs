@@ -512,3 +512,22 @@ test("a synthetic tall page compares the last tile and reports a tile cap", asyn
     await browser.close();
   }
 });
+
+test("script-disabled tall pages compare their last tile", { timeout: 10000 }, async () => {
+  const browser = await launch();
+  try {
+    const viewport = { width: 100, height: 100 };
+    const page = await browser.newPage({ viewport, javaScriptEnabled: false });
+    await page.setContent('<style>body{margin:0;height:16385px} #pixel{position:absolute;top:16384px;width:1px;height:1px;background:white}</style><div id="pixel"></div>');
+    const before = await captureScreenshot(page, viewport, () => {}, false);
+    await page.locator("#pixel").evaluate((pixel) => pixel.style.background = "black");
+    const after = await captureScreenshot(page, viewport, () => {}, false);
+    assert.equal(before.kind, "tiles");
+    assert.equal(before.tiles.at(-1).y + before.tiles.at(-1).height, 16385);
+    const state = (screenshot) => ({ label: "load", title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0, scroll: [0, 0], labels: [], rects: [], styles: [], screenshot });
+    const result = (screenshot) => ({ states: [state(screenshot)], errors: [], requests: [] });
+    assert.ok(compare(result(before), result(after), false).some((issue) => issue.includes(`tile at 0,${before.tiles.at(-1).y}: screenshot: 1 pixels differ`)));
+  } finally {
+    await browser.close();
+  }
+});

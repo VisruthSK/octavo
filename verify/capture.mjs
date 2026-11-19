@@ -610,7 +610,7 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
   };
 }
 
-export async function captureScreenshot(page, viewport, onTile = () => {}) {
+export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
   const pageSize = await page.evaluate(() => ({
     width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
     height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
@@ -640,10 +640,10 @@ export async function captureScreenshot(page, viewport, onTile = () => {}) {
         const started = performance.now();
         let evaluated;
         try {
-          await page.evaluate(([left, top]) => {
+          await page.evaluate(([left, top, scripted]) => {
             window.scrollTo({ left, top, behavior: "instant" });
-            return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-          }, [x, y]);
+            if (scripted) return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          }, [x, y, javaScriptEnabled]);
           evaluated = performance.now();
           const clipWidth = Math.min(tileWidth, width - x);
           const clipHeight = Math.min(tileHeight, height - y);
@@ -764,7 +764,7 @@ export async function capture(
       setPhase(`screenshot ${label}`);
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
       let screenshotError;
-      const screenshot = await captureScreenshot(page, scenario.viewport, (tile) => log({ phase, tile })).catch((error) => {
+      const screenshot = await captureScreenshot(page, scenario.viewport, (tile) => log({ phase, tile }), scripted).catch((error) => {
         screenshotError = error.message;
         return null;
       });
