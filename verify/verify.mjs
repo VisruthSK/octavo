@@ -94,7 +94,7 @@ let engineIdentity;
 const captureIdentity = () => (engineIdentity ??= browserIdentity());
 
 const RECAPTURES = 3;
-const COMPARISON_TIMEOUT_MS = 660_000;
+const COMPARISON_TIMEOUT_MS = 300_000;
 
 export async function withTimeout(task, milliseconds, onTimeout) {
   let timer;
