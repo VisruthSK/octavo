@@ -187,7 +187,7 @@ export function formatReport(results, options = {}) {
     const limits = [
       ...(engine.placeholderStyle ? [] : [`${engine.label}: computed style for ::placeholder is unavailable; screenshot pixel comparison remains active.`]),
       ...browserChecks.screenshotLimits.map((entry) =>
-        `${entry.id} (${entry.scenario}, ${entry.side}, ${entry.label}): page too large for screenshots limit ${entry.limit} pixels at ${entry.height}px tall (${entry.width}px wide).`,
+        `${entry.id} (${entry.scenario}, ${entry.side}, ${entry.label}): screenshot incomplete at ${entry.width}x${entry.height}: ${entry.reason ?? "pixels"} limit ${entry.limit}.`,
       ),
     ];
     lines.push(``, `## Limits`, limits.length ? "" : "None.", ...limits.map((limit) => `- ${limit}`));

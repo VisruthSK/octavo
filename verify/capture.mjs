@@ -590,6 +590,8 @@ const CAPTURE_TIMEOUT_MS = 300_000;
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
 const MAX_SCREENSHOT_PIXELS = 20_000_000;
+const MAX_SCREENSHOT_TILES = 512;
+const MAX_SCREENSHOT_BYTES = 128 * 1024 * 1024;
 
 export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture") {
   let timedOut = false;
@@ -620,14 +622,15 @@ export async function captureScreenshot(page, viewport) {
   } catch (error) {
     fullPageError = error.message;
   }
-  if (width * height > MAX_SCREENSHOT_PIXELS) {
-    return { kind: "limit", width, height, limit: MAX_SCREENSHOT_PIXELS };
-  }
   const tileWidth = Math.min(viewport.width, MAX_SCREENSHOT_TILE_HEIGHT);
-  const tileHeight = Math.min(viewport.height, MAX_SCREENSHOT_TILE_HEIGHT);
+  const tileHeight = Math.min(viewport.height, MAX_SCREENSHOT_TILE_HEIGHT, Math.floor(MAX_SCREENSHOT_PIXELS / tileWidth));
   const positions = (size, step) => Array.from({ length: Math.ceil(size / step) }, (_, index) => index * step);
+  if (Math.ceil(width / tileWidth) * Math.ceil(height / tileHeight) > MAX_SCREENSHOT_TILES) {
+    return { kind: "limit", width, height, limit: MAX_SCREENSHOT_TILES, reason: "tile count" };
+  }
   const originalScroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
   const tiles = [];
+  let bytes = 0;
   try {
     for (const y of positions(height, tileHeight)) {
       for (const x of positions(width, tileWidth)) {
@@ -643,6 +646,8 @@ export async function captureScreenshot(page, viewport) {
           animations: "disabled",
           timeout: SCREENSHOT_TIMEOUT_MS,
         });
+        bytes += png.length;
+        if (bytes > MAX_SCREENSHOT_BYTES) return { kind: "limit", width, height, limit: MAX_SCREENSHOT_BYTES, reason: "tile bytes" };
         tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
       }
     }
@@ -846,7 +851,7 @@ export async function capture(
           taken: recorded.filter((state) => state.screenshot).length,
           total: recorded.length,
           limits: recorded.flatMap(({ label, screenshot }) =>
-            screenshot?.kind === "limit" ? [{ label, width: screenshot.width, height: screenshot.height, limit: screenshot.limit }] : [],
+            screenshot?.kind === "limit" ? [{ label, width: screenshot.width, height: screenshot.height, limit: screenshot.limit, reason: screenshot.reason }] : [],
           ),
         },
       },

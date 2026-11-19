@@ -31,7 +31,7 @@ export const checksOf = (checks) => {
   }
   const shots = checks.screenshots;
   if (shots && shots.taken < shots.total) missing.push(`screenshot on ${shots.total - shots.taken} of ${shots.total} states`);
-  for (const limit of shots?.limits ?? []) missing.push(`screenshot pixels not compared on ${limit.label}: ${limit.width}x${limit.height} exceeds ${limit.limit} pixels`);
+  for (const limit of shots?.limits ?? []) missing.push(`screenshot pixels not compared on ${limit.label}: ${limit.width}x${limit.height}, ${limit.reason ?? "pixels"} limit ${limit.limit}`);
   return missing;
 };
 
