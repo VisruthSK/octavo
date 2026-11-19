@@ -111,12 +111,12 @@ const BEFORE_BODY =
 const RUNTIME =
   "window.quarto=window.quarto||{};\n" +
   "document.addEventListener('DOMContentLoaded',function(){\n" +
-  "window.tippy('.footnote-ref',{placement:'bottom', onShow: function(instance) { if(instance.popper) { instance.popper.querySelector('.tippy-box').removeAttribute('tabindex'); } }});\n" +
+  "window.tippy('.footnote-ref',{placement:'bottom'});\n" +
   "var anchors=new window.AnchorJS();anchors.add('.anchored');\n" +
   "var buttons=document.querySelectorAll('.code-copy-button');\n" +
   "buttons.forEach(function(el){var clip=new window.ClipboardJS(el);clip.on('success',function(){})});\n" +
   "var ann=document.querySelectorAll('.code-annotation-anchor');\n" +
-  "ann.forEach(function(el){window.tippy(el,{placement:'top', onShow: function(instance) { if(instance.popper) { instance.popper.querySelector('.tippy-box').removeAttribute('tabindex'); } }});});\n" +
+  "ann.forEach(function(el){window.tippy(el,{placement:'top'})});\n" +
   "var toggles=document.querySelectorAll('[data-bs-toggle=\"collapse\"]');\n" +
   "toggles.forEach(function(el){el.addEventListener('click',function(){if(window.bootstrap){new window.bootstrap.Collapse(el)}})});\n" +
   "var light=document.querySelectorAll('img[data-zoomable]');\n" +
