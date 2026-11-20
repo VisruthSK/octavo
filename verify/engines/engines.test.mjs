@@ -134,8 +134,16 @@ test("webkit error comparison keeps the error kind and ignores the source snippe
     webkit.normalizeError("Not allowed to load local resource: file:///runner/out/engines-webkit-2/local.mp4"),
   );
   assert.notEqual(
-    webkit.normalizeError("Not allowed to load local resource: file:///a/local.mp4"),
-    webkit.normalizeError("Not allowed to load local resource: file:///a/other.mp4"),
+    webkit.normalizeError("Not allowed to load local resource: file:///home/a/local.mp4"),
+    webkit.normalizeError("Not allowed to load local resource: file:///home/a/other.mp4"),
+  );
+  assert.equal(
+    webkit.normalizeError("Cross origin requests are only supported for HTTP. //home/runner/work/octavo/octavo/corpus/.cache/rendered/listings.json due to access control checks."),
+    webkit.normalizeError("Cross origin requests are only supported for HTTP. //home/runner/work/octavo/octavo/out/engines-webkit-5/listings.json due to access control checks."),
+  );
+  assert.notEqual(
+    webkit.normalizeError("Failed https://example.com/a/listings.json"),
+    webkit.normalizeError("Failed https://example.com/b/listings.json"),
   );
   assert.equal(webkit.normalizeError("null is not an object (evaluating 'document.body.className=`built-3`')"), "null is not an object");
   assert.equal(webkit.normalizeError("undefined is not an object (evaluating 'ev.currentSlide.querySelector')"), "undefined is not an object");
