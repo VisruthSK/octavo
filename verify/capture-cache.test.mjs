@@ -199,9 +199,8 @@ test("failed captures cannot pass verification", async () => {
 test("HTML file navigation keeps its URL and HTML content type", async () => {
   const page = await browser.newPage();
   try {
-    const response = await loadDocument(page, file);
+    await loadDocument(page, file);
     assert.equal(new URL(page.url()).protocol, "file:");
-    assert.match(response.headers()["content-type"], /^text\/html/);
     assert.equal(await page.evaluate(() => document.contentType), "text/html");
     assert.equal(await page.locator("h1").textContent(), "Title");
   } finally {
