@@ -1,4 +1,5 @@
 import { cpus } from "node:os";
+import { relative } from "node:path";
 import { readFileSync } from "node:fs";
 import { captureKey, cachedCapture } from "./capture-cache.mjs";
 import { capture, hasInteractions, scenariosFor } from "./capture.mjs";
@@ -139,7 +140,7 @@ async function take(file, scenario, lossy, options) {
   }
 }
 
-async function confirmed(original, file, scenario, before, after, lossy, interact, sweep, isDeadlineReached, rootFor, linked, metrics) {
+async function confirmed(original, file, scenario, before, after, lossy, interact, sweep, isDeadlineReached, rootFor, linked, metrics, entryPath) {
   const stats = { roundedPixels: 0 };
   const issues = compare(before, after, lossy, stats);
   if (before.crashed || after.crashed || !issues.length || issues.some((issue) => issue.includes("capture timed out") || issue.includes("screenshot missing"))) {
@@ -152,8 +153,8 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
       metrics.recaptures += 1;
       const patient = round > 0;
       const [again, optimizedAgain] = await Promise.all([
-        take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, linkedOriginal: linked, onPhase: metrics.phase("confirmation original") }).catch(crashed),
-        take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked, onPhase: metrics.phase("confirmation optimized") }).catch(crashed),
+        take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, entryPath, onPhase: metrics.phase("confirmation original") }).catch(crashed),
+        take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked, entryPath, onPhase: metrics.phase("confirmation optimized") }).catch(crashed),
       ]);
       if (again.crashed || optimizedAgain.crashed) return compare(again, optimizedAgain, lossy);
       pairs.push({ before: view(again, sweep), after: view(optimizedAgain, sweep) });
@@ -192,6 +193,7 @@ const orderOf = (plans) => unionOf(plans).map((scenario) => scenario.name);
 
 export async function verifyLevels(original, entries, { lossy = false, deadlineReached = () => false, roots, linked = false, captureCache = false } = {}) {
   const rootFor = (file) => (roots ? (file === original ? roots.original : roots.optimized) : undefined);
+  const entryPath = roots ? relative(roots.original, original) : undefined;
   const plans = entries.map((entry) => ({ ...entry, set: scenariosFor(entry.level).filter(({ name }) => !entry.only || entry.only.includes(name)) }));
   const planIndex = new Map(plans.map((plan, index) => [plan, index]));
   const groups = [...Map.groupBy(plans, (plan) => plan.key ?? plan.path).values()];
@@ -204,7 +206,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
   const interact = await slots.using(async () => {
     const held = await acquire();
     try {
-      return await hasInteractions(held.open, original);
+      return await hasInteractions(held.open, original, rootFor(original));
     } finally {
       await held.release();
     }
@@ -218,7 +220,6 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
       interactions: JSON.stringify({
         interact,
         linked,
-        linkedOriginal: linked,
         lossy,
         root: rootFor(original) ?? null,
         sweep: Boolean(scenario.sweep),
@@ -226,7 +227,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
     });
   const run = (file, scenario, metrics, side, cache = false) =>
     slots.using(async () => {
-      const options = { interact, root: rootFor(file), linked, linkedOriginal: linked && file === original, onPhase: metrics.phase(side) };
+      const options = { interact, root: rootFor(file), linked, entryPath, onPhase: metrics.phase(side) };
       try {
         return await withTimeout(
           async () => {
@@ -310,6 +311,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
           rootFor,
           linked,
           metrics,
+          entryPath,
         );
         timing.compare += elapsed(startedCompare);
         reports[planIndex.get(plan)].push({

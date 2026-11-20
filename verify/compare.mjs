@@ -2,7 +2,6 @@ import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import { engine } from "./engines/index.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
-import { isMissingFile } from "./linked-artifacts.mjs";
 import { canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 import { validStyles } from "./style-storage.mjs";
 
@@ -260,8 +259,8 @@ export function compare(before, after, lossy, stats) {
   const issues = [];
   if (!before.states.length) issues.push("original produced no states");
   const linked = before.checks?.missingFiles !== undefined || after.checks?.missingFiles !== undefined;
-  const beforeErrors = linked ? before.errors.filter((error) => !isMissingFile(error)) : before.errors;
-  const afterErrors = linked ? after.errors.filter((error) => !isMissingFile(error)) : after.errors;
+  const beforeErrors = before.errors;
+  const afterErrors = after.errors;
   if (JSON.stringify(beforeErrors) !== JSON.stringify(afterErrors)) {
     issues.push(`console errors: ${JSON.stringify(beforeErrors)} vs ${JSON.stringify(afterErrors)}`);
   }

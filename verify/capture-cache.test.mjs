@@ -154,9 +154,9 @@ test("a capture that fetched from the network is not cached", async () => {
   const key = captureKey({ ...parts, original: readFileSync(remote) });
   const outcome = await cachedCapture({ key, folder, capture: () => capture(browser, remote, scenario, false, { interact: true }) });
   assert.equal(outcome.cached, false);
-  assert.deepEqual(outcome.result.requests, ["http://127.0.0.1:65001/x.js"]);
+  assert.deepEqual(outcome.result.requests, ["http://octavo.test/index.html", "http://127.0.0.1:65001/x.js"]);
   assert.equal(readCapture(key, folder), null);
-  assert.deepEqual((await fresh()).requests, []);
+  assert.deepEqual((await fresh()).requests, ["http://octavo.test/index.html"]);
 });
 
 test("a linked verification ignores the capture cache", async () => {
