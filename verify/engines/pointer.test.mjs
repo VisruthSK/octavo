@@ -130,3 +130,23 @@ test("focus styles do not include hover styles", async () => {
     await browser.close();
   }
 });
+
+test("hover failures include hit testing and probe context", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<button id="target" class="sample">Target</button>');
+    const { checks } = await forcedStates(page, "button", (input) => {
+      const target = document.querySelector("button");
+      return { style: "", writingMode: "horizontal-tb", states: { hover: false, focus: target.matches(":focus"), focusVisible: target.matches(":focus-visible"), active: target.matches(":active") } };
+    });
+    const context = JSON.parse(checks.details.hover[0].split("; context ")[1]);
+    assert.deepEqual(context.hit, { tag: "button", id: "target", class: "sample", descendant: true });
+    assert.ok(context.box.width > 0 && context.viewport.width > 0);
+    assert.equal(typeof context.scroll.y, "number");
+    assert.equal(context.probe.hover, false);
+    assert.equal(typeof context.point.x, "number");
+  } finally {
+    await browser.close();
+  }
+});
