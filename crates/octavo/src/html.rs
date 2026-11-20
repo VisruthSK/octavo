@@ -136,6 +136,7 @@ pub(crate) struct Attribute {
     pub(crate) name: AttrName,
     pub(crate) value: String,
     pub(crate) value_span: Option<Range<usize>>,
+    pub(crate) span: Range<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -426,6 +427,7 @@ fn parse_attrs(src: &str, mut i: usize, collect: bool) -> (Vec<Attribute>, usize
                         name: AttrName::parse(name),
                         value: value.to_string(),
                         value_span,
+                        span: start..i,
                     });
                 }
             }

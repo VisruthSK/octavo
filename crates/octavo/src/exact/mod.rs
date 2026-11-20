@@ -229,6 +229,29 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
             let image = tag.element == Element::Img && !tag.in_svg && matches!(attr.name, AttrName::Src | AttrName::DataSrc);
             consider(doc, span, target, false, false, None, image, options, &mut edits, &mut warnings);
         }
+        if matches!(tag.element, Element::Script | Element::Style) {
+            if let Some(attr) = tag.attrs.iter().find(|a| {
+                a.name == AttrName::Type && (
+                    (tag.element == Element::Script && a.value.trim().eq_ignore_ascii_case("text/javascript")) ||
+                    (tag.element == Element::Style && a.value.trim().eq_ignore_ascii_case("text/css"))
+                )
+            }) {
+                let open_end = tag.body.as_ref().map_or(tag.span.end, |b| b.start);
+                let open_tag = &doc.src()[tag.span.start..open_end];
+                let ws_start = doc.src()[..attr.span.start].trim_end_matches(|c: char| c.is_ascii_whitespace()).len().max(tag.span.start);
+                let edit_span = ws_start..attr.span.end;
+                let rel_start = ws_start - tag.span.start;
+                let rel_end = attr.span.end - tag.span.start;
+                let candidate = format!("{}{}", &open_tag[..rel_start], &open_tag[rel_end..]);
+                let proven = adopt(open_tag.to_string(), candidate, &oracle::DefaultAttr);
+                let target = Target::Resource(tag.label().to_string());
+                if proven.rejected() {
+                    warnings.push(Warning::OracleRejected { transform: Transform::StrippedDefaultAttr, target });
+                } else {
+                    edits.push(Edit { span: edit_span, text: String::new(), transform: Transform::StrippedDefaultAttr, target });
+                }
+            }
+        }
         if tag.element == Element::Style {
             if let Some(body) = &tag.body {
                 stylesheet(doc, body.clone(), Target::Resource(tag.label().to_string()), options, &mut edits, &mut warnings);
@@ -432,6 +455,31 @@ mod tests {
             assert_eq!(optimize(&wrong, Mode::Exact).unwrap().html, wrong);
             let descriptor = format!("<html><style>@font-face{{font-family:url({uri}) format('{format}')}}</style></html>");
             assert_eq!(optimize(&descriptor, Mode::Exact).unwrap().html, descriptor);
+        }
+    }
+
+    #[test]
+    fn exact_strips_default_type_attributes() {
+        let input = "<html><script type=\"text/javascript\">console.log(1);</script><style type='text/css'>a{color:red}</style></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, "<html><script>console.log(1);</script><style>a{color:red}</style></html>");
+        assert_eq!(out.applied.iter().filter(|s| s.transform == Transform::StrippedDefaultAttr).count(), 2);
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn default_attr_property_test(
+            whitespace in " [ ]{1,4}",
+            quote in "['\"]",
+            extra_attr in "(id|class|data-x)",
+            extra_val in "[a-z0-9_-]{1,8}"
+        ) {
+            let html = format!("<html><script{whitespace}{extra_attr}={quote}{extra_val}{quote}{whitespace}type={quote}text/javascript{quote}>1;</script></html>");
+            let out = optimize(&html, Mode::Exact).unwrap();
+            proptest::prop_assert!(!out.html.contains("type="));
+            proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::StrippedDefaultAttr));
+            proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
         }
     }
 }

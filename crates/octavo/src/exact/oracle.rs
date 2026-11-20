@@ -5,6 +5,40 @@ use std::{borrow::Cow, collections::BTreeMap};
 #[doc = "Compares decoded data URL payloads."]
 pub struct Base64;
 
+#[doc = "Checks that only redundant default type attributes are removed."]
+pub struct DefaultAttr;
+
+impl super::Oracle<String> for DefaultAttr {
+    fn equivalent(&self, original: &String, candidate: &String) -> bool {
+        default_attr(original, candidate)
+    }
+}
+
+pub fn default_attr(original: &str, candidate: &str) -> bool {
+    let scan_orig = crate::html::scan(original);
+    let scan_cand = crate::html::scan(candidate);
+    let (Some(orig_tag), Some(cand_tag)) = (scan_orig.tags.first(), scan_cand.tags.first()) else { return false };
+    if scan_orig.tags.len() != 1 || scan_cand.tags.len() != 1 || orig_tag.element != cand_tag.element { return false; }
+    if !matches!(orig_tag.element, crate::html::Element::Script | crate::html::Element::Style) { return false; }
+    if orig_tag.attrs.len() != cand_tag.attrs.len() + 1 { return false; }
+    let mut cand_iter = cand_tag.attrs.iter();
+    let mut removed = None;
+    for attr in &orig_tag.attrs {
+        if matches!(cand_iter.as_slice().first(), Some(c) if c.name == attr.name && c.value == attr.value) {
+            cand_iter.next();
+        } else if removed.is_none() {
+            removed = Some(attr);
+        } else {
+            return false;
+        }
+    }
+    cand_iter.next().is_none() && match (orig_tag.element, removed) {
+        (crate::html::Element::Script, Some(attr)) => attr.name == crate::html::AttrName::Type && attr.value.trim().eq_ignore_ascii_case("text/javascript"),
+        (crate::html::Element::Style, Some(attr)) => attr.name == crate::html::AttrName::Type && attr.value.trim().eq_ignore_ascii_case("text/css"),
+        _ => false,
+    }
+}
+
 impl super::Oracle<String> for Base64 {
     fn equivalent(&self, original: &String, candidate: &String) -> bool {
         base64(original, candidate)
@@ -375,6 +409,15 @@ pub fn font(input: &[u8], output: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_attr_oracle_rejects_non_default_and_altered_attrs() {
+        assert!(default_attr("<script type=\"text/javascript\"></script>", "<script></script>"));
+        assert!(default_attr("<style type='text/css'></style>", "<style></style>"));
+        assert!(!default_attr("<script type=\"module\"></script>", "<script></script>"));
+        assert!(!default_attr("<script type=\"text/javascript\"></script>", "<script src=\"x\"></script>"));
+        assert!(!default_attr("<div type=\"text/javascript\"></div>", "<div></div>"));
+    }
 
     #[test]
     fn base64_rejects_changed_and_invalid_payloads() {
