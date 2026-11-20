@@ -813,6 +813,7 @@ export async function capture(
       setPhase(`image fingerprints ${label}`);
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       setPhase(`page observation ${label}`);
+      if (scripted) await page.evaluate(() => document.fonts.ready).catch(() => {});
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
