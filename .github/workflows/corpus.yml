@@ -176,7 +176,7 @@ jobs:
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
       OCTAVO_BROWSER: ${{ matrix.browser }}
-      OCTAVO_PAGES: ${{ matrix.pages }}
+      OCTAVO_PAGES: 4
       OCTAVO_CAPTURE_TRACE: ${{ inputs.filter == 'twenty-thousand-paragraphs' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v7

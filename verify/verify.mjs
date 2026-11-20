@@ -7,7 +7,9 @@ import { checksOf, engine, engineNotice, launch, withIncompleteCheckIssues } fro
 import { worthRetrying } from "./transient.mjs";
 import { verifierHash } from "./verdicts.mjs";
 
-const wanted = Number(process.env.OCTAVO_PAGES ?? Math.max(2, Math.floor(cpus().length / 2)));
+const configuredPages = process.env.OCTAVO_PAGES;
+const wanted = configuredPages === undefined ? Math.max(2, Math.floor(cpus().length / 2)) : Number(configuredPages);
+if (!Number.isInteger(wanted) || wanted < 1) throw new Error(`OCTAVO_PAGES must be a positive integer, got "${configuredPages}"`);
 const isolated = engine.isolated;
 export const pages = isolated ? Math.min(wanted, 4) : wanted;
 
