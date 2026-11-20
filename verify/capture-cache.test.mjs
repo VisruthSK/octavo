@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureKey, cachedCapture, directory, payloadOf, readCapture, writeCapture } from "./capture-cache.mjs";
-import { SCENARIOS, capture, loadDocument } from "./capture.mjs";
+import { SCENARIOS, capture, captureDeadline, loadDocument } from "./capture.mjs";
 import { launch } from "./engines/index.mjs";
 
 const browser = await launch();
@@ -206,4 +206,31 @@ test("HTML file navigation keeps its URL and HTML content type", async () => {
   } finally {
     await page.close();
   }
+});
+
+const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+test("the capture deadline restarts on progress and stops at the total cap", async () => {
+  let closed = 0;
+  const context = { close: async () => { closed += 1; } };
+  const stalled = captureDeadline(context, 80, () => "stalled", 400);
+  await pause(160);
+  assert.equal(stalled.timedOut(), true);
+  assert.equal(closed, 1);
+
+  const progressing = captureDeadline(context, 80, () => "progressing", 400);
+  for (let step = 0; step < 4; step++) {
+    await pause(40);
+    progressing.touch();
+  }
+  assert.equal(progressing.timedOut(), false);
+  await pause(120);
+  assert.equal(progressing.timedOut(), true);
+
+  const capped = captureDeadline(context, 120, () => "capped", 300);
+  for (let step = 0; step < 12; step++) {
+    await pause(40);
+    capped.touch();
+  }
+  assert.equal(capped.timedOut(), true);
 });

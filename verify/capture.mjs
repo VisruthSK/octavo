@@ -587,6 +587,7 @@ export async function hasInteractions(browser, file) {
 
 const PATIENCE = 4;
 const CAPTURE_TIMEOUT_MS = 300_000;
+const CAPTURE_TOTAL_FACTOR = 4;
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const MAX_FULL_PAGE_HEIGHT = 16384;
 const SCREENSHOT_TIMEOUT_AREA = 1280 * 720;
@@ -597,23 +598,30 @@ const MAX_SCREENSHOT_BYTES = 128 * 1024 * 1024;
 
 export const tileTimeout = (width, height) => SCREENSHOT_TIMEOUT_MS * Math.max(1, Math.ceil((width * height) / SCREENSHOT_TIMEOUT_AREA));
 
-export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture") {
+export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture", totalMs = timeoutMs * CAPTURE_TOTAL_FACTOR) {
   let timedOut = false;
-  const timer = setTimeout(() => {
+  let timer;
+  const started = Date.now();
+  const expire = () => {
     timedOut = true;
     void context.close().catch(() => {});
-  }, timeoutMs);
+  };
+  const touch = () => {
+    clearTimeout(timer);
+    if (timedOut) return;
+    timer = setTimeout(expire, Math.max(0, Math.min(timeoutMs, started + totalMs - Date.now())));
+  };
+  touch();
   return {
     timedOut: () => timedOut,
     phase,
+    touch,
     close: async () => {
       clearTimeout(timer);
       await context.close().catch(() => {});
     },
   };
 }
-
-export const loadDocument = (page, file) => engine.loadDocument(page, file);
 
 export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
   const pageSize = await page.evaluate(() => ({
@@ -704,6 +712,7 @@ export async function capture(
     phase = next;
     onPhase(next);
     phaseStarted = performance.now();
+    deadline?.touch();
   };
   onPhase(phase);
   const deadline = captureDeadline(context, timeoutMs, () => phase);
@@ -792,7 +801,10 @@ export async function capture(
       setPhase(`screenshot ${label}`);
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
       let screenshotError;
-      const screenshot = await captureScreenshot(page, scenario.viewport, (tile) => log({ phase, tile }), scripted).catch((error) => {
+      const screenshot = await captureScreenshot(page, scenario.viewport, (tile) => {
+        deadline.touch();
+        log({ phase, tile });
+      }, scripted).catch((error) => {
         screenshotError = error.message;
         return null;
       });
