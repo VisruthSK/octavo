@@ -57,6 +57,12 @@ impl super::Oracle<Vec<u8>> for Font {
 #[doc = "Compares CSS token streams conservatively."]
 pub struct Css;
 
+pub const LENGTH_UNITS: [&str; 31] = [
+    "px", "em", "rem", "ex", "ch", "vw", "vh", "vi", "vb", "vmin", "vmax", "cm", "mm", "in", "pt",
+    "pc", "q", "cqw", "cqh", "cqi", "cqb", "cqmin", "cqmax", "lh", "rlh", "svw", "svh", "lvw",
+    "lvh", "dvw", "dvh",
+];
+
 impl super::Oracle<String> for Css {
     fn equivalent(&self, original: &String, candidate: &String) -> bool {
         css(original, candidate)
@@ -95,7 +101,13 @@ fn number_key(raw: &str, integer: bool) -> Option<String> {
     }
     let trimmed = digits.trim_start_matches('0').trim_end_matches('0');
     let scale = exponent.checked_sub(fraction)?.checked_add((digits.trim_start_matches('0').len() - trimmed.len()) as i64)?;
-    Some(format!("number:{sign}:{trimmed}:{scale}:{integer}:{}", &raw[at..]))
+    let unit = &raw[at..];
+    let unit_key = if trimmed.is_empty() && LENGTH_UNITS.iter().any(|u| unit.eq_ignore_ascii_case(u)) {
+        ""
+    } else {
+        unit
+    };
+    Some(format!("number:{sign}:{trimmed}:{scale}:{integer}:{unit_key}"))
 }
 
 #[doc = "Compares lossless image pixels and rendering metadata."]

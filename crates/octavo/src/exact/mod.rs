@@ -93,19 +93,54 @@ fn font_hint(source: &str, offset: usize) -> Option<(Range<usize>, String)> {
     }).ok()?
 }
 
-fn comments<'i>(parser: &mut Parser<'i, '_>, strip_licenses: bool, found: &mut Vec<Range<usize>>) -> Result<(), ParseError<'i, ()>> {
+fn css_rewrites<'i>(
+    parser: &mut Parser<'i, '_>,
+    source: &str,
+    strip_licenses: bool,
+    math_depth: usize,
+    comments: &mut Vec<Range<usize>>,
+    zero_units: &mut Vec<Range<usize>>,
+) -> Result<(), ParseError<'i, ()>> {
     loop {
         let start = parser.position().byte_index();
         let Ok(token) = parser.next_including_whitespace_and_comments().cloned() else { break };
         if token.is_parse_error() { return Err(parser.new_custom_error(())); }
-        match token {
+        match &token {
             Token::Comment(text) => {
                 if strip_licenses || !(text.starts_with('!') || text.contains("@license") || text.contains("@preserve")) {
-                    found.push(start..parser.position().byte_index());
+                    comments.push(start..parser.position().byte_index());
                 }
             }
-            Token::Function(_) | Token::ParenthesisBlock | Token::SquareBracketBlock | Token::CurlyBracketBlock => {
-                parser.parse_nested_block(|inner| comments(inner, strip_licenses, found))?;
+            Token::Dimension { value, unit, .. } => {
+                let end = parser.position().byte_index();
+                if *value == 0.0 && math_depth == 0 && oracle::LENGTH_UNITS.iter().any(|u| unit.eq_ignore_ascii_case(u))
+                    && source[start..end].starts_with('0') {
+                    zero_units.push(start..end);
+                }
+            }
+            Token::CurlyBracketBlock => {
+                let start = parser.position();
+                parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, math_depth, comments, zero_units))?;
+                if !parser.slice_from(start).ends_with('}') {
+                    return Err(parser.new_custom_error(()));
+                }
+            }
+            Token::Function(name) => {
+                let is_math = ["calc", "min", "max", "clamp"].iter().any(|m| name.eq_ignore_ascii_case(m));
+                let next_depth = if is_math { math_depth + 1 } else { math_depth };
+                let start = parser.position();
+                parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, next_depth, comments, zero_units))?;
+                if !parser.slice_from(start).ends_with(')') {
+                    return Err(parser.new_custom_error(()));
+                }
+            }
+            Token::ParenthesisBlock | Token::SquareBracketBlock => {
+                let close = if matches!(&token, Token::SquareBracketBlock) { ']' } else { ')' };
+                let start = parser.position();
+                parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, math_depth, comments, zero_units))?;
+                if !parser.slice_from(start).ends_with(close) {
+                    return Err(parser.new_custom_error(()));
+                }
             }
             _ => {}
         }
@@ -118,18 +153,34 @@ fn stylesheet(doc: &Doc, span: Range<usize>, target: Target, options: &Options, 
     if source.contains("--") { return; }
     let mut input = ParserInput::new(source);
     let mut parser = Parser::new(&mut input);
-    let mut found = Vec::new();
-    if comments(&mut parser, options.strip_licenses, &mut found).is_err() || found.is_empty() { return; }
-    let mut candidate = source.to_string();
-    for range in found.iter().rev() { candidate.replace_range(range.clone(), ""); }
+    let mut comments = Vec::new();
+    let mut zero_units = Vec::new();
+    if css_rewrites(&mut parser, source, options.strip_licenses, 0, &mut comments, &mut zero_units).is_err() { return; }
+    if comments.is_empty() && zero_units.is_empty() { return; }
+    let mut edits_to_apply = Vec::new();
+    for r in &comments { edits_to_apply.push((r.clone(), "")); }
+    for r in &zero_units { edits_to_apply.push((r.clone(), "0")); }
+    edits_to_apply.sort_by_key(|(r, _)| r.start);
+    let mut candidate = String::with_capacity(source.len());
+    let mut cur = 0;
+    for (r, repl) in &edits_to_apply {
+        if r.start < cur { return; }
+        candidate.push_str(&source[cur..r.start]);
+        candidate.push_str(repl);
+        cur = r.end;
+    }
+    candidate.push_str(&source[cur..]);
     let proven = adopt(source.to_string(), candidate, &oracle::Css);
     if proven.rejected() {
         warnings.push(Warning::OracleRejected { transform: Transform::MinifiedStylesheet, target });
         return;
     }
     let _ = proven.into_inner();
-    for range in found {
-        edits.push(Edit { span: span.start + range.start..span.start + range.end, text: String::new(), transform: Transform::MinifiedStylesheet, target: target.clone() });
+    for r in comments {
+        edits.push(Edit { span: span.start + r.start..span.start + r.end, text: String::new(), transform: Transform::MinifiedStylesheet, target: target.clone() });
+    }
+    for r in zero_units {
+        edits.push(Edit { span: span.start + r.start..span.start + r.end, text: "0".to_string(), transform: Transform::StrippedZeroUnits, target: target.clone() });
     }
 }
 
@@ -479,6 +530,28 @@ mod tests {
             let out = optimize(&html, Mode::Exact).unwrap();
             proptest::prop_assert!(!out.html.contains("type="));
             proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::StrippedDefaultAttr));
+            proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+        }
+    }
+
+    #[test]
+    fn exact_strips_zero_length_units() {
+        let input = "<html><style>a{margin:0px;padding:0em;line-height:1;width:10px;height:0}</style></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, "<html><style>a{margin:0;padding:0;line-height:1;width:10px;height:0}</style></html>");
+        assert_eq!(out.applied.iter().filter(|s| s.transform == Transform::StrippedZeroUnits).count(), 2);
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn zero_units_property_test(
+            unit in "(px|em|rem|vw|vh|cm|mm|pt|in)"
+        ) {
+            let html = format!("<html><style>a{{margin:0{unit};}}</style></html>");
+            let out = optimize(&html, Mode::Exact).unwrap();
+            proptest::prop_assert_eq!(&out.html, "<html><style>a{margin:0;}</style></html>");
+            proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::StrippedZeroUnits));
             proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
         }
     }
