@@ -100,3 +100,33 @@ test("clipped skip links and negative tabindex targets remain focusable", async 
     await browser.close();
   }
 });
+
+test("focus styles do not include hover styles", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<style>button { margin: 50px; border: 2px solid black } button:hover { border-color: rgb(10, 88, 202) }</style><button>Target</button>');
+    const observeBorder = ({ probe }) => {
+      const element = window[Symbol.for("octavo.interactive")][probe.index];
+      const style = getComputedStyle(element);
+      return {
+        style: `border-bottom-color:${style.borderBottomColor}`,
+        writingMode: style.writingMode,
+        states: {
+          hover: element.matches(":hover"),
+          focus: element.matches(":focus"),
+          focusVisible: element.matches(":focus-visible"),
+          active: element.matches(":active"),
+        },
+      };
+    };
+    const { states, checks } = await forcedStates(page, "button", observeBorder);
+    assert.equal(checks.focus, 1);
+    assert.equal(checks.focusVisible, 1);
+    assert.match(states.find(([label]) => label === ":hover on interactive #0")[1], /rgb\(10, 88, 202\)/);
+    assert.match(states.find(([label]) => label === ":focus on interactive #0")[1], /rgb\(0, 0, 0\)/);
+    assert.match(states.find(([label]) => label === ":focus-visible on interactive #0")[1], /rgb\(0, 0, 0\)/);
+  } finally {
+    await browser.close();
+  }
+});

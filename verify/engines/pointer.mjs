@@ -238,6 +238,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         }
       }
       await page.evaluate(() => document.activeElement?.blur());
+      await page.mouse.move(0, 0);
       onPhase(`forcedStates element ${index} focus`);
       const focusReason = await reasonFor(element, "focus");
       if (focusReason) {
