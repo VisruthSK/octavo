@@ -233,7 +233,20 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
             noteUnreachable(checks, "hover", detail("hover", reason), unreachableStates);
           } else {
             states.push([`:hover on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-            noteFailure(checks, "hover", detail("hover", ""));
+            const context = await element.evaluate((target, spot) => {
+              const box = target.getBoundingClientRect();
+              const x = box.left + (spot?.x ?? box.width / 2);
+              const y = box.top + (spot?.y ?? box.height / 2);
+              const hit = document.elementFromPoint(x, y);
+              return {
+                point: { x, y },
+                hit: hit && { tag: hit.tagName.toLowerCase(), id: hit.id, class: hit.getAttribute("class"), descendant: target.contains(hit) },
+                box: { x: box.x, y: box.y, width: box.width, height: box.height },
+                viewport: { width: innerWidth, height: innerHeight },
+                scroll: { x: scrollX, y: scrollY },
+              };
+            }, spot);
+            noteFailure(checks, "hover", `${detail("hover", "")}; context ${JSON.stringify({ ...context, probe: seen.states })}`);
           }
         }
       }
