@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
 const load = (pages) =>
-  spawnSync(process.execPath, ["--input-type=module", "-e", 'await import("./verify.mjs")'], {
+  spawnSync(process.execPath, ["--input-type=module", "-e", 'process.argv[1] = "x"; await import("./verify.mjs")'], {
     cwd: import.meta.dirname,
     env: { ...process.env, OCTAVO_PAGES: pages },
     encoding: "utf8",
