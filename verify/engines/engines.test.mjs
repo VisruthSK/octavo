@@ -16,6 +16,7 @@ const shape = {
   tag: "string",
   isolated: "boolean",
   contextOptions: "object",
+  loadDocument: "function",
   placeholderStyle: "boolean",
   pixel: "object",
   noise: "object",

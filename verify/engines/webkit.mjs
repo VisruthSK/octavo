@@ -1,4 +1,6 @@
 import { webkit as launcher } from "playwright-core";
+import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { executableFingerprint } from "./fingerprint.mjs";
 
 export { focus, forcedStates } from "./pointer.mjs";
@@ -8,6 +10,17 @@ export const label = "WebKit";
 export const tag = `[${name}] `;
 export const isolated = false;
 export const contextOptions = {};
+export const loadDocument = async (page, file) => {
+  const url = pathToFileURL(file).href;
+  const body = await readFile(file);
+  const fulfill = (route) => route.fulfill({ body, contentType: "text/html" });
+  await page.route(url, fulfill);
+  try {
+    return await page.goto(url, { waitUntil: "load" });
+  } finally {
+    await page.unroute(url, fulfill);
+  }
+};
 export const placeholderStyle = false;
 export const pixel = { channel: 1, faint: 8, budget: 12 };
 export const noise = { pixels: 10383312, differing: 0, max: 0 };
