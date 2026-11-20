@@ -9,7 +9,10 @@ export const CSS_SIGNIFICANT_DIGITS = 6;
 
 const NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/;
 
+const canonicalCssValueCache = new Map();
 export const canonicalCssValue = (value) => {
+  let cached = canonicalCssValueCache.get(value);
+  if (cached !== undefined) return cached;
   let result = "";
   let index = 0;
   while (index < value.length) {
@@ -62,18 +65,31 @@ export const canonicalCssValue = (value) => {
     }
     result += value[index++];
   }
+  canonicalCssValueCache.set(value, result);
   return result;
 };
 
+const canonicalFontFamilyCache = new Map();
 export const canonicalFontFamily = (name) => {
+  let cached = canonicalFontFamilyCache.get(name);
+  if (cached !== undefined) return cached;
   const quoted = name.trim().match(/^(\")(.*)\1$/) ?? name.trim().match(/^(')(.*)\1$/);
-  if (!quoted) return name.trim();
+  if (!quoted) {
+    const trimmed = name.trim();
+    canonicalFontFamilyCache.set(name, trimmed);
+    return trimmed;
+  }
   const inner = quoted[2];
-  return BARE_FAMILY.test(inner) && !KEYWORD_FAMILIES.has(inner.toLowerCase()) ? inner : `"${inner}"`;
+  const result = BARE_FAMILY.test(inner) && !KEYWORD_FAMILIES.has(inner.toLowerCase()) ? inner : `"${inner}"`;
+  canonicalFontFamilyCache.set(name, result);
+  return result;
 };
 
-
+const canonicalStyleCache = new Map();
 export const canonicalStyle = (style = "", writingMode = "horizontal-tb") => {
+  const cacheKey = `${writingMode}\0${style}`;
+  let cached = canonicalStyleCache.get(cacheKey);
+  if (cached !== undefined) return cached;
   const horizontal = writingMode.startsWith("horizontal");
   const declarations = [];
   const sizes = new Map();
@@ -104,5 +120,7 @@ export const canonicalStyle = (style = "", writingMode = "horizontal-tb") => {
     const equivalent = physicalValue !== undefined && logical.length > 0 && logical.every(({ value }) => value === physicalValue);
     declarations.push(...values.filter(({ property }) => !equivalent || property === physical).map(({ declaration }) => declaration));
   }
-  return declarations.join(";");
+  const result = declarations.join(";");
+  canonicalStyleCache.set(cacheKey, result);
+  return result;
 };
