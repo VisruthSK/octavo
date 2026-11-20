@@ -35,25 +35,20 @@ const observe = ({ probe }) => {
 
 for (const [name, engine] of Object.entries({ chromium, firefox, webkit }).filter(([name]) => name === (process.env.OCTAVO_BROWSER || "chromium"))) {
   test(`${name} forced-state sweep matches its reference`, async () => {
-    const browser = await engine.launch();
-    try {
-      for (const [fixture, html] of Object.entries(fixtures)) {
-        const original = await browser.newPage();
-        const candidate = await browser.newPage();
+    for (const [fixture, html] of Object.entries(fixtures)) {
+      const run = async (sweep) => {
+        const browser = await engine.launch();
         try {
-          await original.setContent(html);
-          await candidate.setContent(html);
-          const expected = await reference(original, selector, observe);
-          const actual = await forcedStates(candidate, selector, observe);
-          assert.deepEqual(actual, expected, fixture);
+          const page = await browser.newPage();
+          await page.setContent(html);
+          return await sweep(page, selector, observe);
         } finally {
-          await original.close();
-          await candidate.close();
+          await browser.close();
         }
-      }
-    } finally {
-      await browser.close();
+      };
+      const expected = await run(reference);
+      const actual = await run(forcedStates);
+      assert.deepEqual(actual, expected, fixture);
     }
   });
 }
-
