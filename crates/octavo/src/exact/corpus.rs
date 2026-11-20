@@ -36,7 +36,9 @@ fn exact_corpus_and_byte_price() {
     let mut upstream_paths = Vec::new();
     if upstream.is_dir() { html_files(&upstream, &mut upstream_paths); }
     upstream_paths.sort();
-    let transforms = [Transform::NormalizedDataUrl, Transform::ReencodedFont, Transform::RecompressedPng, Transform::ConvertedWebp, Transform::MinifiedStylesheet, Transform::StrippedDefaultAttr, Transform::StrippedZeroUnits];
+    let transforms = [Transform::NormalizedDataUrl, Transform::ReencodedFont, Transform::RecompressedPng, Transform::ConvertedWebp, Transform::MinifiedStylesheet, Transform::StrippedDefaultAttr, Transform::StrippedZeroUnits,
+        Transform::CollapsedCssWhitespace,
+    ];
     let mut counts: BTreeMap<Transform, Counts> = transforms.into_iter().map(|t| (t, Counts::default())).collect();
     let mut refused = 0usize;
     let mut rejections = 0usize;

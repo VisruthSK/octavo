@@ -252,7 +252,7 @@ fn normalize_css_tokens(tokens: &[String]) -> Vec<String> {
     for (i, token) in tokens.iter().enumerate() {
         let previous = i.checked_sub(1).and_then(|n| tokens.get(n)).map(String::as_str);
         let next = tokens.get(i + 1).map(String::as_str);
-        if token == "space" && (previous.is_none() || next.is_none() || matches!(previous, Some("CurlyBracketBlock" | "end:}" | "Semicolon" | "Comma"))
+        if token == "space" && (previous.is_none() || next.is_none() || matches!(previous, Some("CurlyBracketBlock" | "end:}" | "Semicolon" | "Comma" | "Colon"))
             || matches!(next, Some("CurlyBracketBlock" | "end:}" | "end:)" | "Semicolon" | "Comma"))) {
             continue;
         }

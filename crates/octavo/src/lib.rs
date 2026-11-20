@@ -461,6 +461,7 @@ pub enum Transform {
     ConvertedWebp,
     StrippedDefaultAttr,
     StrippedZeroUnits,
+    CollapsedCssWhitespace,
     /// Resources were compressed into one blob.
     Packed,
 }
@@ -480,6 +481,7 @@ impl fmt::Display for Transform {
             Transform::ConvertedWebp => "webp-converted",
             Transform::StrippedDefaultAttr => "default-attr-stripped",
             Transform::StrippedZeroUnits => "zero-units-stripped",
+            Transform::CollapsedCssWhitespace => "css-whitespace-collapsed",
             Transform::Packed => "packed",
         })
     }

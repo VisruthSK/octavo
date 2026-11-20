@@ -100,7 +100,10 @@ fn css_rewrites<'i>(
     math_depth: usize,
     comments: &mut Vec<Range<usize>>,
     zero_units: &mut Vec<Range<usize>>,
+    ws: &mut Vec<(Range<usize>, &'static str)>,
 ) -> Result<(), ParseError<'i, ()>> {
+    let mut prev_token: Option<String> = None;
+    let mut pending_ws: Option<(Range<usize>, usize)> = None;
     loop {
         let start = parser.position().byte_index();
         let Ok(token) = parser.next_including_whitespace_and_comments().cloned() else { break };
@@ -111,39 +114,65 @@ fn css_rewrites<'i>(
                     comments.push(start..parser.position().byte_index());
                 }
             }
-            Token::Dimension { value, unit, .. } => {
-                let end = parser.position().byte_index();
-                if *value == 0.0 && math_depth == 0 && oracle::LENGTH_UNITS.iter().any(|u| unit.eq_ignore_ascii_case(u))
-                    && source[start..end].starts_with('0') {
-                    zero_units.push(start..end);
+            Token::WhiteSpace(slice) => {
+                pending_ws = Some((start..parser.position().byte_index(), slice.len()));
+            }
+            _ => {
+                if let Some((ws_range, len)) = pending_ws.take() {
+                    let is_prev_structural = matches!(prev_token.as_deref(), None | Some("CurlyBracketBlock" | "end:}" | "Semicolon" | "Comma" | "Colon"));
+                    let is_next_structural = matches!(&token, Token::CurlyBracketBlock | Token::Semicolon | Token::Comma);
+                    if is_prev_structural || is_next_structural {
+                        ws.push((ws_range, ""));
+                    } else if len > 1 {
+                        ws.push((ws_range, " "));
+                    }
+                }
+                match &token {
+                    Token::Dimension { value, unit, .. } => {
+                        let end = parser.position().byte_index();
+                        if *value == 0.0 && math_depth == 0 && oracle::LENGTH_UNITS.iter().any(|u| unit.eq_ignore_ascii_case(u))
+                            && source[start..end].starts_with('0') {
+                            zero_units.push(start..end);
+                        }
+                        prev_token = Some("Dimension".to_string());
+                    }
+                    Token::CurlyBracketBlock => {
+                        let start = parser.position();
+                        parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, math_depth, comments, zero_units, ws))?;
+                        if !parser.slice_from(start).ends_with('}') {
+                            return Err(parser.new_custom_error(()));
+                        }
+                        prev_token = Some("end:}".to_string());
+                    }
+                    Token::Function(name) => {
+                        let is_math = ["calc", "min", "max", "clamp"].iter().any(|m| name.eq_ignore_ascii_case(m));
+                        let next_depth = if is_math { math_depth + 1 } else { math_depth };
+                        let start = parser.position();
+                        parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, next_depth, comments, zero_units, ws))?;
+                        if !parser.slice_from(start).ends_with(')') {
+                            return Err(parser.new_custom_error(()));
+                        }
+                        prev_token = Some("end:)".to_string());
+                    }
+                    Token::ParenthesisBlock | Token::SquareBracketBlock => {
+                        let close = if matches!(&token, Token::SquareBracketBlock) { ']' } else { ')' };
+                        let start = parser.position();
+                        parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, math_depth, comments, zero_units, ws))?;
+                        if !parser.slice_from(start).ends_with(close) {
+                            return Err(parser.new_custom_error(()));
+                        }
+                        prev_token = Some("end:)".to_string());
+                    }
+                    Token::Semicolon => { prev_token = Some("Semicolon".to_string()); }
+                    Token::Comma => { prev_token = Some("Comma".to_string()); }
+                    Token::Colon => { prev_token = Some("Colon".to_string()); }
+                    _ => { prev_token = Some("Other".to_string()); }
                 }
             }
-            Token::CurlyBracketBlock => {
-                let start = parser.position();
-                parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, math_depth, comments, zero_units))?;
-                if !parser.slice_from(start).ends_with('}') {
-                    return Err(parser.new_custom_error(()));
-                }
-            }
-            Token::Function(name) => {
-                let is_math = ["calc", "min", "max", "clamp"].iter().any(|m| name.eq_ignore_ascii_case(m));
-                let next_depth = if is_math { math_depth + 1 } else { math_depth };
-                let start = parser.position();
-                parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, next_depth, comments, zero_units))?;
-                if !parser.slice_from(start).ends_with(')') {
-                    return Err(parser.new_custom_error(()));
-                }
-            }
-            Token::ParenthesisBlock | Token::SquareBracketBlock => {
-                let close = if matches!(&token, Token::SquareBracketBlock) { ']' } else { ')' };
-                let start = parser.position();
-                parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, math_depth, comments, zero_units))?;
-                if !parser.slice_from(start).ends_with(close) {
-                    return Err(parser.new_custom_error(()));
-                }
-            }
-            _ => {}
         }
+    }
+    if let Some((ws_range, _)) = pending_ws.take() {
+        ws.push((ws_range, ""));
     }
     Ok(())
 }
@@ -155,11 +184,13 @@ fn stylesheet(doc: &Doc, span: Range<usize>, target: Target, options: &Options, 
     let mut parser = Parser::new(&mut input);
     let mut comments = Vec::new();
     let mut zero_units = Vec::new();
-    if css_rewrites(&mut parser, source, options.strip_licenses, 0, &mut comments, &mut zero_units).is_err() { return; }
-    if comments.is_empty() && zero_units.is_empty() { return; }
+    let mut ws = Vec::new();
+    if css_rewrites(&mut parser, source, options.strip_licenses, 0, &mut comments, &mut zero_units, &mut ws).is_err() { return; }
+    if comments.is_empty() && zero_units.is_empty() && ws.is_empty() { return; }
     let mut edits_to_apply = Vec::new();
     for r in &comments { edits_to_apply.push((r.clone(), "")); }
     for r in &zero_units { edits_to_apply.push((r.clone(), "0")); }
+    for (r, text) in &ws { edits_to_apply.push((r.clone(), *text)); }
     edits_to_apply.sort_by_key(|(r, _)| r.start);
     let mut candidate = String::with_capacity(source.len());
     let mut cur = 0;
@@ -181,6 +212,9 @@ fn stylesheet(doc: &Doc, span: Range<usize>, target: Target, options: &Options, 
     }
     for r in zero_units {
         edits.push(Edit { span: span.start + r.start..span.start + r.end, text: "0".to_string(), transform: Transform::StrippedZeroUnits, target: target.clone() });
+    }
+    for (r, repl) in ws {
+        edits.push(Edit { span: span.start + r.start..span.start + r.end, text: repl.to_string(), transform: Transform::CollapsedCssWhitespace, target: target.clone() });
     }
 }
 
@@ -552,6 +586,30 @@ mod tests {
             let out = optimize(&html, Mode::Exact).unwrap();
             proptest::prop_assert_eq!(&out.html, "<html><style>a{margin:0;}</style></html>");
             proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::StrippedZeroUnits));
+            proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+        }
+    }
+
+    #[test]
+    fn exact_collapses_css_whitespace() {
+        let input = "<html><style>  a , b  {  color: red ;  }  </style></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, "<html><style>a,b{color:red;}</style></html>");
+        assert!(out.applied.iter().any(|s| s.transform == Transform::CollapsedCssWhitespace));
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn css_whitespace_property_test(
+            ws1 in " [ ]{1,4}",
+            ws2 in " [ ]{1,4}",
+            ws3 in " [ ]{1,4}"
+        ) {
+            let html = format!("<html><style>a{ws1}{{{ws2}color:red;{ws3}}}</style></html>");
+            let out = optimize(&html, Mode::Exact).unwrap();
+            proptest::prop_assert_eq!(&out.html, "<html><style>a{color:red;}</style></html>");
+            proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::CollapsedCssWhitespace));
             proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
         }
     }
