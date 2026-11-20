@@ -1,4 +1,4 @@
-import { captureScreenshot } from "./capture.mjs";
+import { captureScreenshot, tileTimeout } from "./capture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PNG } from "pngjs";
@@ -530,4 +530,10 @@ test("script-disabled tall pages compare their last tile", { timeout: 10000 }, a
   } finally {
     await browser.close();
   }
+});
+
+test("the tile screenshot timeout grows with the tile area from the viewport baseline", () => {
+  assert.equal(tileTimeout(1280, 720), 5000);
+  assert.equal(tileTimeout(100, 100), 5000);
+  assert.equal(tileTimeout(1280, 8000), 60000);
 });

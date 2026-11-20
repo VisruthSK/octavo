@@ -589,10 +589,13 @@ const PATIENCE = 4;
 const CAPTURE_TIMEOUT_MS = 300_000;
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const MAX_FULL_PAGE_HEIGHT = 16384;
+const SCREENSHOT_TIMEOUT_AREA = 1280 * 720;
 const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
 const MAX_SCREENSHOT_PIXELS = 20_000_000;
 const MAX_SCREENSHOT_TILES = 2048;
 const MAX_SCREENSHOT_BYTES = 128 * 1024 * 1024;
+
+export const tileTimeout = (width, height) => SCREENSHOT_TIMEOUT_MS * Math.max(1, Math.ceil((width * height) / SCREENSHOT_TIMEOUT_AREA));
 
 export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture") {
   let timedOut = false;
@@ -653,7 +656,7 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
             fullPage: true,
             clip: { x, y, width: clipWidth, height: clipHeight },
             animations: "disabled",
-            timeout: SCREENSHOT_TIMEOUT_MS,
+            timeout: tileTimeout(clipWidth, clipHeight),
           });
           bytes += png.length;
           if (bytes > MAX_SCREENSHOT_BYTES) return { kind: "limit", width, height, limit: MAX_SCREENSHOT_BYTES, reason: "tile bytes" };
