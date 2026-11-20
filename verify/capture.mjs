@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { realpath } from "node:fs/promises";
+import { dirname, relative, resolve, sep } from "node:path";
 import { engine } from "./engines/index.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
-import { isLinkedFileLoadFailure, isMissingFile } from "./linked-artifacts.mjs";
 import { canonicalFontFamily } from "./styles.mjs";
 
 export const SCENARIOS = {
@@ -426,7 +425,7 @@ export function trackNetwork(page, requests = []) {
     network.count += 1;
     network.last = Date.now();
     openRequests.add(request);
-    if (!/^file:/.test(request.url())) requests.push(request.url());
+    requests.push(request.url());
   });
   const finished = (request) => {
     if (!openRequests.delete(request)) return;
@@ -540,8 +539,8 @@ const HOVER = 3;
 const NAVIGATION = 4;
 const ALWAYS_OBSERVED = new Set([HOVER]);
 
-async function digestOf(page, forms = [], linked = false) {
-  const text = await page.evaluate(({ forms, linked }) => {
+async function digestOf(page, linked = false) {
+  const text = await page.evaluate((linked) => {
     const clone = document.documentElement.cloneNode(true);
     clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
     for (const node of clone.querySelectorAll(linked ? "[src], [data-src], [srcset]" : '[src^="data:"], [data-src^="data:"]')) {
@@ -550,35 +549,16 @@ async function digestOf(page, forms = [], linked = false) {
       if (linked) node.removeAttribute("srcset");
     }
     const html = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
-    return forms.reduce((current, form) => current.split(form).join("{site}"), html);
-  }, { forms, linked });
+    return html;
+  }, linked);
   return createHash("sha256").update(text).digest("hex");
 }
 
-function rootForms(root) {
-  if (!root) return [];
-  const slashed = resolve(root).replaceAll("\\", "/");
-  const withoutDrive = slashed.replace(/^[A-Za-z]:/, "");
-  const url = pathToFileURL(resolve(root)).href;
-  const forms = new Set([url, decodeURI(url), `file://${slashed}`, slashed, withoutDrive, encodeURI(slashed), encodeURI(withoutDrive)]);
-  return [...forms].filter((form) => form.length > 3).sort((a, b) => b.length - a.length);
-}
-
-function scrubDeep(value, forms) {
-  if (!forms.length) return value;
-  if (typeof value === "string") return forms.reduce((text, form) => text.split(form).join("{site}"), value);
-  if (Array.isArray(value)) return value.map((item) => scrubDeep(item, forms));
-  if (value && typeof value === "object" && !ArrayBuffer.isView(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrubDeep(item, forms)]));
-  }
-  return value;
-}
-
-export async function hasInteractions(browser, file) {
+export async function hasInteractions(browser, file, root) {
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
-    await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
+    await loadDocument(page, file, root);
     return await page.evaluate((selector) => Boolean(document.querySelector(selector)), INTERACTIVE_CONTENT);
   } finally {
     await context.close();
@@ -613,7 +593,23 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
   };
 }
 
-export const loadDocument = (page, file) => engine.loadDocument(page, file);
+export async function loadDocument(page, file, root, entryPath) {
+  const base = await realpath(root ?? dirname(file));
+  const entry = root ? (entryPath ?? relative(base, resolve(file))).split(sep).map(encodeURIComponent).join("/") : "index.html";
+  await page.route("http://octavo.test/**", async (route) => {
+    try {
+      const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
+      const candidate = pathname === `/${decodeURIComponent(entry)}` ? file : resolve(base, `.${pathname}`);
+      const path = await realpath(candidate);
+      const rel = relative(base, path);
+      if (rel === ".." || rel.startsWith(`..${sep}`) || resolve(base, rel) !== path) throw new Error("outside root");
+      await route.fulfill({ path });
+    } catch {
+      await route.fulfill({ status: 404, body: "" });
+    }
+  });
+  return page.goto(`http://octavo.test/${entry}`, { waitUntil: "load" });
+}
 
 export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
   const pageSize = await page.evaluate(() => ({
@@ -680,10 +676,9 @@ export async function capture(
   file,
   scenario,
   lossy,
-  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS, longLived, onPhase = () => {} } = {},
+  { interact = true, patient = false, root, linked = false, entryPath, timeoutMs = CAPTURE_TIMEOUT_MS, longLived, onPhase = () => {} } = {},
 ) {
   const pace = patient ? PATIENCE : 1;
-  const forms = rootForms(root);
   const scripted = scenario.javaScriptEnabled !== false;
   const context = await browser.newContext({
     viewport: scenario.viewport,
@@ -720,13 +715,9 @@ export async function capture(
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
     page.on("console", (message) => {
       if (message.type() !== "error") return;
-      if (linkedOriginal && isLinkedFileLoadFailure(message.text(), message.location())) return;
-      if (linked && isMissingFile(message.text(), message.location())) {
-        missingFiles += 1;
-        return;
-      }
       errors.push(engine.normalizeError(message.text()));
     });
+    if (linked) page.on("response", (response) => { if (response.status() === 404 && response.url().startsWith("http://octavo.test/")) missingFiles += 1; });
     const knownLongLived = new Set(longLived ?? []);
     const waits = [];
     const wait = async (name, options = {}) => {
@@ -742,7 +733,7 @@ export async function capture(
       );
     };
     setPhase("goto");
-    const response = await loadDocument(page, file).catch((error) => {
+    const response = await loadDocument(page, file, root, entryPath).catch((error) => {
       throw new Error(`navigation failed: ${JSON.stringify({ url: page.url(), error: error.message })}`);
     });
     setPhase("document body ready");
@@ -777,11 +768,11 @@ export async function capture(
     await wait("initial page");
     for (const request of openRequests) knownLongLived.add(request);
 
-    let previousDigest = await digestOf(page, forms, linked);
+    let previousDigest = await digestOf(page, linked);
     for (let attempt = 0; attempt < 5; attempt++) {
       await page.waitForTimeout(50);
       await frames(page);
-      const currentDigest = await digestOf(page, forms, linked);
+      const currentDigest = await digestOf(page, linked);
       if (currentDigest === previousDigest) break;
       previousDigest = currentDigest;
       await wait(`stability ${attempt}`);
@@ -876,7 +867,7 @@ export async function capture(
         const quiet = slideDeck ? (index === NAVIGATION ? 1200 : Math.max(400, cursorDelay + QUIET)) : QUIET;
         const limit = slideDeck && index === HOVER ? Math.max(LIMIT, cursorDelay + quiet + 500) : LIMIT;
         await wait(`interaction sweep step ${index} slide ${slideNumber}`, { quiet, limit });
-        const digest = await digestOf(page, forms, linked);
+        const digest = await digestOf(page, linked);
         if (digest === previous && (!ALWAYS_OBSERVED.has(index) || acted === false)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });
           continue;
@@ -886,7 +877,7 @@ export async function capture(
       }
     }
     const recorded = states.filter((state) => !state.unchanged);
-    return scrubDeep({
+    return {
       states,
       errors,
       requests,
@@ -904,7 +895,7 @@ export async function capture(
           ),
         },
       },
-    }, forms);
+    };
   } catch (error) {
     if (deadline.timedOut()) throw new Error(`capture timed out during ${deadline.phase()} after ${timeoutMs} ms`);
     throw new Error(`capture failed during ${phase}: ${error.message}`);
