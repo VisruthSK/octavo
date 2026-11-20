@@ -742,9 +742,19 @@ export async function capture(
       );
     };
     setPhase("goto");
-    const response = await loadDocument(page, file).catch((error) => {
-      throw new Error(`navigation failed: ${JSON.stringify({ url: page.url(), error: error.message })}`);
-    });
+    let navigationRetries = 0;
+    let initialNavigationError;
+    let response;
+    try {
+      response = await loadDocument(page, file);
+    } catch (error) {
+      initialNavigationError = error.message;
+      setPhase("goto retry");
+      response = await loadDocument(page, file).catch((retryError) => {
+        throw new Error(`navigation failed: ${JSON.stringify({ url: page.url(), error: retryError.message, initialError: error.message })}`);
+      });
+      navigationRetries = 1;
+    }
     setPhase("document body ready");
     let waitError;
     await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch((error) => { waitError = error.message; });
@@ -799,6 +809,7 @@ export async function capture(
       setPhase(`image fingerprints ${label}`);
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       setPhase(`page observation ${label}`);
+      if (scripted) await page.evaluate(() => document.fonts.ready).catch(() => {});
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
@@ -903,6 +914,8 @@ export async function capture(
             screenshot?.kind === "limit" ? [{ label, width: screenshot.width, height: screenshot.height, limit: screenshot.limit, reason: screenshot.reason }] : [],
           ),
         },
+        navigationRetries,
+        ...(initialNavigationError ? { initialNavigationError } : {}),
       },
     }, forms);
   } catch (error) {
