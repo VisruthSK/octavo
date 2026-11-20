@@ -5,6 +5,40 @@ use std::{borrow::Cow, collections::BTreeMap};
 #[doc = "Compares decoded data URL payloads."]
 pub struct Base64;
 
+#[doc = "Checks that only redundant default type attributes are removed."]
+pub struct DefaultAttr;
+
+impl super::Oracle<String> for DefaultAttr {
+    fn equivalent(&self, original: &String, candidate: &String) -> bool {
+        default_attr(original, candidate)
+    }
+}
+
+pub fn default_attr(original: &str, candidate: &str) -> bool {
+    let scan_orig = crate::html::scan(original);
+    let scan_cand = crate::html::scan(candidate);
+    let (Some(orig_tag), Some(cand_tag)) = (scan_orig.tags.first(), scan_cand.tags.first()) else { return false };
+    if scan_orig.tags.len() != 1 || scan_cand.tags.len() != 1 || orig_tag.element != cand_tag.element { return false; }
+    if !matches!(orig_tag.element, crate::html::Element::Script | crate::html::Element::Style) { return false; }
+    if orig_tag.attrs.len() != cand_tag.attrs.len() + 1 { return false; }
+    let mut cand_iter = cand_tag.attrs.iter();
+    let mut removed = None;
+    for attr in &orig_tag.attrs {
+        if matches!(cand_iter.as_slice().first(), Some(c) if c.name == attr.name && c.value == attr.value) {
+            cand_iter.next();
+        } else if removed.is_none() {
+            removed = Some(attr);
+        } else {
+            return false;
+        }
+    }
+    cand_iter.next().is_none() && match (orig_tag.element, removed) {
+        (crate::html::Element::Script, Some(attr)) => attr.name == crate::html::AttrName::Type && attr.value.trim().eq_ignore_ascii_case("text/javascript"),
+        (crate::html::Element::Style, Some(attr)) => attr.name == crate::html::AttrName::Type && attr.value.trim().eq_ignore_ascii_case("text/css"),
+        _ => false,
+    }
+}
+
 impl super::Oracle<String> for Base64 {
     fn equivalent(&self, original: &String, candidate: &String) -> bool {
         base64(original, candidate)
@@ -22,6 +56,12 @@ impl super::Oracle<Vec<u8>> for Font {
 
 #[doc = "Compares CSS token streams conservatively."]
 pub struct Css;
+
+pub const LENGTH_UNITS: [&str; 31] = [
+    "px", "em", "rem", "ex", "ch", "vw", "vh", "vi", "vb", "vmin", "vmax", "cm", "mm", "in", "pt",
+    "pc", "q", "cqw", "cqh", "cqi", "cqb", "cqmin", "cqmax", "lh", "rlh", "svw", "svh", "lvw",
+    "lvh", "dvw", "dvh",
+];
 
 impl super::Oracle<String> for Css {
     fn equivalent(&self, original: &String, candidate: &String) -> bool {
@@ -61,7 +101,13 @@ fn number_key(raw: &str, integer: bool) -> Option<String> {
     }
     let trimmed = digits.trim_start_matches('0').trim_end_matches('0');
     let scale = exponent.checked_sub(fraction)?.checked_add((digits.trim_start_matches('0').len() - trimmed.len()) as i64)?;
-    Some(format!("number:{sign}:{trimmed}:{scale}:{integer}:{}", &raw[at..]))
+    let unit = &raw[at..];
+    let unit_key = if trimmed.is_empty() && LENGTH_UNITS.iter().any(|u| unit.eq_ignore_ascii_case(u)) {
+        ""
+    } else {
+        unit
+    };
+    Some(format!("number:{sign}:{trimmed}:{scale}:{integer}:{unit_key}"))
 }
 
 #[doc = "Compares lossless image pixels and rendering metadata."]
@@ -206,7 +252,7 @@ fn normalize_css_tokens(tokens: &[String]) -> Vec<String> {
     for (i, token) in tokens.iter().enumerate() {
         let previous = i.checked_sub(1).and_then(|n| tokens.get(n)).map(String::as_str);
         let next = tokens.get(i + 1).map(String::as_str);
-        if token == "space" && (previous.is_none() || next.is_none() || matches!(previous, Some("CurlyBracketBlock" | "end:}" | "Semicolon" | "Comma"))
+        if token == "space" && (previous.is_none() || next.is_none() || matches!(previous, Some("CurlyBracketBlock" | "end:}" | "Semicolon" | "Comma" | "Colon"))
             || matches!(next, Some("CurlyBracketBlock" | "end:}" | "end:)" | "Semicolon" | "Comma"))) {
             continue;
         }
@@ -375,6 +421,15 @@ pub fn font(input: &[u8], output: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_attr_oracle_rejects_non_default_and_altered_attrs() {
+        assert!(default_attr("<script type=\"text/javascript\"></script>", "<script></script>"));
+        assert!(default_attr("<style type='text/css'></style>", "<style></style>"));
+        assert!(!default_attr("<script type=\"module\"></script>", "<script></script>"));
+        assert!(!default_attr("<script type=\"text/javascript\"></script>", "<script src=\"x\"></script>"));
+        assert!(!default_attr("<div type=\"text/javascript\"></div>", "<div></div>"));
+    }
 
     #[test]
     fn base64_rejects_changed_and_invalid_payloads() {

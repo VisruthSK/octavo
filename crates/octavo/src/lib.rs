@@ -459,6 +459,9 @@ pub enum Transform {
     ReencodedFont,
     #[doc = "A PNG was converted to lossless WebP."]
     ConvertedWebp,
+    StrippedDefaultAttr,
+    StrippedZeroUnits,
+    CollapsedCssWhitespace,
     /// Resources were compressed into one blob.
     Packed,
 }
@@ -476,6 +479,9 @@ impl fmt::Display for Transform {
             Transform::NormalizedDataUrl => "data-url-normalized",
             Transform::ReencodedFont => "font-reencoded",
             Transform::ConvertedWebp => "webp-converted",
+            Transform::StrippedDefaultAttr => "default-attr-stripped",
+            Transform::StrippedZeroUnits => "zero-units-stripped",
+            Transform::CollapsedCssWhitespace => "css-whitespace-collapsed",
             Transform::Packed => "packed",
         })
     }

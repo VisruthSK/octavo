@@ -93,22 +93,86 @@ fn font_hint(source: &str, offset: usize) -> Option<(Range<usize>, String)> {
     }).ok()?
 }
 
-fn comments<'i>(parser: &mut Parser<'i, '_>, strip_licenses: bool, found: &mut Vec<Range<usize>>) -> Result<(), ParseError<'i, ()>> {
+fn css_rewrites<'i>(
+    parser: &mut Parser<'i, '_>,
+    source: &str,
+    strip_licenses: bool,
+    math_depth: usize,
+    comments: &mut Vec<Range<usize>>,
+    zero_units: &mut Vec<Range<usize>>,
+    ws: &mut Vec<(Range<usize>, &'static str)>,
+) -> Result<(), ParseError<'i, ()>> {
+    let mut prev_token: Option<String> = None;
+    let mut pending_ws: Option<(Range<usize>, usize)> = None;
     loop {
         let start = parser.position().byte_index();
         let Ok(token) = parser.next_including_whitespace_and_comments().cloned() else { break };
         if token.is_parse_error() { return Err(parser.new_custom_error(())); }
-        match token {
+        match &token {
             Token::Comment(text) => {
                 if strip_licenses || !(text.starts_with('!') || text.contains("@license") || text.contains("@preserve")) {
-                    found.push(start..parser.position().byte_index());
+                    comments.push(start..parser.position().byte_index());
                 }
             }
-            Token::Function(_) | Token::ParenthesisBlock | Token::SquareBracketBlock | Token::CurlyBracketBlock => {
-                parser.parse_nested_block(|inner| comments(inner, strip_licenses, found))?;
+            Token::WhiteSpace(slice) => {
+                pending_ws = Some((start..parser.position().byte_index(), slice.len()));
             }
-            _ => {}
+            _ => {
+                if let Some((ws_range, len)) = pending_ws.take() {
+                    let is_prev_structural = matches!(prev_token.as_deref(), None | Some("CurlyBracketBlock" | "end:}" | "Semicolon" | "Comma" | "Colon"));
+                    let is_next_structural = matches!(&token, Token::CurlyBracketBlock | Token::Semicolon | Token::Comma);
+                    if is_prev_structural || is_next_structural {
+                        ws.push((ws_range, ""));
+                    } else if len > 1 {
+                        ws.push((ws_range, " "));
+                    }
+                }
+                match &token {
+                    Token::Dimension { value, unit, .. } => {
+                        let end = parser.position().byte_index();
+                        if *value == 0.0 && math_depth == 0 && oracle::LENGTH_UNITS.iter().any(|u| unit.eq_ignore_ascii_case(u))
+                            && source[start..end].starts_with('0') {
+                            zero_units.push(start..end);
+                        }
+                        prev_token = Some("Dimension".to_string());
+                    }
+                    Token::CurlyBracketBlock => {
+                        let start = parser.position();
+                        parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, math_depth, comments, zero_units, ws))?;
+                        if !parser.slice_from(start).ends_with('}') {
+                            return Err(parser.new_custom_error(()));
+                        }
+                        prev_token = Some("end:}".to_string());
+                    }
+                    Token::Function(name) => {
+                        let is_math = ["calc", "min", "max", "clamp"].iter().any(|m| name.eq_ignore_ascii_case(m));
+                        let next_depth = if is_math { math_depth + 1 } else { math_depth };
+                        let start = parser.position();
+                        parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, next_depth, comments, zero_units, ws))?;
+                        if !parser.slice_from(start).ends_with(')') {
+                            return Err(parser.new_custom_error(()));
+                        }
+                        prev_token = Some("end:)".to_string());
+                    }
+                    Token::ParenthesisBlock | Token::SquareBracketBlock => {
+                        let close = if matches!(&token, Token::SquareBracketBlock) { ']' } else { ')' };
+                        let start = parser.position();
+                        parser.parse_nested_block(|inner| css_rewrites(inner, source, strip_licenses, math_depth, comments, zero_units, ws))?;
+                        if !parser.slice_from(start).ends_with(close) {
+                            return Err(parser.new_custom_error(()));
+                        }
+                        prev_token = Some("end:)".to_string());
+                    }
+                    Token::Semicolon => { prev_token = Some("Semicolon".to_string()); }
+                    Token::Comma => { prev_token = Some("Comma".to_string()); }
+                    Token::Colon => { prev_token = Some("Colon".to_string()); }
+                    _ => { prev_token = Some("Other".to_string()); }
+                }
+            }
         }
+    }
+    if let Some((ws_range, _)) = pending_ws.take() {
+        ws.push((ws_range, ""));
     }
     Ok(())
 }
@@ -118,18 +182,39 @@ fn stylesheet(doc: &Doc, span: Range<usize>, target: Target, options: &Options, 
     if source.contains("--") { return; }
     let mut input = ParserInput::new(source);
     let mut parser = Parser::new(&mut input);
-    let mut found = Vec::new();
-    if comments(&mut parser, options.strip_licenses, &mut found).is_err() || found.is_empty() { return; }
-    let mut candidate = source.to_string();
-    for range in found.iter().rev() { candidate.replace_range(range.clone(), ""); }
+    let mut comments = Vec::new();
+    let mut zero_units = Vec::new();
+    let mut ws = Vec::new();
+    if css_rewrites(&mut parser, source, options.strip_licenses, 0, &mut comments, &mut zero_units, &mut ws).is_err() { return; }
+    if comments.is_empty() && zero_units.is_empty() && ws.is_empty() { return; }
+    let mut edits_to_apply = Vec::new();
+    for r in &comments { edits_to_apply.push((r.clone(), "")); }
+    for r in &zero_units { edits_to_apply.push((r.clone(), "0")); }
+    for (r, text) in &ws { edits_to_apply.push((r.clone(), *text)); }
+    edits_to_apply.sort_by_key(|(r, _)| r.start);
+    let mut candidate = String::with_capacity(source.len());
+    let mut cur = 0;
+    for (r, repl) in &edits_to_apply {
+        if r.start < cur { return; }
+        candidate.push_str(&source[cur..r.start]);
+        candidate.push_str(repl);
+        cur = r.end;
+    }
+    candidate.push_str(&source[cur..]);
     let proven = adopt(source.to_string(), candidate, &oracle::Css);
     if proven.rejected() {
         warnings.push(Warning::OracleRejected { transform: Transform::MinifiedStylesheet, target });
         return;
     }
     let _ = proven.into_inner();
-    for range in found {
-        edits.push(Edit { span: span.start + range.start..span.start + range.end, text: String::new(), transform: Transform::MinifiedStylesheet, target: target.clone() });
+    for r in comments {
+        edits.push(Edit { span: span.start + r.start..span.start + r.end, text: String::new(), transform: Transform::MinifiedStylesheet, target: target.clone() });
+    }
+    for r in zero_units {
+        edits.push(Edit { span: span.start + r.start..span.start + r.end, text: "0".to_string(), transform: Transform::StrippedZeroUnits, target: target.clone() });
+    }
+    for (r, repl) in ws {
+        edits.push(Edit { span: span.start + r.start..span.start + r.end, text: repl.to_string(), transform: Transform::CollapsedCssWhitespace, target: target.clone() });
     }
 }
 
@@ -228,6 +313,29 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
             let target = Target::Resource(tag.label().to_string());
             let image = tag.element == Element::Img && !tag.in_svg && matches!(attr.name, AttrName::Src | AttrName::DataSrc);
             consider(doc, span, target, false, false, None, image, options, &mut edits, &mut warnings);
+        }
+        if matches!(tag.element, Element::Script | Element::Style) {
+            if let Some(attr) = tag.attrs.iter().find(|a| {
+                a.name == AttrName::Type && (
+                    (tag.element == Element::Script && a.value.trim().eq_ignore_ascii_case("text/javascript")) ||
+                    (tag.element == Element::Style && a.value.trim().eq_ignore_ascii_case("text/css"))
+                )
+            }) {
+                let open_end = tag.body.as_ref().map_or(tag.span.end, |b| b.start);
+                let open_tag = &doc.src()[tag.span.start..open_end];
+                let ws_start = doc.src()[..attr.span.start].trim_end_matches(|c: char| c.is_ascii_whitespace()).len().max(tag.span.start);
+                let edit_span = ws_start..attr.span.end;
+                let rel_start = ws_start - tag.span.start;
+                let rel_end = attr.span.end - tag.span.start;
+                let candidate = format!("{}{}", &open_tag[..rel_start], &open_tag[rel_end..]);
+                let proven = adopt(open_tag.to_string(), candidate, &oracle::DefaultAttr);
+                let target = Target::Resource(tag.label().to_string());
+                if proven.rejected() {
+                    warnings.push(Warning::OracleRejected { transform: Transform::StrippedDefaultAttr, target });
+                } else {
+                    edits.push(Edit { span: edit_span, text: String::new(), transform: Transform::StrippedDefaultAttr, target });
+                }
+            }
         }
         if tag.element == Element::Style {
             if let Some(body) = &tag.body {
@@ -432,6 +540,77 @@ mod tests {
             assert_eq!(optimize(&wrong, Mode::Exact).unwrap().html, wrong);
             let descriptor = format!("<html><style>@font-face{{font-family:url({uri}) format('{format}')}}</style></html>");
             assert_eq!(optimize(&descriptor, Mode::Exact).unwrap().html, descriptor);
+        }
+    }
+
+    #[test]
+    fn exact_strips_default_type_attributes() {
+        let input = "<html><script type=\"text/javascript\">console.log(1);</script><style type='text/css'>a{color:red}</style></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, "<html><script>console.log(1);</script><style>a{color:red}</style></html>");
+        assert_eq!(out.applied.iter().filter(|s| s.transform == Transform::StrippedDefaultAttr).count(), 2);
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn default_attr_property_test(
+            whitespace in " [ ]{1,4}",
+            quote in "['\"]",
+            extra_attr in "(id|class|data-x)",
+            extra_val in "[a-z0-9_-]{1,8}"
+        ) {
+            let html = format!("<html><script{whitespace}{extra_attr}={quote}{extra_val}{quote}{whitespace}type={quote}text/javascript{quote}>1;</script></html>");
+            let out = optimize(&html, Mode::Exact).unwrap();
+            proptest::prop_assert!(!out.html.contains("type="));
+            proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::StrippedDefaultAttr));
+            proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+        }
+    }
+
+    #[test]
+    fn exact_strips_zero_length_units() {
+        let input = "<html><style>a{margin:0px;padding:0em;line-height:1;width:10px;height:0}</style></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, "<html><style>a{margin:0;padding:0;line-height:1;width:10px;height:0}</style></html>");
+        assert_eq!(out.applied.iter().filter(|s| s.transform == Transform::StrippedZeroUnits).count(), 2);
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn zero_units_property_test(
+            unit in "(px|em|rem|vw|vh|cm|mm|pt|in)"
+        ) {
+            let html = format!("<html><style>a{{margin:0{unit};}}</style></html>");
+            let out = optimize(&html, Mode::Exact).unwrap();
+            proptest::prop_assert_eq!(&out.html, "<html><style>a{margin:0;}</style></html>");
+            proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::StrippedZeroUnits));
+            proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+        }
+    }
+
+    #[test]
+    fn exact_collapses_css_whitespace() {
+        let input = "<html><style>  a , b  {  color: red ;  }  </style></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, "<html><style>a,b{color:red;}</style></html>");
+        assert!(out.applied.iter().any(|s| s.transform == Transform::CollapsedCssWhitespace));
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn css_whitespace_property_test(
+            ws1 in " [ ]{1,4}",
+            ws2 in " [ ]{1,4}",
+            ws3 in " [ ]{1,4}"
+        ) {
+            let html = format!("<html><style>a{ws1}{{{ws2}color:red;{ws3}}}</style></html>");
+            let out = optimize(&html, Mode::Exact).unwrap();
+            proptest::prop_assert_eq!(&out.html, "<html><style>a{color:red;}</style></html>");
+            proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::CollapsedCssWhitespace));
+            proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
         }
     }
 }
