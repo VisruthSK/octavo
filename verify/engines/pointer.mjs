@@ -169,7 +169,11 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
   const checks = emptyChecks(0);
   const scroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
   const restore = () => page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), scroll);
-  const probe = (index) => page.evaluate(observe, { probe: { selector, index } });
+  const frames = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const probe = async (index) => {
+    await frames();
+    return page.evaluate(observe, { probe: { selector, index } });
+  };
   const print = await page.evaluate(() => matchMedia("print").matches);
   if (print) await page.emulateMedia({ media: "screen" });
   try {
@@ -238,6 +242,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         }
       }
       await page.evaluate(() => document.activeElement?.blur());
+      await page.mouse.move(0, 0);
       onPhase(`forcedStates element ${index} focus`);
       const focusReason = await reasonFor(element, "focus");
       if (focusReason) {

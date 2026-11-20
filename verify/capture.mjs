@@ -587,28 +587,43 @@ export async function hasInteractions(browser, file) {
 
 const PATIENCE = 4;
 const CAPTURE_TIMEOUT_MS = 300_000;
+const CAPTURE_TOTAL_FACTOR = 4;
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const MAX_FULL_PAGE_HEIGHT = 16384;
+const SCREENSHOT_TIMEOUT_AREA = 1280 * 720;
 const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
 const MAX_SCREENSHOT_PIXELS = 20_000_000;
 const MAX_SCREENSHOT_TILES = 2048;
 const MAX_SCREENSHOT_BYTES = 128 * 1024 * 1024;
 
-export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture") {
+export const tileTimeout = (width, height) => SCREENSHOT_TIMEOUT_MS * Math.max(1, Math.ceil((width * height) / SCREENSHOT_TIMEOUT_AREA));
+
+export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture", totalMs = timeoutMs * CAPTURE_TOTAL_FACTOR) {
   let timedOut = false;
-  const timer = setTimeout(() => {
+  let timer;
+  const started = Date.now();
+  const expire = () => {
     timedOut = true;
     void context.close().catch(() => {});
-  }, timeoutMs);
+  };
+  const touch = () => {
+    clearTimeout(timer);
+    if (timedOut) return;
+    timer = setTimeout(expire, Math.max(0, Math.min(timeoutMs, started + totalMs - Date.now())));
+  };
+  touch();
   return {
     timedOut: () => timedOut,
     phase,
+    touch,
     close: async () => {
       clearTimeout(timer);
       await context.close().catch(() => {});
     },
   };
 }
+
+export const loadDocument = (page, file) => engine.loadDocument(page, file);
 
 export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
   const pageSize = await page.evaluate(() => ({
@@ -651,7 +666,7 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
             fullPage: true,
             clip: { x, y, width: clipWidth, height: clipHeight },
             animations: "disabled",
-            timeout: SCREENSHOT_TIMEOUT_MS,
+            timeout: tileTimeout(clipWidth, clipHeight),
           });
           bytes += png.length;
           if (bytes > MAX_SCREENSHOT_BYTES) return { kind: "limit", width, height, limit: MAX_SCREENSHOT_BYTES, reason: "tile bytes" };
@@ -675,7 +690,7 @@ export async function capture(
   file,
   scenario,
   lossy,
-  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS, longLived } = {},
+  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS, longLived, onPhase = () => {} } = {},
 ) {
   const pace = patient ? PATIENCE : 1;
   const forms = rootForms(root);
@@ -697,8 +712,11 @@ export async function capture(
   const setPhase = (next) => {
     log({ phase, ms: performance.now() - phaseStarted });
     phase = next;
+    onPhase(next);
     phaseStarted = performance.now();
+    deadline?.touch();
   };
+  onPhase(phase);
   const deadline = captureDeadline(context, timeoutMs, () => phase);
   try {
     setPhase("install init scripts");
@@ -735,10 +753,31 @@ export async function capture(
       );
     };
     setPhase("goto");
-    await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
+    const response = await loadDocument(page, file).catch((error) => {
+      throw new Error(`navigation failed: ${JSON.stringify({ url: page.url(), error: error.message })}`);
+    });
     setPhase("document body ready");
-    await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch(() => {});
-    if (!(await page.evaluate(() => Boolean(document.body)).catch(() => false))) throw new Error("document body did not appear after page load");
+    let waitError;
+    await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch((error) => { waitError = error.message; });
+    let body;
+    let evaluateError;
+    try {
+      body = await page.evaluate(() => Boolean(document.body));
+    } catch (error) {
+      evaluateError = error.message;
+    }
+    if (!body) {
+      let documentState;
+      try {
+        documentState = await page.evaluate(() => {
+          const html = document.documentElement?.outerHTML ?? "";
+          return { readyState: document.readyState, bodyNull: document.body === null, htmlLength: html.length, htmlStart: html.slice(0, 200) };
+        });
+      } catch (error) {
+        documentState = { error: error.message };
+      }
+      throw new Error(`document body did not appear after page load: ${JSON.stringify({ waitError, evaluateError, url: page.url(), document: documentState, response: response ? { url: response.url(), status: response.status() } : null })}`);
+    }
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
     setPhase("fonts ready");
@@ -764,13 +803,17 @@ export async function capture(
       setPhase(`screenshot ${label}`);
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
       let screenshotError;
-      const screenshot = await captureScreenshot(page, scenario.viewport, (tile) => log({ phase, tile }), scripted).catch((error) => {
+      const screenshot = await captureScreenshot(page, scenario.viewport, (tile) => {
+        deadline.touch();
+        log({ phase, tile });
+      }, scripted).catch((error) => {
         screenshotError = error.message;
         return null;
       });
       setPhase(`image fingerprints ${label}`);
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       setPhase(`page observation ${label}`);
+      if (scripted) await page.evaluate(() => document.fonts.ready).catch(() => {});
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
@@ -881,7 +924,7 @@ export async function capture(
     if (deadline.timedOut()) throw new Error(`capture timed out during ${deadline.phase()} after ${timeoutMs} ms`);
     throw new Error(`capture failed during ${phase}: ${error.message}`);
   } finally {
-    setPhase("closed");
+    onPhase(null);
     await deadline.close();
   }
 }
