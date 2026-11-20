@@ -56,3 +56,21 @@ test("a face that is really missing is still reported", async () => {
   const changed = write("short", [regular, italic]);
   assert.equal((await fontIssues(original, changed)).length > 0, true);
 });
+
+test("faces loaded while document.fonts.ready is pending are awaited", async () => {
+  const delayedPage = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title></head><body><p>text</p><script>
+let readyResolved = false;
+const regular = ${JSON.stringify(regular)};
+const italic = Object.assign({}, ${JSON.stringify(italic)});
+Object.defineProperty(italic, "status", { get() { return readyResolved ? "loaded" : "loading"; } });
+const list = Object.assign([regular, italic], {
+  status: "loading",
+  ready: new Promise((resolve) => setTimeout(() => { readyResolved = true; resolve(); }, 50)),
+});
+Object.defineProperty(document, "fonts", { get: () => list, configurable: true });
+</script></body></html>`;
+  const delayed = join(directory, "delayed.html");
+  const complete = write("complete", [regular, italic]);
+  writeFileSync(delayed, delayedPage);
+  assert.deepEqual(await fontIssues(complete, delayed), []);
+});
