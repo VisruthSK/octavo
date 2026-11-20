@@ -21,7 +21,7 @@ writeFileSync(
 );
 
 const observe = ({ probe }) => {
-  const element = document.querySelectorAll(probe.selector)[probe.index];
+  const element = (window[Symbol.for("octavo.interactive")] ?? document.querySelectorAll(probe.selector))[probe.index];
   if (!element) return { style: "", states: {} };
   const style = getComputedStyle(element);
   return {
@@ -60,6 +60,30 @@ test("forced states record inert targets as unreachable without retrying every s
   }
 });
 
+test("forced states retain their targets when hovering inserts an interactive element", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    const dynamicFile = join(directory, "dynamic.html");
+    writeFileSync(dynamicFile, '<!DOCTYPE html><button id="first">First</button><button id="second">Second</button>');
+    await page.goto(pathToFileURL(dynamicFile).href);
+    await page.evaluate(() => {
+      document.querySelector("#first").addEventListener("mouseenter", () => {
+        if (document.querySelector("#inserted")) return;
+        const inserted = document.createElement("span");
+        inserted.id = "inserted";
+        inserted.tabIndex = -1;
+        document.querySelector("#second").before(inserted);
+      });
+    });
+    const { checks } = await forcedStates(page, selector, observe);
+    assert.equal(await page.locator("#inserted").count(), 1);
+    assert.deepEqual(checks.details, { hover: [], focus: [], focusVisible: [], active: [] });
+    assert.deepEqual([checks.hover, checks.focus, checks.focusVisible, checks.active], [2, 2, 2, 2]);
+  } finally {
+    await browser.close();
+  }
+});
 
 test("clipped skip links and negative tabindex targets remain focusable", async () => {
   const browser = await launch();
