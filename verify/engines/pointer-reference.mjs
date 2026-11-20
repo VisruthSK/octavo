@@ -37,7 +37,7 @@ async function staticReason(element, state) {
     const style = getComputedStyle(target);
     if (target.closest("[inert]")) return "inside inert subtree";
     if (style.visibility === "hidden") return "visibility hidden";
-    if ((state === "focus" || state === "focusVisible") && (target.matches(":disabled") || target.tabIndex < 0)) {
+    if ((state === "focus" || state === "focusVisible") && (target.matches(":disabled") || (target.tabIndex < 0 && !target.hasAttribute("tabindex")))) {
       return "not focusable";
     }
     if (state !== "hover" && state !== "active") return "";
@@ -49,7 +49,7 @@ async function staticReason(element, state) {
 
 async function reasonFor(element, state) {
   const blocked = await staticReason(element, state);
-  if (blocked) return blocked;
+  if (blocked || state === "focus" || state === "focusVisible") return blocked;
   return element.evaluate((target, state) => {
     const rect = target.getBoundingClientRect();
     for (let ancestor = target.parentElement; ancestor; ancestor = ancestor.parentElement) {
@@ -158,8 +158,13 @@ export async function focus(page, element) {
 }
 
 export async function forcedStates(page, selector, observe, onPhase = () => {}) {
-  const interactive = page.locator(selector);
-  const count = Math.min(await interactive.count(), 40);
+  const snapshot = await page.evaluateHandle((selector) => {
+    const elements = [...document.querySelectorAll(selector)].slice(0, 40);
+    window[Symbol.for("octavo.interactive")] = elements;
+    return elements;
+  }, selector);
+  const interactive = [...(await snapshot.getProperties()).values()].map((handle) => handle.asElement());
+  const count = interactive.length;
   const states = [];
   const checks = emptyChecks(0);
   const scroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
@@ -171,7 +176,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
     await page.evaluate(GUARD);
     for (let index = 0; index < count; index++) {
       onPhase(`forcedStates element ${index} pointer hover`);
-      const element = interactive.nth(index);
+      const element = interactive[index];
       onPhase(`forcedStates element ${index} visibility`);
       if (!(await element.isVisible().catch(() => false))) {
         for (const state of STATES) states.push([`:${state} on interactive #${index}`, "hidden"]);
@@ -302,6 +307,8 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
     }
   } finally {
     await page.evaluate(UNGUARD);
+    await page.evaluate(() => delete window[Symbol.for("octavo.interactive")]);
+    await snapshot.dispose();
     await page.mouse.move(0, 0).catch(() => {});
     await restore();
     if (print) await page.emulateMedia({ media: "print" });
