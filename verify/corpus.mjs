@@ -592,7 +592,9 @@ export async function runCorpus() {
   writeFileSync(join(outDirectory, "report.json"), `${JSON.stringify(results.map(({ input, output, ...rest }) => rest), null, 2)}\n`);
   console.log(report);
   const failures = results.filter((entry) => entry.problems.length);
-  process.exit(failures.length ? 1 : 0);
+  const verifiedNothing = browser && selected.length > 0 && browserCache.hits + browserCache.misses === 0;
+  if (verifiedNothing) console.error(`No browser comparison ran for ${selected.length} selected documents.`);
+  process.exit(failures.length || verifiedNothing ? 1 : 0);
 }
 
 if (process.argv[1]?.endsWith("corpus.mjs")) {
