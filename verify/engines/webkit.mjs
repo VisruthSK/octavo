@@ -16,7 +16,7 @@ export const loadDocument = async (page, file) => {
   const fulfill = (route) => route.fulfill({ body, contentType: "text/html" });
   await page.route(url, fulfill);
   try {
-    return await page.goto(url, { waitUntil: "load" });
+    return await page.goto(url, { waitUntil: "load", timeout: 0 });
   } finally {
     await page.unroute(url, fulfill);
   }
