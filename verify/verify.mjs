@@ -9,34 +9,47 @@ import { worthRetrying } from "./transient.mjs";
 import { verifierHash } from "./verdicts.mjs";
 
 const configuredPages = process.env.OCTAVO_PAGES;
-const wanted = configuredPages === undefined ? Math.max(2, Math.floor(cpus().length / 2)) : Number(configuredPages);
+const wanted = configuredPages === undefined ? Math.max(2, cpus().length) : Number(configuredPages);
 if (!Number.isInteger(wanted) || wanted < 1) throw new Error(`OCTAVO_PAGES must be a positive integer, got "${configuredPages}"`);
 const isolated = engine.isolated;
 export const pages = isolated ? Math.min(wanted, 4) : wanted;
 
-class Slots {
-  free = pages;
-  waiting = [];
-  exclusive = 0;
+export class Slots {
+  capacity = pages;
+  running = 0;
+  priorityQueue = [];
+  queue = [];
 
-  async take(count = 1) {
-    while (this.free < count || (this.exclusive > 0 && count < pages)) {
-      await new Promise((wake) => this.waiting.push(wake));
+  take(onWait = () => {}, priority = false) {
+    if (this.running < this.capacity) {
+      this.running++;
+      onWait(0);
+      return Promise.resolve();
     }
-    this.free -= count;
+    const started = process.hrtime.bigint();
+    return new Promise((wake) => {
+      const entry = {
+        run: () => {
+          this.running++;
+          onWait(Number(process.hrtime.bigint() - started) / 1e6);
+          wake();
+        },
+      };
+      if (priority) this.priorityQueue.push(entry);
+      else this.queue.push(entry);
+    });
   }
 
   give(count = 1) {
-    this.free += count;
-    for (const wake of this.waiting.splice(0)) wake();
+    this.running -= count;
+    while (this.running < this.capacity && (this.priorityQueue.length > 0 || this.queue.length > 0)) {
+      const entry = this.priorityQueue.length > 0 ? this.priorityQueue.shift() : this.queue.shift();
+      entry.run();
+    }
   }
 
-  async using(task, count = 1, onWait = () => {}) {
-    if (count === pages) this.exclusive += 1;
-    const started = process.hrtime.bigint();
-    await this.take(count);
-    onWait(Number(process.hrtime.bigint() - started) / 1e6);
-    if (count === pages) this.exclusive -= 1;
+  async using(task, count = 1, onWait = () => {}, priority = false) {
+    await this.take(onWait, priority);
     try {
       return await task();
     } finally {
@@ -146,33 +159,41 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
   if (before.crashed || after.crashed || !issues.length || issues.some((issue) => issue.includes("capture timed out") || issue.includes("screenshot missing"))) {
     return { issues, rounded: stats.roundedPixels };
   }
-  const kept = await slots.using(async () => {
-    const pairs = [{ before, after }];
-    for (let round = 0; round < RECAPTURES; round++) {
-      if (isDeadlineReached()) return [...issues, "verification deadline reached during document comparison"];
-      metrics.recaptures += 1;
-      const patient = round > 0;
-      const [again, optimizedAgain] = await Promise.all([
-        take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, entryPath, onPhase: metrics.phase("confirmation original") }).catch(crashed),
-        take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked, entryPath, onPhase: metrics.phase("confirmation optimized") }).catch(crashed),
-      ]);
-      if (again.crashed || optimizedAgain.crashed) return compare(again, optimizedAgain, lossy);
-      pairs.push({ before: view(again, sweep), after: view(optimizedAgain, sweep) });
-      if (!compare(view(again, sweep), view(optimizedAgain, sweep), lossy).length) break;
+  const pairs = [{ before, after }];
+  for (let round = 0; round < RECAPTURES; round++) {
+    if (isDeadlineReached()) return { issues: [...issues, "verification deadline reached during document comparison"], rounded: stats.roundedPixels };
+    metrics.recaptures += 1;
+    const patient = round > 0;
+    const [again, optimizedAgain] = await Promise.all([
+      slots.using(
+        () => take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, entryPath, onPhase: metrics.phase("confirmation original") }).catch(crashed),
+        1,
+        (ms) => { metrics.confirmationWait += ms; },
+        true,
+      ),
+      slots.using(
+        () => take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked, entryPath, onPhase: metrics.phase("confirmation optimized") }).catch(crashed),
+        1,
+        (ms) => { metrics.confirmationWait += ms; },
+        true,
+      ),
+    ]);
+    if (again.crashed || optimizedAgain.crashed) return { issues: compare(again, optimizedAgain, lossy), rounded: stats.roundedPixels };
+    pairs.push({ before: view(again, sweep), after: view(optimizedAgain, sweep) });
+    if (!compare(view(again, sweep), view(optimizedAgain, sweep), lossy).length) break;
+  }
+  const seen = (left, right) => new Set(compare(left, right, lossy).map(signature));
+  const across = pairs.map((pair) => seen(pair.before, pair.after));
+  const within = [];
+  for (const side of ["before", "after"]) {
+    for (let i = 0; i < pairs.length; i++) {
+      for (let j = i + 1; j < pairs.length; j++) within.push(seen(pairs[i][side], pairs[j][side]));
     }
-    const seen = (left, right) => new Set(compare(left, right, lossy).map(signature));
-    const across = pairs.map((pair) => seen(pair.before, pair.after));
-    const within = [];
-    for (const side of ["before", "after"]) {
-      for (let i = 0; i < pairs.length; i++) {
-        for (let j = i + 1; j < pairs.length; j++) within.push(seen(pairs[i][side], pairs[j][side]));
-      }
-    }
-    return issues.filter((issue) => {
-      const key = signature(issue);
-      return across.every((set) => set.has(key)) && within.every((set) => !set.has(key));
-    });
-  }, pages, (ms) => { metrics.confirmationWait += ms; });
+  }
+  const kept = issues.filter((issue) => {
+    const key = signature(issue);
+    return across.every((set) => set.has(key)) && within.every((set) => !set.has(key));
+  });
   return { issues: kept, rounded: stats.roundedPixels };
 }
 
@@ -210,7 +231,7 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
     } finally {
       await held.release();
     }
-  }).catch(() => true);
+  }, 1, () => {}, true).catch(() => true);
   const keyFor = (scenario) =>
     captureKey({
       original: source,
@@ -225,24 +246,6 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
         sweep: Boolean(scenario.sweep),
       }),
     });
-  const run = (file, scenario, metrics, side, cache = false) =>
-    slots.using(async () => {
-      const options = { interact, root: rootFor(file), linked, entryPath, onPhase: metrics.phase(side) };
-      try {
-        return await withTimeout(
-          async () => {
-            if (!cache) return await take(file, scenario, lossy, options);
-            const outcome = await cachedCapture({ key: keyFor(scenario), capture: () => take(file, scenario, lossy, options) });
-            timing.captureCache[outcome.cached ? "hits" : "misses"] += 1;
-            return outcome.result;
-          },
-          COMPARISON_TIMEOUT_MS,
-          closeBrowser,
-        );
-      } catch (error) {
-        return crashed(error);
-      }
-    }, 1, (ms) => { metrics.slotWait += ms; });
   const scenarios = unionOf(plans);
   const failRemainder = (from, reason) => {
     for (const [index, plan] of plans.entries()) {
@@ -253,85 +256,161 @@ export async function verifyLevels(original, entries, { lossy = false, deadlineR
       }
     }
   };
+
+  const makePhase = (target, side) => {
+    let previous, started;
+    return (next) => {
+      const now = process.hrtime.bigint();
+      if (previous) target[`${side}: ${previous}`] = (target[`${side}: ${previous}`] ?? 0) + Number(now - started) / 1e6;
+      previous = next;
+      started = now;
+    };
+  };
+
+  const tasks = [];
+  let stoppedReason = null;
+
   for (const [scenarioAt, scenario] of scenarios.entries()) {
     if (deadlineReached()) {
       failRemainder(scenarioAt, "verification deadline reached before document comparison");
       break;
     }
-    const metrics = { slotWait: 0, confirmationWait: 0, recaptures: 0, phases: {}, phase(side) {
-      let previous, started;
-      return (next) => {
-        const now = process.hrtime.bigint();
-        if (previous) this.phases[`${side}: ${previous}`] = (this.phases[`${side}: ${previous}`] ?? 0) + Number(now - started) / 1e6;
-        previous = next; started = now;
-      };
-    } };
-    const startedOriginal = process.hrtime.bigint();
-    const before = await run(original, scenario, metrics, "original", caching);
-    timing.original += elapsed(startedOriginal);
-    if (before.crashed?.includes("capture timed out")) {
-      failRemainder(scenarioAt, before.crashed);
-      break;
-    }
-    if (deadlineReached()) {
-      failRemainder(scenarioAt, "verification deadline reached before optimized capture");
-      break;
-    }
-    let stopped = false;
+    let origWait = 0;
+    const origPhases = {};
+    const beforePromise = slots.using(async () => {
+      if (stoppedReason) return { crashed: stoppedReason };
+      if (deadlineReached()) return { crashed: "verification deadline reached before document comparison" };
+      const startedOriginal = process.hrtime.bigint();
+      const options = { interact, root: rootFor(original), linked, entryPath, onPhase: makePhase(origPhases, "original") };
+      try {
+        const before = await withTimeout(
+          async () => {
+            if (!caching) return await take(original, scenario, lossy, options);
+            const outcome = await cachedCapture({ key: keyFor(scenario), capture: () => take(original, scenario, lossy, options) });
+            timing.captureCache[outcome.cached ? "hits" : "misses"] += 1;
+            return outcome.result;
+          },
+          COMPARISON_TIMEOUT_MS,
+          closeBrowser,
+        );
+        timing.original += elapsed(startedOriginal);
+        return before;
+      } catch (error) {
+        return crashed(error);
+      }
+    }, 1, (ms) => { origWait += ms; });
+
     for (const group of groups) {
       const wanted = group.filter((plan) => plan.set.some((entry) => entry.name === scenario.name));
       if (!wanted.length) continue;
       const sweep = wanted.some((plan) => plan.set.some((entry) => entry.name === scenario.name && entry.sweep));
-      const startedOptimized = process.hrtime.bigint();
-      const after = await run(group[0].path, { ...scenario, sweep }, metrics, "optimized");
-      timing.optimized += elapsed(startedOptimized);
-      if (after.crashed?.includes("capture timed out")) {
-        failRemainder(scenarioAt, after.crashed);
-        stopped = true;
-        break;
-      }
-      if (deadlineReached()) {
-        failRemainder(scenarioAt, "verification deadline reached before comparison");
-        stopped = true;
-        break;
-      }
-      for (const plan of wanted) {
-        const entry = plan.set.find((candidate) => candidate.name === scenario.name);
-        const startedCompare = process.hrtime.bigint();
-        const { issues, rounded } = await confirmed(
-          original,
-          group[0].path,
-          { ...scenario, sweep: entry.sweep },
-          view(before, entry.sweep),
-          view(after, entry.sweep),
-          lossy,
-          interact,
-          entry.sweep,
-          deadlineReached,
-          rootFor,
-          linked,
-          metrics,
-          entryPath,
-        );
-        timing.compare += elapsed(startedCompare);
-        reports[planIndex.get(plan)].push({
-          scenario: scenario.name,
-          issues: withIncompleteCheckIssues(issues, before.checks, after.checks),
-          rounded,
-          metrics: structuredClone({ slotWait: metrics.slotWait, confirmationWait: metrics.confirmationWait, recaptures: metrics.recaptures, phases: metrics.phases }),
-          checks: before.checks,
-          optimizedChecks: after.checks,
-        });
-        if (issues.some((issue) => issue.includes("capture timed out") || issue.includes("verification deadline reached"))) {
-          failRemainder(scenarioAt, issues.find((issue) => issue.includes("capture timed out") || issue.includes("verification deadline reached")));
-          stopped = true;
-          break;
+      let optWait = 0;
+      const optPhases = {};
+      const afterPromise = slots.using(async () => {
+        if (stoppedReason) return { crashed: stoppedReason };
+        if (deadlineReached()) return { crashed: "verification deadline reached before optimized capture" };
+        const startedOptimized = process.hrtime.bigint();
+        const options = { interact, root: rootFor(group[0].path), linked, entryPath, onPhase: makePhase(optPhases, "optimized") };
+        try {
+          const after = await withTimeout(
+            () => take(group[0].path, { ...scenario, sweep }, lossy, options),
+            COMPARISON_TIMEOUT_MS,
+            closeBrowser,
+          );
+          timing.optimized += elapsed(startedOptimized);
+          return after;
+        } catch (error) {
+          return crashed(error);
         }
-      }
-      if (stopped) break;
+      }, 1, (ms) => { optWait += ms; });
+
+      tasks.push(
+        Promise.all([beforePromise, afterPromise]).then(async ([before, after]) => {
+          if (before.crashed?.includes("capture timed out")) {
+            stoppedReason ??= before.crashed;
+            for (const plan of wanted) {
+              if (!reports[planIndex.get(plan)].some((r) => r.scenario === scenario.name)) {
+                reports[planIndex.get(plan)].push({ scenario: scenario.name, issues: [before.crashed], rounded: 0 });
+              }
+            }
+            failRemainder(scenarioAt, before.crashed);
+            return;
+          }
+          if (after.crashed?.includes("capture timed out")) {
+            stoppedReason ??= after.crashed;
+            for (const plan of wanted) {
+              if (!reports[planIndex.get(plan)].some((r) => r.scenario === scenario.name)) {
+                reports[planIndex.get(plan)].push({ scenario: scenario.name, issues: [after.crashed], rounded: 0 });
+              }
+            }
+            failRemainder(scenarioAt, after.crashed);
+            return;
+          }
+          if (deadlineReached()) {
+            stoppedReason ??= "verification deadline reached before comparison";
+            for (const plan of wanted) {
+              if (!reports[planIndex.get(plan)].some((r) => r.scenario === scenario.name)) {
+                reports[planIndex.get(plan)].push({ scenario: scenario.name, issues: ["verification deadline reached before comparison"], rounded: 0 });
+              }
+            }
+            failRemainder(scenarioAt, "verification deadline reached before comparison");
+            return;
+          }
+          for (const plan of wanted) {
+            if (reports[planIndex.get(plan)].some((r) => r.scenario === scenario.name)) continue;
+            const entry = plan.set.find((candidate) => candidate.name === scenario.name);
+            const metrics = {
+              slotWait: origWait + optWait,
+              confirmationWait: 0,
+              recaptures: 0,
+              phases: { ...origPhases, ...optPhases },
+              phase(side) {
+                let previous, started;
+                return (next) => {
+                  const now = process.hrtime.bigint();
+                  if (previous) this.phases[`${side}: ${previous}`] = (this.phases[`${side}: ${previous}`] ?? 0) + Number(now - started) / 1e6;
+                  previous = next;
+                  started = now;
+                };
+              },
+            };
+            const startedCompare = process.hrtime.bigint();
+            const { issues, rounded } = await confirmed(
+              original,
+              group[0].path,
+              { ...scenario, sweep: entry.sweep },
+              view(before, entry.sweep),
+              view(after, entry.sweep),
+              lossy,
+              interact,
+              entry.sweep,
+              deadlineReached,
+              rootFor,
+              linked,
+              metrics,
+              entryPath,
+            );
+            timing.compare += elapsed(startedCompare);
+            reports[planIndex.get(plan)].push({
+              scenario: scenario.name,
+              issues: withIncompleteCheckIssues(issues, before.checks, after.checks),
+              rounded,
+              metrics: structuredClone({ slotWait: metrics.slotWait, confirmationWait: metrics.confirmationWait, recaptures: metrics.recaptures, phases: metrics.phases }),
+              checks: before.checks,
+              optimizedChecks: after.checks,
+            });
+            if (issues.some((issue) => issue.includes("capture timed out") || issue.includes("verification deadline reached"))) {
+              const matched = issues.find((issue) => issue.includes("capture timed out") || issue.includes("verification deadline reached"));
+              stoppedReason ??= matched;
+              failRemainder(scenarioAt, matched);
+              break;
+            }
+          }
+        }),
+      );
     }
-    if (stopped) break;
   }
+  await Promise.all(tasks);
   const order = orderOf(plans);
   const orderMap = new Map(order.map((name, index) => [name, index]));
   for (const report of reports) {
