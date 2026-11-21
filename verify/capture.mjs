@@ -623,6 +623,18 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
   };
 }
 
+export async function settleFonts() {
+  const loaded = () => [...document.fonts].filter((face) => face.status === "loaded").length;
+  let previous = -1;
+  for (let round = 0; round < 8; round++) {
+    await document.fonts.ready;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const current = loaded();
+    if (current === previous && document.fonts.status === "loaded") return;
+    previous = current;
+  }
+}
+
 export const loadDocument = (page, file) => engine.loadDocument(page, file);
 
 export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
@@ -813,7 +825,7 @@ export async function capture(
       setPhase(`image fingerprints ${label}`);
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
       setPhase(`page observation ${label}`);
-      if (scripted) await page.evaluate(() => document.fonts.ready).catch(() => {});
+      if (scripted) await page.evaluate(settleFonts).catch(() => {});
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
