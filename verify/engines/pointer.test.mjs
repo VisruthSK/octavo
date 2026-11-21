@@ -101,16 +101,16 @@ test("clipped skip links and negative tabindex targets remain focusable", async 
   }
 });
 
-test("focus styles do not include hover styles", async () => {
+test("a control revealed only while its card is hovered is still focused and sampled", async () => {
   const browser = await launch();
   try {
     const page = await browser.newPage();
-    await page.setContent('<style>button { margin: 50px; border: 2px solid black } button:hover { border-color: rgb(10, 88, 202) }</style><button>Target</button>');
-    const observeBorder = ({ probe }) => {
+    await page.setContent('<style>.card { padding: 40px } .reveal { display: none } .card:hover .reveal { display: inline-block } .reveal:focus { outline: 3px solid rgb(10, 88, 202) }</style><div class="card"><button>Open</button> <span class="reveal" tabindex="0">Enlarge</span></div>');
+    const observe = ({ probe }) => {
       const element = window[Symbol.for("octavo.interactive")][probe.index];
       const style = getComputedStyle(element);
       return {
-        style: `border-bottom-color:${style.borderBottomColor}`,
+        style: `outline-color:${style.outlineColor}`,
         writingMode: style.writingMode,
         states: {
           hover: element.matches(":hover"),
@@ -120,12 +120,12 @@ test("focus styles do not include hover styles", async () => {
         },
       };
     };
-    const { states, checks } = await forcedStates(page, "button", observeBorder);
-    assert.equal(checks.focus, 1);
-    assert.equal(checks.focusVisible, 1);
-    assert.match(states.find(([label]) => label === ":hover on interactive #0")[1], /rgb\(10, 88, 202\)/);
-    assert.match(states.find(([label]) => label === ":focus on interactive #0")[1], /rgb\(0, 0, 0\)/);
-    assert.match(states.find(([label]) => label === ":focus-visible on interactive #0")[1], /rgb\(0, 0, 0\)/);
+    const { states, checks } = await forcedStates(page, "button, .reveal", observe);
+    assert.equal(checks.focus, 2);
+    assert.equal(checks.focusVisible, 2);
+    assert.deepEqual(checks.details.focus, []);
+    assert.deepEqual(checks.details.focusVisible, []);
+    assert.match(states.find(([label]) => label === ":focus on interactive #1")[1], /rgb\(10, 88, 202\)/);
   } finally {
     await browser.close();
   }
