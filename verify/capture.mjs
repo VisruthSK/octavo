@@ -606,7 +606,7 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
 export async function loadDocument(page, file, root, entryPath) {
   const base = await realpath(root ?? dirname(file));
   const entry = root ? (entryPath ?? relative(base, resolve(file))).split(sep).map(encodeURIComponent).join("/") : "index.html";
-  await page.route("http://octavo.test/**", async (route) => {
+  await page.route("http://localhost/**", async (route) => {
     try {
       const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
       const candidate = pathname === `/${decodeURIComponent(entry)}` ? file : resolve(base, `.${pathname}`);
@@ -618,7 +618,7 @@ export async function loadDocument(page, file, root, entryPath) {
       await route.fulfill({ status: 404, body: "" });
     }
   });
-  return page.goto(`http://octavo.test/${entry}`, { waitUntil: "load", timeout: 0 });
+  return page.goto(`http://localhost/${entry}`, { waitUntil: "load", timeout: 0 });
 }
 export async function settleFonts() {
   const loaded = () => [...document.fonts].filter((face) => face.status === "loaded").length;
@@ -740,7 +740,7 @@ export async function capture(
       if (message.type() !== "error") return;
       errors.push(engine.normalizeError(message.text()));
     });
-    if (linked) page.on("response", (response) => { if (response.status() === 404 && response.url().startsWith("http://octavo.test/")) missingFiles += 1; });
+    if (linked) page.on("response", (response) => { if (response.status() === 404 && response.url().startsWith("http://localhost/")) missingFiles += 1; });
     const knownLongLived = new Set(longLived ?? []);
     const waits = [];
     const wait = async (name, options = {}) => {
