@@ -618,7 +618,9 @@ export async function loadDocument(page, file, root, entryPath) {
       await route.fulfill({ status: 404, body: "" });
     }
   });
-  return page.goto(`http://localhost/${entry}`, { waitUntil: "load", timeout: 0 });
+  const response = await page.goto(`http://localhost/${entry}`, { waitUntil: "load", timeout: 0 });
+  if (!response || response.status() >= 400) throw new Error(`document did not load: HTTP ${response?.status() ?? "none"}`);
+  return response;
 }
 export async function settleFonts() {
   const loaded = () => [...document.fonts].filter((face) => face.status === "loaded").length;
