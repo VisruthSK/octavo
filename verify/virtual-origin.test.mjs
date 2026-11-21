@@ -4,11 +4,9 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadDocument } from "./capture.mjs";
-import * as chromium from "./engines/chromium.mjs";
-import * as firefox from "./engines/firefox.mjs";
-import * as webkit from "./engines/webkit.mjs";
+import { engine } from "./engines/index.mjs";
 
-for (const engine of [chromium, firefox, webkit]) {
+{
   test(`${engine.name} uses a common origin for files and resources`, async () => {
     const dir = await mkdtemp(join(tmpdir(), "octavo-origin-"));
     const browser = await engine.launch();
