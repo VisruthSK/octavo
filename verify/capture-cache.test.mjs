@@ -154,9 +154,9 @@ test("a capture that fetched from the network is not cached", async () => {
   const key = captureKey({ ...parts, original: readFileSync(remote) });
   const outcome = await cachedCapture({ key, folder, capture: () => capture(browser, remote, scenario, false, { interact: true }) });
   assert.equal(outcome.cached, false);
-  assert.deepEqual(outcome.result.requests, ["http://127.0.0.1:65001/x.js"]);
+  assert.deepEqual(outcome.result.requests, ["http://octavo.test/index.html", "http://127.0.0.1:65001/x.js"]);
   assert.equal(readCapture(key, folder), null);
-  assert.deepEqual((await fresh()).requests, []);
+  assert.deepEqual((await fresh()).requests, ["http://octavo.test/index.html"]);
 });
 
 test("a linked verification ignores the capture cache", async () => {
@@ -196,11 +196,11 @@ test("failed captures cannot pass verification", async () => {
 });
 
 
-test("HTML file navigation keeps its URL and HTML content type", async () => {
+test("HTML navigation uses the virtual URL and HTML content type", async () => {
   const page = await browser.newPage();
   try {
     await loadDocument(page, file);
-    assert.equal(new URL(page.url()).protocol, "file:");
+    assert.equal(page.url(), "http://octavo.test/index.html");
     assert.equal(await page.evaluate(() => document.contentType), "text/html");
     assert.equal(await page.locator("h1").textContent(), "Title");
   } finally {
