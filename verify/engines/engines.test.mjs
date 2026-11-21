@@ -141,6 +141,10 @@ test("webkit error comparison keeps the error kind and ignores the source snippe
     webkit.normalizeError("Cross origin requests are only supported for HTTP. //home/runner/work/octavo/octavo/corpus/.cache/rendered/listings.json due to access control checks."),
     webkit.normalizeError("Cross origin requests are only supported for HTTP. //home/runner/work/octavo/octavo/out/engines-webkit-5/listings.json due to access control checks."),
   );
+  assert.equal(
+    webkit.normalizeError("Cross origin requests are only supported for HTTP. //page.html due to access control checks."),
+    webkit.normalizeError("Cross origin requests are only supported for HTTP. //page.serve.html due to access control checks."),
+  );
   assert.notEqual(
     webkit.normalizeError("Failed https://example.com/a/listings.json"),
     webkit.normalizeError("Failed https://example.com/b/listings.json"),

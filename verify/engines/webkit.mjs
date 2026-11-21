@@ -37,5 +37,10 @@ const MISSING_VALUE_EXPRESSION = /\b(null|undefined) is not an object \(evaluati
 
 const LOCAL_DIRECTORY = /(file:\/\/\/|\/\/)(?:home|Users|tmp|var|mnt|runner)\/[^"\s]*\//g;
 
+const LEVEL_SUFFIX = /\.(?:serve|portable|archive)\.html/g;
+
 export const normalizeError = (message) =>
-  message.replace(MISSING_VALUE_EXPRESSION, "$1 is not an object").replace(LOCAL_DIRECTORY, "$1");
+  message
+    .replace(MISSING_VALUE_EXPRESSION, "$1 is not an object")
+    .replace(LOCAL_DIRECTORY, "$1")
+    .replace(LEVEL_SUFFIX, ".html");
