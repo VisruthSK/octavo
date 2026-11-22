@@ -1,8 +1,11 @@
+import { captureScreenshot } from "./capture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PNG } from "pngjs";
 import { compare, differences, missingFrom } from "./compare.mjs";
 import { canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
+import { scrollbarPseudo } from "./engines/pseudos.mjs";
+import { launch, incompleteChecks } from "./engines/index.mjs";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -181,7 +184,49 @@ test("a missing screenshot is an issue when either or both captures lack one", (
   }
 });
 
-test("matching screenshot limits pass and one-sided or different limits fail", () => {
+test("screenshot errors report both failed capture attempts", async () => {
+  let evaluations = 0;
+  const page = {
+    evaluate: async () => {
+      evaluations++;
+      if (evaluations === 1) return { width: 100, height: 100 };
+      if (evaluations === 2 || evaluations === 4) return [0, 0];
+    },
+    screenshot: async (options) => {
+      throw new Error(options.fullPage && !options.clip ? "full page failed" : "tile failed");
+    },
+  };
+  await assert.rejects(captureScreenshot(page, { width: 100, height: 100 }), /full-page screenshot: full page failed; tiled screenshot: tile failed/);
+});
+
+test("oversized pages skip the full-page screenshot", async () => {
+  const optionsSeen = [];
+  const timings = [];
+  let evaluations = 0;
+  const page = {
+    evaluate: async () => ++evaluations === 1 ? { width: 100, height: 16385 } : [0, 0],
+    screenshot: async (options) => { optionsSeen.push(options); return Buffer.from("tile"); },
+  };
+  const result = await captureScreenshot(page, { width: 100, height: 100 }, (tile) => timings.push(tile));
+  assert.equal(result.kind, "tiles");
+  assert.equal(result.tiles.length, 3);
+  assert.ok(optionsSeen.every((options) => options.fullPage && options.clip));
+  assert.equal(timings.length, 3);
+});
+
+test("missing screenshot reports its capture error", () => {
+  const state = (screenshot, screenshotError) => ({
+    title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0,
+    scroll: [0, 0], labels: [], rects: [], styles: [], screenshot, screenshotError,
+  });
+  const issues = compare(
+    { states: [state(Buffer.from("png"))], errors: [], requests: [] },
+    { states: [state(null, "tile failed")], errors: [], requests: [] },
+    false,
+  );
+  assert.ok(issues.some((issue) => issue.includes("screenshot missing in optimized capture (optimized: tile failed)")));
+});
+test("screenshot limits report incomplete comparison", () => {
   const state = (screenshot) => ({
     title: "",
     accessibility: "",
@@ -202,7 +247,7 @@ test("matching screenshot limits pass and one-sided or different limits fail", (
     false,
   );
   const limited = (height, limit = 20_000_000) => ({ kind: "limit", width: 1280, height, limit });
-  assert.deepEqual(compareScreenshots(limited(200_000), limited(200_000)), []);
+  assert.ok(compareScreenshots(limited(200_000), limited(200_000)).some((issue) => issue.includes("check incomplete: screenshot pixels not compared")));
   assert.ok(compareScreenshots(limited(200_000), Buffer.from("not a screenshot"))[0].includes("page too large for screenshots limit"));
   assert.ok(compareScreenshots(limited(200_000), limited(210_000))[0].includes("page too large for screenshots limit differs"));
 });
@@ -273,6 +318,12 @@ test("declarations without gradients still compare exactly", () => {
   assert.deepEqual(missingFrom("color:red;width:10px", "width:10px"), ["color:red"]);
 });
 
+test("scrollbar pseudo styles remain distinct and comparable", () => {
+  const before = `${scrollbarPseudo}width:8px;`;
+  const after = `${scrollbarPseudo}width:9px;`;
+  assert.deepEqual(missingFrom(canonicalStyle(before), canonicalStyle(after)), [`${scrollbarPseudo}width:8px`]);
+});
+
 test("a mirrored gradient makes two style strings the same, an extra declaration does not", async () => {
   const { sameStyle } = await import("./compare.mjs");
   assert.equal(sameStyle(`color:red;${up}`, `${down};color:red`), true);
@@ -301,5 +352,187 @@ test("missing and extra computed style entries are reported instead of throwing"
       false,
     );
     assert.ok(issues.some((issue) => issue.includes("style count")));
+  }
+});
+
+test("interned styles retain late element and pseudo-style differences", () => {
+  const state = (styles, styleValues) => ({
+    title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0,
+    scroll: [0, 0], labels: ["P", "P", "P"], rects: [[0, 0, 1, 1], [0, 0, 1, 1], [0, 0, 1, 1]],
+    styles, styleValues, screenshot: Buffer.from("same"),
+  });
+  const a = state([0, 0, 0], ["color:red;::selectioncolor:blue"]);
+  const b = state([1, 1, 0], ["color:red;::selectioncolor:green", "color:red;::selectioncolor:blue"]);
+  const result = compare({ states: [a], errors: [], requests: [] }, { states: [b], errors: [], requests: [] }, false);
+  assert.ok(result.some((issue) => issue.includes("1 elements with different computed style")));
+  const same = state([1, 1, 1], b.styleValues);
+  assert.deepEqual(compare({ states: [a], errors: [], requests: [] }, { states: [same], errors: [], requests: [] }, false), []);
+});
+
+test("interned and legacy styles compare with each element's writing mode", () => {
+  const state = (styles, styleValues, writingModes) => ({
+    title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0,
+    scroll: [0, 0], labels: ["P"], rects: [[0, 0, 1, 1]], styles, styleValues, writingModes,
+    screenshot: Buffer.from("same"),
+  });
+  const style = "width:40px;inline-size:40px";
+  const original = state([style], undefined, ["horizontal-tb"]);
+  const same = state([0], [style], ["horizontal-tb"]);
+  const otherMode = state([0], [style], ["vertical-rl"]);
+  const check = (a, b) => compare({ states: [a], errors: [], requests: [] }, { states: [b], errors: [], requests: [] }, false);
+  assert.deepEqual(check(original, same), []);
+  assert.ok(check(original, otherMode).some((issue) => issue.includes("different computed style")));
+  assert.throws(() => check(original, state([1], [style], ["horizontal-tb"])), /invalid computed style storage/);
+});
+
+test("the requests comparison ignores order and lazily fetched font files and keeps everything else", () => {
+  const state = {
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [100, 100],
+    labels: ["DIV"],
+    rects: [[0, 0, 100, 100]],
+    styles: ["width:100px"],
+    screenshot: Buffer.from("same"),
+  };
+  const run = (before, after) => compare({ states: [state], errors: [], requests: before }, { states: [state], errors: [], requests: after }, false);
+  const script = "https://cdn.example/lib.js";
+  const style = "https://cdn.example/lib.css";
+  const font = "https://cdn.example/fonts/Size4-Regular.woff?V=2.7.9";
+  assert.deepEqual(run([script, font, style], [style, script]), []);
+  assert.deepEqual(run([script, style], [style, script, script]), []);
+  assert.ok(run([script, style], [script]).some((issue) => issue.startsWith("requests:")));
+  assert.ok(run([script], [script, "https://cdn.example/extra.js"]).some((issue) => issue.startsWith("requests:")));
+  assert.ok(run([script], [script, "https://cdn.example/image.png"]).some((issue) => issue.startsWith("requests:")));
+});
+
+test("linked mode missing file count comparisons", () => {
+  const state = {
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts: [],
+    animations: [],
+    sheets: 0,
+    scroll: [100, 100],
+    labels: ["DIV"],
+    rects: [[0, 0, 100, 100]],
+    styles: ["width:100px"],
+    screenshot: Buffer.from("same"),
+  };
+  const make = (errors, missingFiles) => ({
+    states: [state],
+    errors,
+    requests: [],
+    checks: missingFiles !== undefined ? { missingFiles } : {},
+  });
+
+  assert.deepEqual(compare(make([], 2), make([], 2), false), []);
+  assert.deepEqual(compare(make([], 2), make([], 1), false), []);
+  assert.deepEqual(compare(make([], 1), make([], 3), false), [
+    "2 more missing files on the optimized page",
+  ]);
+  assert.deepEqual(compare(make(["TypeError: x is undefined"], 1), make([], 1), false), [
+    'console errors: ["TypeError: x is undefined"] vs []',
+  ]);
+  assert.deepEqual(
+    compare(
+      make(["Failed to load resource: net::ERR_FILE_NOT_FOUND"], 1),
+      make(["Failed to load resource: net::ERR_FILE_NOT_FOUND"], 1),
+      false,
+    ),
+    [],
+  );
+  const notFound = "Failed to load resource: the server responded with a status of 404 (Not Found)";
+  assert.deepEqual(compare(make([notFound, notFound], 2), make([], 2), false), []);
+  assert.deepEqual(compare(make([notFound], undefined), make([], undefined), false), [`console errors: ["${notFound}"] vs []`]);
+  assert.deepEqual(compare(make(["a", "b"], 1), make(["b", "a"], 1), false), []);
+  assert.deepEqual(compare(make(["a", "a"], 1), make(["a"], 1), false), ['console errors: ["a","a"] vs ["a"]']);
+  assert.deepEqual(
+    compare(
+      { states: [state], errors: ["Failed to load resource: net::ERR_FILE_NOT_FOUND"], requests: [] },
+      { states: [state], errors: [], requests: [] },
+      false,
+    ),
+    ['console errors: ["Failed to load resource: net::ERR_FILE_NOT_FOUND"] vs []'],
+  );
+});
+
+test("lazily loaded math renderer fonts are not part of the loaded fonts comparison and other fonts are", () => {
+  const state = (fonts) => ({
+    title: "",
+    accessibility: "",
+    forced: [],
+    dom: "",
+    fonts,
+    animations: [],
+    sheets: 0,
+    scroll: [100, 100],
+    labels: ["DIV"],
+    rects: [[0, 0, 100, 100]],
+    styles: ["width:100px"],
+    screenshot: Buffer.from("same"),
+  });
+  const run = (before, after) => compare({ states: [state(before)], errors: [], requests: [] }, { states: [state(after)], errors: [], requests: [] }, false);
+  assert.deepEqual(run(["MathJax_Main", "Source Sans Pro"], ["MathJax_Main", "MathJax_Size4", "Source Sans Pro"]), []);
+  assert.deepEqual(run(["KaTeX_Main", "Inter"], ["Inter"]), []);
+  assert.ok(run(["Inter", "Source Sans Pro"], ["Inter"]).some((issue) => issue.includes("fonts ")));
+  assert.ok(run(["Inter"], ["Inter", "Source Sans Pro"]).some((issue) => issue.includes("fonts ")));
+});
+
+
+test("a synthetic tall page compares the last tile and reports a tile cap", async () => {
+  const browser = await launch();
+  try {
+    const viewport = { width: 1280, height: 720 };
+    const page = await browser.newPage({ viewport });
+    await page.setContent('<style>body { margin: 0; height: 16000px } #pixel { position: absolute; top: 15999px; left: 0; width: 1px; height: 1px; background: white }</style><div id="pixel"></div>');
+    const capture = () => captureScreenshot({
+      evaluate: (...args) => page.evaluate(...args),
+      screenshot: (options) => options.fullPage && !options.clip ? Promise.reject(new Error("screenshot too large")) : page.screenshot(options),
+    }, viewport);
+    const before = await capture();
+    await page.locator("#pixel").evaluate((pixel) => pixel.style.background = "black");
+    const after = await capture();
+    assert.equal(before.kind, "tiles");
+    assert.equal(before.height, 16000);
+    assert.equal(before.tiles.at(-1).y + before.tiles.at(-1).height, 16000);
+    const state = (screenshot) => ({ label: "load", title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0, scroll: [0, 0], labels: [], rects: [], styles: [], screenshot });
+    const result = (screenshot) => ({ states: [state(screenshot)], errors: [], requests: [] });
+    assert.deepEqual(compare(result(before), result(before), false), []);
+    assert.ok(compare(result(before), result(after), false).some((issue) => issue.includes(`tile at 0,${before.tiles.at(-1).y}: screenshot: 1 pixels differ`)));
+    await page.evaluate(() => document.body.style.height = "17000000px");
+    const limited = await capture();
+    assert.equal(limited.kind, "limit");
+    assert.equal(limited.reason, "tile count");
+    const checks = { elements: 0, screenshots: { taken: 1, total: 1, limits: [{ label: "load", ...limited }] } };
+    assert.ok(incompleteChecks(checks).some((issue) => issue.startsWith("check incomplete: screenshot pixels not compared")));
+  } finally {
+    await browser.close();
+  }
+});
+
+test("script-disabled tall pages compare their last tile", { timeout: 10000 }, async () => {
+  const browser = await launch();
+  try {
+    const viewport = { width: 100, height: 100 };
+    const page = await browser.newPage({ viewport, javaScriptEnabled: false });
+    await page.setContent('<style>body{margin:0;height:16385px} #pixel{position:absolute;top:16384px;width:1px;height:1px;background:white}</style><div id="pixel"></div>');
+    const before = await captureScreenshot(page, viewport, () => {}, false);
+    await page.locator("#pixel").evaluate((pixel) => pixel.style.background = "black");
+    const after = await captureScreenshot(page, viewport, () => {}, false);
+    assert.equal(before.kind, "tiles");
+    assert.equal(before.tiles.at(-1).y + before.tiles.at(-1).height, 16385);
+    const state = (screenshot) => ({ label: "load", title: "", accessibility: "", forced: [], dom: "", fonts: [], animations: [], sheets: 0, scroll: [0, 0], labels: [], rects: [], styles: [], screenshot });
+    const result = (screenshot) => ({ states: [state(screenshot)], errors: [], requests: [] });
+    assert.ok(compare(result(before), result(after), false).some((issue) => issue.includes(`tile at 0,${before.tiles.at(-1).y}: screenshot: 1 pixels differ`)));
+  } finally {
+    await browser.close();
   }
 });

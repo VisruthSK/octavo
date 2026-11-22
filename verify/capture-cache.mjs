@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib";
+import { validStyles } from "./style-storage.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 export const directory = join(root, "corpus", ".cache", "captures");
@@ -43,7 +44,7 @@ export const readCapture = (key, folder = directory) => {
   if (!existsSync(file)) return null;
   try {
     const payload = JSON.parse(brotliDecompressSync(readFileSync(file)).toString("utf8"));
-    if (payload.key !== key || !Array.isArray(payload.states) || payload.states.length === 0) return null;
+    if (payload.key !== key || !Array.isArray(payload.states) || payload.states.length === 0 || !payload.states.every(validStyles)) return null;
     return resultOf(payload);
   } catch {
     return null;
@@ -59,7 +60,7 @@ const cacheable = (result) => {
   const screenshots = result.checks?.screenshots;
   return (
     result.checks?.settled !== false &&
-    result.requests.length === 0 &&
+    result.requests.every((url) => url === "http://localhost/index.html") &&
     (!screenshots || screenshots.taken === screenshots.total)
   );
 };

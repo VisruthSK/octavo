@@ -6,12 +6,12 @@ pub fn page(head: &str, body: &str) -> String {
     format!("<!DOCTYPE html><html><head>{head}</head><body>{body}</body></html>")
 }
 
-pub fn safe(src: &str) -> String {
-    optimized(src, Mode::Safe).html
+pub fn serve(src: &str) -> String {
+    optimized(src, Mode::Serve).html
 }
 
-pub fn packed(src: &str) -> String {
-    optimized(src, Mode::Packed).html
+pub fn archive(src: &str) -> String {
+    optimized(src, Mode::Archive).html
 }
 
 pub fn optimized(src: &str, mode: Mode) -> Output {

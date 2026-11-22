@@ -52,7 +52,7 @@ pub(crate) struct Packed {
 
 pub(crate) fn run(scanned: &Scanned, mode: Mode, tuning: Tuning) -> Option<Packed> {
     let src = scanned.html();
-    if mode == Mode::Safe || contains_ignore_case(src, "content-security-policy") {
+    if mode == Mode::Serve || contains_ignore_case(src, "content-security-policy") {
         return None;
     }
     let mut blobs = Blobs::default();
@@ -89,7 +89,7 @@ pub(crate) fn run(scanned: &Scanned, mode: Mode, tuning: Tuning) -> Option<Packe
 }
 
 fn candidate<'a>(src: &'a str, tag: &Tag, mode: Mode) -> Option<Candidate<'a>> {
-    let styles = mode == Mode::Packed;
+    let styles = mode == Mode::Archive;
     let (kind, text) = match tag.element {
         Element::Script
             if tag.attr(AttrName::Src).is_none()

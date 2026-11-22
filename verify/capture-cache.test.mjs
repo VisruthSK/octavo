@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureKey, cachedCapture, directory, payloadOf, readCapture, writeCapture } from "./capture-cache.mjs";
-import { SCENARIOS, capture } from "./capture.mjs";
+import { SCENARIOS, capture, captureDeadline, loadDocument } from "./capture.mjs";
 import { launch } from "./engines/index.mjs";
 
 const browser = await launch();
@@ -83,7 +83,27 @@ test("a corrupted cache file is ignored and recaptured", async () => {
   });
   assert.equal(calls, 1);
   assert.equal(outcome.cached, false);
-  assert.deepEqual(readCapture(key, folder).states.length, 1);
+  assert.deepEqual(payloadOf(readCapture(key, folder)), payloadOf(outcome.result));
+});
+
+test("interned styles survive a capture cache round trip", () => {
+  const cacheKey = captureKey({ ...parts, scenario: "interned" });
+  const state = { label: "load", screenshot: null, styles: [0, 0, 1], styleValues: ["color:red", "color:blue"] };
+  const result = { states: [state], errors: [], requests: [], checks: {} };
+  writeCapture(cacheKey, result, folder);
+  assert.deepEqual(payloadOf(readCapture(cacheKey, folder)), payloadOf(result));
+});
+
+test("invalid interned style indices are rejected and recaptured", async () => {
+  const cacheKey = captureKey({ ...parts, scenario: "invalid-interned" });
+  const result = { states: [{ label: "load", screenshot: null, styles: [1], styleValues: ["color:red"] }], errors: [], requests: [], checks: {} };
+  writeCapture(cacheKey, result, folder);
+  assert.equal(readCapture(cacheKey, folder), null);
+  let calls = 0;
+  const recaptured = await cachedCapture({ key: cacheKey, folder, capture: async () => { calls++; return fresh(); } });
+  assert.equal(calls, 1);
+  assert.equal(recaptured.cached, false);
+  assert.deepEqual(payloadOf(readCapture(cacheKey, folder)), payloadOf(recaptured.result));
 });
 
 test("a capture without every screenshot is not cached", async () => {
@@ -134,9 +154,9 @@ test("a capture that fetched from the network is not cached", async () => {
   const key = captureKey({ ...parts, original: readFileSync(remote) });
   const outcome = await cachedCapture({ key, folder, capture: () => capture(browser, remote, scenario, false, { interact: true }) });
   assert.equal(outcome.cached, false);
-  assert.deepEqual(outcome.result.requests, ["http://127.0.0.1:65001/x.js"]);
+  assert.deepEqual(outcome.result.requests, ["http://localhost/index.html", "http://127.0.0.1:65001/x.js"]);
   assert.equal(readCapture(key, folder), null);
-  assert.deepEqual((await fresh()).requests, []);
+  assert.deepEqual((await fresh()).requests, ["http://localhost/index.html"]);
 });
 
 test("a linked verification ignores the capture cache", async () => {
@@ -145,7 +165,7 @@ test("a linked verification ignores the capture cache", async () => {
   try {
     const linked = join(folder, "linked.html");
     writeFileSync(linked, html);
-    const { timing } = await verifyLevels(linked, [{ level: "scripts", path: linked, only: ["desktop-light"] }], {
+    const { timing } = await verifyLevels(linked, [{ level: "portable", path: linked, only: ["desktop-light"] }], {
       captureCache: true,
       linked: true,
     });
@@ -161,4 +181,56 @@ test("a mismatched key in the file is ignored", async () => {
   writeFileSync(join(folder, `${key}.json.br`), readFileSync(join(folder, `${other}.json.br`)));
   assert.equal(readCapture(key, folder), null);
   assert.match(directory, /corpus[\\/]\.cache[\\/]captures$/);
+});
+
+
+test("failed captures cannot pass verification", async () => {
+  const { closeBrowser, verifyLevels } = await import("./verify.mjs");
+  try {
+    const missing = join(folder, "missing.html");
+    const { reports } = await verifyLevels(missing, [{ level: "portable", path: missing, only: ["desktop-light"] }]);
+    assert.match(reports[0][0].issues.join("; "), /crashed: original=capture failed.*optimized=capture failed/s);
+  } finally {
+    await closeBrowser();
+  }
+});
+
+
+test("HTML navigation uses the virtual URL and HTML content type", async () => {
+  const page = await browser.newPage();
+  try {
+    await loadDocument(page, file);
+    assert.equal(page.url(), "http://localhost/index.html");
+    assert.equal(await page.evaluate(() => document.contentType), "text/html");
+    assert.equal(await page.locator("h1").textContent(), "Title");
+  } finally {
+    await page.close();
+  }
+});
+
+const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+test("the capture deadline restarts on progress and stops at the total cap", async () => {
+  let closed = 0;
+  const context = { close: async () => { closed += 1; } };
+  const stalled = captureDeadline(context, 80, () => "stalled", 400);
+  await pause(160);
+  assert.equal(stalled.timedOut(), true);
+  assert.equal(closed, 1);
+
+  const progressing = captureDeadline(context, 80, () => "progressing", 400);
+  for (let step = 0; step < 4; step++) {
+    await pause(40);
+    progressing.touch();
+  }
+  assert.equal(progressing.timedOut(), false);
+  await pause(120);
+  assert.equal(progressing.timedOut(), true);
+
+  const capped = captureDeadline(context, 120, () => "capped", 300);
+  for (let step = 0; step < 12; step++) {
+    await pause(40);
+    capped.touch();
+  }
+  assert.equal(capped.timedOut(), true);
 });

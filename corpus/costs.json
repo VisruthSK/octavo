@@ -1,0 +1,277 @@
+{
+  "assets-corrupt-png": {
+    "chromium": 28,
+    "firefox": 30,
+    "webkit": 18
+  },
+  "assets-font-named-by-a-script-is-kept": {
+    "chromium": 30,
+    "firefox": 28,
+    "webkit": 24
+  },
+  "assets-gif": {
+    "chromium": 30,
+    "firefox": 34,
+    "webkit": 32
+  },
+  "assets-inline-svg-with-a-script": {
+    "chromium": 34,
+    "firefox": 30,
+    "webkit": 26
+  },
+  "assets-opaque-png-is-recompressed-as-png": {
+    "chromium": 30,
+    "firefox": 36,
+    "webkit": 38
+  },
+  "assets-percent-encoded-png": {
+    "chromium": 28,
+    "firefox": 24,
+    "webkit": 18
+  },
+  "assets-png-one-pixel": {
+    "chromium": 28,
+    "firefox": 30,
+    "webkit": 18
+  },
+  "assets-unused-font-face-is-dropped": {
+    "chromium": 38,
+    "firefox": 34,
+    "webkit": 32
+  },
+  "assets-woff2-with-corrupt-data": {
+    "chromium": 34,
+    "firefox": 34,
+    "webkit": 34
+  },
+  "css-class-added-by-classlist-add": {
+    "chromium": 30,
+    "firefox": 30,
+    "webkit": 24
+  },
+  "css-class-built-by-concatenation": {
+    "chromium": 32,
+    "firefox": 28,
+    "webkit": 24
+  },
+  "css-class-reachable-only-from-markup": {
+    "chromium": 26,
+    "firefox": 26,
+    "webkit": 18
+  },
+  "css-custom-property-used-only-by-a-script-survives": {
+    "chromium": 44,
+    "firefox": 38,
+    "webkit": 36
+  },
+  "css-empty-media-block-disappears": {
+    "chromium": 26,
+    "firefox": 26,
+    "webkit": 20
+  },
+  "css-invalid-stylesheet-is-left-untouched": {
+    "chromium": 26,
+    "firefox": 26,
+    "webkit": 18
+  },
+  "css-media-block-survives-when-a-rule-survives": {
+    "chromium": 26,
+    "firefox": 24,
+    "webkit": 18
+  },
+  "css-modern-selectors-and-at-rules-survive": {
+    "chromium": 26,
+    "firefox": 24,
+    "webkit": 18
+  },
+  "css-rule-with-an-attribute-selector-is-kept": {
+    "chromium": 28,
+    "firefox": 32,
+    "webkit": 18
+  },
+  "fonts-fira-sans-tabular-numbers": {
+    "chromium": 60,
+    "firefox": 64,
+    "webkit": 38
+  },
+  "libs-bulma-framework": {
+    "chromium": 32,
+    "firefox": 34,
+    "webkit": 32
+  },
+  "libs-d3-chart": {
+    "chromium": 40,
+    "firefox": 50,
+    "webkit": 30
+  },
+  "libs-jquery": {
+    "chromium": 40,
+    "firefox": 38,
+    "webkit": 38
+  },
+  "libs-license-banners-all-kept": {
+    "chromium": 42,
+    "firefox": 36,
+    "webkit": 34
+  },
+  "libs-moment": {
+    "chromium": 60,
+    "firefox": 64,
+    "webkit": 42
+  },
+  "parsing-comment-with-every-kind-of-tag": {
+    "chromium": 76,
+    "firefox": 30,
+    "webkit": 42
+  },
+  "parsing-crlf-line-endings": {
+    "chromium": 28,
+    "firefox": 24,
+    "webkit": 18
+  },
+  "parsing-script-text-that-looks-like-markup": {
+    "chromium": 32,
+    "firefox": 28,
+    "webkit": 24
+  },
+  "parsing-style-text-that-looks-like-markup": {
+    "chromium": 28,
+    "firefox": 24,
+    "webkit": 18
+  },
+  "parsing-textarea-content-is-not-markup": {
+    "chromium": 34,
+    "firefox": 30,
+    "webkit": 26
+  },
+  "parsing-two-html-elements": {
+    "chromium": 28,
+    "firefox": 30,
+    "webkit": 18
+  },
+  "parsing-unterminated-script-at-end-of-file": {
+    "chromium": 32,
+    "firefox": 28,
+    "webkit": 24
+  },
+  "quarto-cli-crossrefs-all": {
+    "chromium": 356,
+    "firefox": 1080,
+    "webkit": 1224
+  },
+  "quarto-cli-playwright-html-axe-standard-best-practice": {
+    "chromium": 138,
+    "firefox": 276,
+    "webkit": 1244
+  },
+  "quarto-cli-playwright-revealjs-links-id": {
+    "chromium": 306,
+    "firefox": 692,
+    "webkit": 668
+  },
+  "quarto-cli-reveal-aside-footnotes": {
+    "chromium": 238,
+    "firefox": 464,
+    "webkit": 328
+  },
+  "quarto-cli-reveal-mini-absolute": {
+    "chromium": 208,
+    "firefox": 868,
+    "webkit": 852
+  },
+  "quarto-cli-smoke-all-2023-12-04-annotate-decorated": {
+    "chromium": 286,
+    "firefox": 2040,
+    "webkit": 2486
+  },
+  "quarto-cli-smoke-all-2024-09-26-issue-10894-2": {
+    "chromium": 330,
+    "firefox": 712,
+    "webkit": 992
+  },
+  "quarto-cli-smoke-all-2026-05-01-issue-14468-axe-revealjs": {
+    "chromium": 242,
+    "firefox": 692,
+    "webkit": 444
+  },
+  "quarto-cli-smoke-all-2026-07-13-issue-14684-dashboard": {
+    "chromium": 144,
+    "firefox": 472,
+    "webkit": 2068
+  },
+  "quarto-cli-smoke-all-lightbox-8697": {
+    "chromium": 72,
+    "firefox": 428,
+    "webkit": 730
+  },
+  "quarto-cli-syntax-test": {
+    "chromium": 822,
+    "firefox": 1056,
+    "webkit": 780
+  },
+  "quarto-cli-text-highlighting-github-dark": {
+    "chromium": 74,
+    "firefox": 260,
+    "webkit": 894
+  },
+  "runtime-built-class-names-survive": {
+    "chromium": 32,
+    "firefox": 32,
+    "webkit": 24
+  },
+  "script-text-inside-a-comment-is-left-alone": {
+    "chromium": 46,
+    "firefox": 32,
+    "webkit": 36
+  },
+  "scripts-inline-event-handler-is-kept": {
+    "chromium": 54,
+    "firefox": 46,
+    "webkit": 46
+  },
+  "scripts-json-data-block-is-left-alone": {
+    "chromium": 40,
+    "firefox": 42,
+    "webkit": 48
+  },
+  "scripts-license-banner-is-kept": {
+    "chromium": 32,
+    "firefox": 34,
+    "webkit": 24
+  },
+  "scripts-module-script-is-minified": {
+    "chromium": 32,
+    "firefox": 32,
+    "webkit": 24
+  },
+  "scripts-object-accessors-are-kept": {
+    "chromium": 30,
+    "firefox": 42,
+    "webkit": 24
+  },
+  "scripts-order-dependence-between-scripts": {
+    "chromium": 30,
+    "firefox": 30,
+    "webkit": 34
+  },
+  "scripts-regex-literal-keeps-its-pattern": {
+    "chromium": 32,
+    "firefox": 28,
+    "webkit": 24
+  },
+  "textarea-content-is-not-markup": {
+    "chromium": 38,
+    "firefox": 42,
+    "webkit": 44
+  },
+  "twenty-thousand-paragraphs": {
+    "chromium": 904,
+    "firefox": 552,
+    "webkit": 432
+  },
+  "unused-rules-are-pruned": {
+    "chromium": 26,
+    "firefox": 30,
+    "webkit": 18
+  }
+}

@@ -64,7 +64,7 @@ A document is an object:
 
 | Outcome | Meaning | Count |
 |---|---|---|
-| `optimizes` | The output is smaller and renders identically in Chromium. `retains` lists text that must survive and `removes` lists text that must be gone, both checked on the `safe` output, where nothing is packed | 304 |
+| `optimizes` | The output is smaller and renders identically in Chromium. `retains` lists text that must survive and `removes` lists text that must be gone, both checked on the `serve` output, where nothing is packed | 304 |
 | `keeps` | Octavo finds nothing to gain and returns the file unchanged | 5 |
 | `rejects` | The input is refused, with the error `not-html` or `not-self-contained` | 8 |
 | `accepts` | Octavo may optimize the input or leave it as it was, but never rejects it. It suits real-world documents where the gain is not the point | 1 |
@@ -93,7 +93,7 @@ The first command renders the listed documents with Quarto into `.cache/rendered
 `src/` holds small Quarto sources (articles, figures, tables, citations, dashboards, reveal.js decks, Plotly and SVG pages). The pages built with R need the matching R packages, such as ggplot2, gt, plotly, DT and dygraphs. `render.sh` renders them with Quarto into `html/train` and `html/test`, which are not committed. `verify/bench.mjs` runs Octavo over those renders and reports the size before and after and the time:
 
 ```sh
-node verify/bench.mjs packed corpus/html/train corpus/html/test
+node verify/bench.mjs archive corpus/html/train corpus/html/test
 ```
 
 ## Running
@@ -109,7 +109,7 @@ node verify/corpus.mjs --tier full --browser --filter '^css-'
 | Flag | Meaning |
 |---|---|
 | `--tier smoke\|full` | Which tier to run. The default is `smoke` |
-| `--levels safe,scripts,packed` | Which levels to run. The default is `safe,packed` for `smoke` and all three for `full` |
+| `--levels serve,portable,archive` | Which levels to run. The default is `serve,archive` for `smoke` and all three for `full` |
 | `--browser` | Compare each optimized page with the original in the engine named by `OCTAVO_BROWSER` |
 | `--filter <regex>` | Run only documents whose id matches |
 | `--jobs <n>` | Documents processed at once |

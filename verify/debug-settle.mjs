@@ -14,7 +14,7 @@ const file = join(directory, "page.html");
 writeFileSync(file, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title><style>${base}</style></head><body><h1>Title</h1><div class="box"></div></body></html>`);
 
 const browser = await launch();
-for (const scenario of scenariosFor("safe")) {
+for (const scenario of scenariosFor("serve")) {
   const started = Date.now();
   const result = await capture(browser, file, scenario, false);
   console.log(scenario.name, `${Date.now() - started} ms`, `states=${result.states.length}`);

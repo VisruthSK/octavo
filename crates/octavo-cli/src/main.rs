@@ -92,7 +92,7 @@ fn print_completions(shell: CompletionShell) {
 const EXAMPLES: &str = "\
 Examples:
   octavo report.html                     write report.min.html
-  octavo deck.html --level safe          keep the page working without JavaScript
+  octavo deck.html --level serve          keep the page working without JavaScript
   octavo deck.html --lossy-images        smaller, but images are not pixel-exact
   octavo report.html --maximum           the smallest output, however long it takes
   octavo report.html --audit             show what each step would save";
@@ -114,9 +114,9 @@ struct Optimize {
         short,
         long,
         value_name = "LEVEL",
-        default_value_t = Mode::Packed,
+        default_value_t = Mode::default(),
         value_parser = value_parser!(Mode),
-        help = "How much to rewrite: exact uses verified transforms; safe, scripts and packed use heuristic optimization"
+        help = "How much to rewrite: exact uses provably semantics-preserving transforms; serve, portable and archive use heuristic optimization"
     )]
     level: Mode,
     #[arg(

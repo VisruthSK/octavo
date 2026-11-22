@@ -93,7 +93,7 @@
 <text x='496.43' y='229.77' text-anchor='middle' style='font-size: 10.40px;fill: #59636E; font-family: "Arial";' textLength='16.77px' lengthAdjust='spacingAndGlyphs'>50x</text>
 <text x='290.84' y='244.51' text-anchor='middle' style='font-size: 13.00px;fill: #59636E; font-family: "Arial";' textLength='219.72px' lengthAdjust='spacingAndGlyphs'>Original size divided by optimized size</text>
 <text transform='translate(23.26,135.47) rotate(-90)' text-anchor='middle' style='font-size: 13.00px;fill: #59636E; font-family: "Arial";' textLength='65.77px' lengthAdjust='spacingAndGlyphs'>Documents</text>
-<text x='13.95' y='40.07' style='font-size: 11.50px;fill: #59636E; font-family: "Arial";' textLength='237.61px' lengthAdjust='spacingAndGlyphs'>465 Quarto test documents at the packed level</text>
+<text x='13.95' y='40.07' style='font-size: 11.50px;fill: #59636E; font-family: "Arial";' textLength='237.61px' lengthAdjust='spacingAndGlyphs'>465 Quarto test documents at the archive level</text>
 <text x='13.95' y='24.69' style='font-size: 15.00px; font-weight: bold;fill: #1F2328; font-family: "Arial";' textLength='247.55px' lengthAdjust='spacingAndGlyphs'>How much each document shrinks</text>
 </g>
 </g>
