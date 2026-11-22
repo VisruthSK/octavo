@@ -67,6 +67,7 @@ fn exact_corpus_and_byte_price() {
         Transform::RecompressedPng,
         Transform::ConvertedWebp,
         Transform::MinifiedStylesheet,
+        Transform::MinifiedScript,
         Transform::StrippedDefaultAttr,
         Transform::StrippedZeroUnits,
         Transform::CollapsedCssWhitespace,

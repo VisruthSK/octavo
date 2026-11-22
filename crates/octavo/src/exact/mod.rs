@@ -559,6 +559,78 @@ fn can_unquote(src: &str, v_span: &Range<usize>) -> bool {
     true
 }
 
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'$'
+}
+
+fn build_token_candidate(
+    code: &str,
+    tokens: &[oxc::parser::Token],
+    preserve_newlines: bool,
+) -> String {
+    let mut out = String::with_capacity(code.len());
+    let mut prev_token: Option<&oxc::parser::Token> = None;
+    for t in tokens {
+        if let Some(prev) = prev_token {
+            let prev_text = &code[prev.start() as usize..prev.end() as usize];
+            let curr_text = &code[t.start() as usize..t.end() as usize];
+            let c1 = prev_text.as_bytes().last().copied().unwrap_or(0);
+            let c2 = curr_text.as_bytes().first().copied().unwrap_or(0);
+            if (is_word_byte(c1) && is_word_byte(c2))
+                || (c1 == b'+' && c2 == b'+')
+                || (c1 == b'-' && c2 == b'-')
+                || (c1 == b'/' && (c2 == b'/' || c2 == b'*'))
+            {
+                out.push(' ');
+            } else if t.is_on_new_line()
+                && (preserve_newlines
+                    || !matches!(c1, b';' | b'{' | b'}' | b',' | b':' | b'(' | b'['))
+            {
+                out.push('\n');
+            }
+        }
+        out.push_str(&code[t.start() as usize..t.end() as usize]);
+        prev_token = Some(t);
+    }
+    out
+}
+
+fn minify_script(source: &str) -> Option<String> {
+    let source_type = if source.contains("import") || source.contains("export") {
+        oxc::span::SourceType::mjs()
+    } else {
+        oxc::span::SourceType::default().with_script(true)
+    };
+    let allocator = oxc::allocator::Allocator::default();
+    let parsed = oxc::parser::Parser::new(&allocator, source, source_type)
+        .with_config(oxc::parser::config::TokensParserConfig)
+        .parse();
+    if parsed.fatal_error || !parsed.diagnostics.is_empty() {
+        return None;
+    }
+    if parsed.tokens.is_empty() {
+        if source.trim().is_empty() {
+            return None;
+        }
+        return Some(String::new());
+    }
+    let cand1 = build_token_candidate(source, &parsed.tokens, false);
+    if cand1.len() < source.len()
+        && !cand1.contains("</script")
+        && oracle::js_token_stream(source, &cand1)
+    {
+        return Some(cand1);
+    }
+    let cand2 = build_token_candidate(source, &parsed.tokens, true);
+    if cand2.len() < source.len()
+        && !cand2.contains("</script")
+        && oracle::js_token_stream(source, &cand2)
+    {
+        return Some(cand2);
+    }
+    None
+}
+
 pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
     let mut edits = Vec::new();
     let mut warnings = Vec::new();
@@ -728,6 +800,37 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
                                 target: target.clone(),
                             });
                         }
+                    }
+                }
+            }
+        }
+        if tag.element == Element::Script
+            && !tag.in_svg
+            && tag.attr(AttrName::Src).is_none()
+            && let Some(body) = &tag.body
+        {
+            let script_type = tag.attr(AttrName::Type).unwrap_or("");
+            let kind = crate::js::ScriptKind::parse(script_type);
+            if matches!(
+                kind,
+                crate::js::ScriptKind::Classic | crate::js::ScriptKind::Module
+            ) {
+                let code = &doc.src()[body.clone()];
+                if let Some(candidate) = minify_script(code) {
+                    let proven = adopt(code.to_string(), candidate, &oracle::JsTokenStream);
+                    let target = Target::Resource(tag.label().to_string());
+                    if proven.rejected() {
+                        warnings.push(Warning::OracleRejected {
+                            transform: Transform::MinifiedScript,
+                            target,
+                        });
+                    } else {
+                        edits.push(Edit {
+                            span: body.clone(),
+                            text: proven.into_inner(),
+                            transform: Transform::MinifiedScript,
+                            target,
+                        });
                     }
                 }
             }
@@ -1238,6 +1341,49 @@ mod tests {
             let out = optimize(&html, Mode::Exact).unwrap();
             proptest::prop_assert_eq!(&out.html, &format!(r#"<html><script id={val} class={val}>1;</script></html>"#));
             proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::NormalizedAttrQuotes));
+            proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+        }
+    }
+
+    #[test]
+    fn exact_removes_js_comments_and_whitespace() {
+        let input = "<html><script>\n// greeting\nconst x = 1;\n/* add numbers */\nfunction f(a, b) {\n    return a + b;\n}\n</script></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(
+            out.html,
+            "<html><script>const x=1;function f(a,b){return a+b;}</script></html>"
+        );
+        assert!(
+            out.applied
+                .iter()
+                .any(|s| s.transform == Transform::MinifiedScript)
+        );
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    #[test]
+    fn exact_leaves_js_alone_when_syntax_is_invalid() {
+        let input = "<html><script>#not valid js %</script></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, input);
+        assert!(
+            !out.applied
+                .iter()
+                .any(|s| s.transform == Transform::MinifiedScript)
+        );
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn js_comment_whitespace_property_test(
+            val in 0u32..1000,
+            comment in "[a-zA-Z0-9_ ]{1,16}"
+        ) {
+            let html = format!("<html><script>\n// {comment}\nconst val = {val};\n/* {comment} */\n</script></html>");
+            let out = optimize(&html, Mode::Exact).unwrap();
+            proptest::prop_assert!(!out.html.contains("//"));
+            proptest::prop_assert!(!out.html.contains("/*"));
+            proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::MinifiedScript));
             proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
         }
     }
