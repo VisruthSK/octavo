@@ -449,6 +449,8 @@ test("linked mode missing file count comparisons", () => {
     ),
     [],
   );
+  assert.deepEqual(compare(make(["a", "b"], 1), make(["b", "a"], 1), false), []);
+  assert.deepEqual(compare(make(["a", "a"], 1), make(["a"], 1), false), ['console errors: ["a","a"] vs ["a"]']);
   assert.deepEqual(
     compare(
       { states: [state], errors: ["Failed to load resource: net::ERR_FILE_NOT_FOUND"], requests: [] },

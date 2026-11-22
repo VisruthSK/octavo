@@ -259,8 +259,8 @@ export function compare(before, after, lossy, stats) {
   const issues = [];
   if (!before.states.length) issues.push("original produced no states");
   const linked = before.checks?.missingFiles !== undefined || after.checks?.missingFiles !== undefined;
-  const beforeErrors = before.errors;
-  const afterErrors = after.errors;
+  const beforeErrors = [...before.errors].sort();
+  const afterErrors = [...after.errors].sort();
   if (JSON.stringify(beforeErrors) !== JSON.stringify(afterErrors)) {
     issues.push(`console errors: ${JSON.stringify(beforeErrors)} vs ${JSON.stringify(afterErrors)}`);
   }
