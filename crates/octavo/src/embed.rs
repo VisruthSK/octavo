@@ -62,6 +62,12 @@ pub struct Embedded {
     pub missing: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScriptInlining {
+    InPlace,
+    DataUri,
+}
+
 /// Embeds the local files that a document links, as Quarto's
 /// `embed-resources: true` does, so that [`optimize`](crate::optimize) can
 /// accept it.
@@ -88,12 +94,6 @@ pub struct Embedded {
 /// assert_eq!(embedded.html, "<script>let a = 1;</script>");
 /// assert_eq!(embedded.embedded, 1);
 /// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ScriptInlining {
-    InPlace,
-    DataUri,
-}
-
 pub fn embed_resources(src: &str, resources: &mut dyn Resources) -> Embedded {
     let doc = Doc::new(src);
     let mut state = State {
