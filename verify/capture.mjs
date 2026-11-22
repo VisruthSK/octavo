@@ -621,6 +621,7 @@ export async function loadDocument(page, file, root, entryPath) {
   return response;
 }
 export async function settleFonts() {
+  await Promise.all([...document.fonts].filter((face) => face.status === "unloaded").map((face) => face.load().catch(() => {})));
   const loaded = () => [...document.fonts].filter((face) => face.status === "loaded").length;
   let previous = -1;
   for (let round = 0; round < 8; round++) {
