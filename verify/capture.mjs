@@ -257,8 +257,15 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
     fonts: (() => {
       const weights = { normal: "400", bold: "700" };
       const faces = new Map();
+      const bare = (name) => name.trim().replace(/^["']|["']$/g, "").toLowerCase();
+      const used = new Set();
+      for (const element of document.querySelectorAll("*")) {
+        for (const pseudo of [null, "::before", "::after"]) {
+          for (const name of getComputedStyle(element, pseudo).fontFamily.split(",")) used.add(bare(name));
+        }
+      }
       for (const font of document.fonts) {
-        if (font.status !== "loaded") continue;
+        if (font.status !== "loaded" || !used.has(bare(font.family))) continue;
         const stretch = font.stretch === "normal" ? "100%" : font.stretch;
         faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch].join("|"), font.family);
       }

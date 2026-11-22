@@ -78,3 +78,10 @@ test("a declared face of a font nothing uses is left alone", async () => {
   const changed = write("dropped", [regular]);
   assert.deepEqual(await fontIssues(original, changed), []);
 });
+
+test("a face that loaded for a family nothing uses in the final state is not compared", async () => {
+  const transient = { ...regular, family: "Transient" };
+  const original = write("transient", [regular, transient]);
+  const changed = write("settled", [regular]);
+  assert.deepEqual(await fontIssues(original, changed), []);
+});
