@@ -621,7 +621,10 @@ export async function loadDocument(page, file, root, entryPath) {
   return response;
 }
 export async function settleFonts() {
-  await Promise.all([...document.fonts].filter((face) => face.status === "unloaded").map((face) => face.load().catch(() => {})));
+  const bare = (name) => name.trim().replace(/^["']|["']$/g, "").toLowerCase();
+  const used = new Set();
+  for (const element of document.querySelectorAll("*")) for (const name of getComputedStyle(element).fontFamily.split(",")) used.add(bare(name));
+  await Promise.all([...document.fonts].filter((face) => face.status === "unloaded" && used.has(bare(face.family))).map((face) => face.load().catch(() => {})));
   const loaded = () => [...document.fonts].filter((face) => face.status === "loaded").length;
   let previous = -1;
   for (let round = 0; round < 8; round++) {
