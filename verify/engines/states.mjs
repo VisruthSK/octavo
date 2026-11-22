@@ -8,6 +8,7 @@ const MIRROR = (names) => {
   const alternatives = names.join("|");
   const test = new RegExp(`:(?:${alternatives})(?![\\w-])`);
   const replace = new RegExp(`:(${alternatives})(?![\\w-])`, "g");
+  const behind = new RegExp(`(::[\\w-]+(?:\\([^)]*\\))?)((?::(?:${alternatives})(?![\\w-]))+)`, "g");
   const mirrors = [];
   const unreadable = [];
   const failed = [];
@@ -26,7 +27,7 @@ const MIRROR = (names) => {
       const selector = rule.selectorText;
       if (!selector || !test.test(selector)) continue;
       const body = rule.cssRules?.length ? rule.cssText.slice(rule.cssText.indexOf("{")) : `{ ${rule.style.cssText} }`;
-      const mirrored = selector.replace(replace, "[data-octavo-$1]");
+      const mirrored = selector.replace(behind, (_, element, states) => states.replace(replace, "[data-octavo-$1]") + element).replace(replace, "[data-octavo-$1]");
       try {
         const at = parent.insertRule(`${mirrored} ${body}`, index + 1);
         mirrors.push({ parent, rule: parent.cssRules[at] });

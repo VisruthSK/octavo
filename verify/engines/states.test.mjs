@@ -137,3 +137,16 @@ test("imported, adopted and shadow root stylesheets are mirrored and a readable 
     assert.deepEqual(incompleteChecks(checks), []);
   });
 });
+
+test("state rules on a pseudo-element are mirrored onto the element that owns it", async () => {
+  const url = page(
+    "pseudo",
+    "input{color:rgb(1,1,1)}input::-webkit-slider-thumb:hover{background:rgb(6,6,6)}input:hover::-webkit-slider-thumb{background:rgb(5,5,5)}",
+    '<input type="range">',
+  );
+  await run(url, async (tab) => {
+    const { checks } = await forcedStates(tab, selector, observe);
+    assert.equal(checks.unmirrored, 0);
+    assert.equal(checks.mirrored, 2);
+  });
+});
