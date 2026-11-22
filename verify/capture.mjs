@@ -416,7 +416,7 @@ const frames = async (page) => {
   ]);
 };
 
-export function trackNetwork(page, requests = []) {
+export function trackNetwork(page, requests = [], linked = false) {
   const openRequests = new Set();
   const network = { pending: 0, count: 0, last: 0, openRequests };
   page.on("request", (request) => {
@@ -425,7 +425,7 @@ export function trackNetwork(page, requests = []) {
     network.count += 1;
     network.last = Date.now();
     openRequests.add(request);
-    requests.push(request.url());
+    if (!linked || !request.url().startsWith("http://localhost/")) requests.push(request.url());
   });
   const finished = (request) => {
     if (!openRequests.delete(request)) return;
@@ -732,7 +732,7 @@ export async function capture(
     const page = await context.newPage();
     const errors = [];
     const requests = [];
-    const network = trackNetwork(page, requests);
+    const network = trackNetwork(page, requests, linked);
     const { openRequests } = network;
     let missingFiles = linked ? 0 : undefined;
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
