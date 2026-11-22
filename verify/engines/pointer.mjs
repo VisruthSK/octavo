@@ -309,7 +309,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         noteUnreachable(checks, "active", detail("active", activeReason), unreachableStates);
       } else {
         onPhase(`forcedStates element ${index} active target`);
-        await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+        await element.evaluate(CENTER).catch(() => {});
         spot = await ownPoint(element);
         await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
         onPhase(`forcedStates element ${index} active`);
@@ -318,7 +318,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         for (let attempt = 0; attempt < 3 && !seen.states.active; attempt++) {
           await page.mouse.up();
           await page.waitForTimeout(50);
-          await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+          await element.evaluate(CENTER).catch(() => {});
           spot = await ownPoint(element);
           await element.hover({ timeout: 1000, ...(spot ? { position: spot } : {}) }).catch(() => {});
           await page.mouse.down();
