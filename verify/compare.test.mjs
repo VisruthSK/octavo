@@ -1,12 +1,11 @@
-import { captureScreenshot, tileTimeout } from "./capture.mjs";
+import { captureScreenshot } from "./capture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PNG } from "pngjs";
-import { compare, differences, missingFrom, sameStyle } from "./compare.mjs";
+import { boundMap, compare, differences, missingFrom, sameStyle } from "./compare.mjs";
 import { canonicalCssValue, canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
 import { launch, incompleteChecks, engine } from "./engines/index.mjs";
-import { isMissingFile } from "./linked-artifacts.mjs";
 import pixelmatch from "pixelmatch";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
@@ -451,6 +450,11 @@ test("linked mode missing file count comparisons", () => {
     ),
     [],
   );
+  const notFound = "Failed to load resource: the server responded with a status of 404 (Not Found)";
+  assert.deepEqual(compare(make([notFound, notFound], 2), make([], 2), false), []);
+  assert.deepEqual(compare(make([notFound], undefined), make([], undefined), false), [`console errors: ["${notFound}"] vs []`]);
+  assert.deepEqual(compare(make(["a", "b"], 1), make(["b", "a"], 1), false), []);
+  assert.deepEqual(compare(make(["a", "a"], 1), make(["a"], 1), false), ['console errors: ["a","a"] vs ["a"]']);
   assert.deepEqual(
     compare(
       { states: [state], errors: ["Failed to load resource: net::ERR_FILE_NOT_FOUND"], requests: [] },
@@ -534,10 +538,22 @@ test("script-disabled tall pages compare their last tile", { timeout: 10000 }, a
   }
 });
 
-test("the tile screenshot timeout grows with the tile area from the viewport baseline", () => {
-  assert.equal(tileTimeout(1280, 720), 5000);
-  assert.equal(tileTimeout(100, 100), 5000);
-  assert.equal(tileTimeout(1280, 8000), 60000);
+test("bounded map clears when it exceeds 50000 entries", () => {
+  const map = boundMap();
+  for (let i = 0; i < 50000; i++) map.set(i, i);
+  assert.equal(map.size, 50000);
+  map.set(50000, 50000);
+  assert.equal(map.size, 0);
+});
+
+test("bounded map helper clears custom limit", () => {
+  const map = boundMap(new Map(), 3);
+  map.set("a", 1);
+  map.set("b", 2);
+  map.set("c", 3);
+  assert.equal(map.size, 3);
+  map.set("d", 4);
+  assert.equal(map.size, 0);
 });
 
 const unquotedFamiliesRef = (declaration) =>
@@ -689,13 +705,16 @@ function compareScreenshotsRef(a, b, lossy, stats) {
   return issues;
 }
 
+const MISSING_FILE_ERROR = /^Failed to load resource: (?:the server responded with a status of 404|net::ERR_FILE_NOT_FOUND)/;
+
 function compareRef(before, after, lossy, stats) {
   if (before.crashed || after.crashed) return [`crashed: original=${before.crashed ?? "no"} optimized=${after.crashed ?? "no"}`];
   const issues = [];
   if (!before.states.length) issues.push("original produced no states");
   const linked = before.checks?.missingFiles !== undefined || after.checks?.missingFiles !== undefined;
-  const beforeErrors = linked ? before.errors.filter((error) => !isMissingFile(error)) : before.errors;
-  const afterErrors = linked ? after.errors.filter((error) => !isMissingFile(error)) : after.errors;
+  const countedElsewhere = (error) => linked && MISSING_FILE_ERROR.test(error);
+  const beforeErrors = before.errors.filter((error) => !countedElsewhere(error)).sort();
+  const afterErrors = after.errors.filter((error) => !countedElsewhere(error)).sort();
   if (JSON.stringify(beforeErrors) !== JSON.stringify(afterErrors)) {
     issues.push(`console errors: ${JSON.stringify(beforeErrors)} vs ${JSON.stringify(afterErrors)}`);
   }

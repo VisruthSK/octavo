@@ -18,8 +18,9 @@ const face = (family, weight, style) => ({
   status: "loaded",
 });
 
-const page = (faces) => `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title></head><body><p>text</p><script>
+const page = (faces) => `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title></head><body><p style="font-family: Sans">text</p><script>
 const faces = ${JSON.stringify(faces)};
+faces.forEach((face) => { face.load = () => { face.status = "loaded"; return Promise.resolve(face); }; });
 const list = Object.assign(faces.slice(), { status: "loaded", ready: Promise.resolve() });
 Object.defineProperty(document, "fonts", { get: () => list, configurable: true });
 </script></body></html>`;
@@ -55,4 +56,25 @@ test("a face that is really missing is still reported", async () => {
   const original = write("all", [regular, italic, bold]);
   const changed = write("short", [regular, italic]);
   assert.equal((await fontIssues(original, changed)).length > 0, true);
+});
+
+test("faces that differ only in their unicode range count once", async () => {
+  const split = (range) => ({ ...regular, unicodeRange: range });
+  const original = write("whole", [regular, bold]);
+  const changed = write("subsets", [split("U+0-FF"), split("U+100-17F"), split("U+180-24F"), bold]);
+  assert.deepEqual(await fontIssues(original, changed), []);
+});
+
+test("a declared face of a font in use is loaded before the fonts are read", async () => {
+  const unused = { ...bold, status: "unloaded" };
+  const original = write("lazy", [regular, unused]);
+  const changed = write("eager", [regular, bold]);
+  assert.deepEqual(await fontIssues(original, changed), []);
+});
+
+test("a declared face of a font nothing uses is left alone", async () => {
+  const ghost = { ...regular, family: "Ghost", status: "unloaded" };
+  const original = write("ghost", [regular, ghost]);
+  const changed = write("dropped", [regular]);
+  assert.deepEqual(await fontIssues(original, changed), []);
 });

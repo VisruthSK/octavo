@@ -9,7 +9,21 @@ export const CSS_SIGNIFICANT_DIGITS = 6;
 
 const NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/;
 
-const canonicalCssValueCache = new Map();
+export const boundMap = (map = new Map(), limit = 50000) => {
+  if (typeof map === "number") {
+    limit = map;
+    map = new Map();
+  }
+  const set = map.set.bind(map);
+  map.set = (key, value) => {
+    set(key, value);
+    if (map.size > limit) map.clear();
+    return map;
+  };
+  return map;
+};
+
+const canonicalCssValueCache = boundMap(new Map());
 export const canonicalCssValue = (value) => {
   let cached = canonicalCssValueCache.get(value);
   if (cached !== undefined) return cached;
@@ -69,7 +83,7 @@ export const canonicalCssValue = (value) => {
   return result;
 };
 
-const canonicalFontFamilyCache = new Map();
+const canonicalFontFamilyCache = boundMap(new Map());
 export const canonicalFontFamily = (name) => {
   let cached = canonicalFontFamilyCache.get(name);
   if (cached !== undefined) return cached;
@@ -85,7 +99,7 @@ export const canonicalFontFamily = (name) => {
   return result;
 };
 
-const canonicalStyleCache = new Map();
+const canonicalStyleCache = boundMap(new Map());
 export const canonicalStyle = (style = "", writingMode = "horizontal-tb") => {
   const cacheKey = `${writingMode}\0${style}`;
   let cached = canonicalStyleCache.get(cacheKey);

@@ -58,7 +58,7 @@ for (const entry of selected) {
     Object.assign(row, { embeddedRoute, linkedRoute });
     if (linkedRoute.error) row.note = linkedRoute.error;
     else if (browser) {
-      const report = await verify(linked.page, linkedOutput, { linked: true, roots: { original: linked.directory, optimized: linked.directory } });
+      const report = await verify(linked.page, linkedOutput, { linked: true, roots: { original: linked.root, optimized: linked.root } });
       const issues = report.flatMap(({ scenario, issues: found }) => found.map((issue) => `${scenario}: ${issue}`));
       row.issues = issues;
     }

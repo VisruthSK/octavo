@@ -100,3 +100,89 @@ test("clipped skip links and negative tabindex targets remain focusable", async 
     await browser.close();
   }
 });
+
+test("a control revealed only while its card is hovered is still focused and sampled", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<style>.card { padding: 40px } .reveal { display: none } .card:hover .reveal { display: inline-block } .reveal:focus { outline: 3px solid rgb(10, 88, 202) }</style><div class="card"><button>Open</button> <span class="reveal" tabindex="0">Enlarge</span></div>');
+    const observe = ({ probe }) => {
+      const element = window[Symbol.for("octavo.interactive")][probe.index];
+      const style = getComputedStyle(element);
+      return {
+        style: `outline-color:${style.outlineColor}`,
+        writingMode: style.writingMode,
+        states: {
+          hover: element.matches(":hover"),
+          focus: element.matches(":focus"),
+          focusVisible: element.matches(":focus-visible"),
+          active: element.matches(":active"),
+        },
+      };
+    };
+    const { states, checks } = await forcedStates(page, "button, .reveal", observe);
+    assert.equal(checks.focus, 2);
+    assert.equal(checks.focusVisible, 2);
+    assert.deepEqual(checks.details.focus, []);
+    assert.deepEqual(checks.details.focusVisible, []);
+    assert.match(states.find(([label]) => label === ":focus on interactive #1")[1], /rgb\(10, 88, 202\)/);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a state that does not apply reports what is under the pointer", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<button id="target" class="sample">Target</button>');
+    const { checks } = await forcedStates(page, "button", () => ({ style: "", writingMode: "horizontal-tb", states: { hover: false, focus: false, focusVisible: false, active: false } }));
+    for (const state of ["hover", "focus", "focusVisible", "active"]) {
+      const context = JSON.parse(checks.details[state][0].split("; context ")[1]);
+      assert.deepEqual(context.hit, { tag: "button", id: "target", class: "sample", descendant: true });
+      assert.equal(context.probe.hover, false);
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a target at the bottom edge of a page with a classic scrollbar is hovered inside the content area", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.setContent('<style>html { overflow-x: scroll } body { margin: 0; height: 2000px; width: 1000px } a { position: absolute; left: 20px; top: 1976px; display: block; width: 22px; height: 24px; background: #eee } a:hover { background: #222 }</style><a href="#x">x</a>');
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const observe = ({ probe }) => {
+      const element = window[Symbol.for("octavo.interactive")][probe.index];
+      return { style: getComputedStyle(element).backgroundColor, writingMode: "horizontal-tb", states: { hover: element.matches(":hover"), focus: element.matches(":focus"), focusVisible: element.matches(":focus-visible"), active: element.matches(":active") } };
+    };
+    const { checks } = await forcedStates(page, "a", observe);
+    assert.deepEqual(checks.details.hover, []);
+    assert.deepEqual(checks.details.active, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the last element of a page is centred for sampling and the page is left as it was", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.setContent('<!DOCTYPE html><style>body { margin: 0; height: 2000px } a { position: absolute; left: 20px; top: 1976px; display: block; width: 22px; height: 24px; background: #eee } a:hover { background: #222 }</style><a href="#x">x</a>');
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const before = await page.evaluate(() => document.documentElement.scrollHeight);
+    const observe = ({ probe }) => {
+      const element = window[Symbol.for("octavo.interactive")][probe.index];
+      const box = element.getBoundingClientRect();
+      return { style: getComputedStyle(element).backgroundColor, writingMode: "horizontal-tb", states: { hover: element.matches(":hover"), focus: element.matches(":focus"), focusVisible: element.matches(":focus-visible"), active: element.matches(":active") }, middle: box.top > 200 && box.bottom < innerHeight - 200 };
+    };
+    const { checks } = await forcedStates(page, "a", observe);
+    assert.deepEqual(checks.details.hover, []);
+    assert.deepEqual(checks.details.active, []);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollHeight), before);
+    assert.equal(await page.evaluate(() => document.getElementById("octavo-sweep-spacer")), null);
+  } finally {
+    await browser.close();
+  }
+});

@@ -270,7 +270,8 @@ export async function renderSelected({ jobs = 4, tier = "full", shard, engine = 
 
 export async function renderLinked(entry) {
   const source = readJson(sourcesPath).find((candidate) => candidate.name === entry.source.name);
-  const file = join(extract(source, await download(source)), entry.source.path);
+  const root = extract(source, await download(source));
+  const file = join(root, entry.source.path);
   const home = dirname(file);
   const stem = basename(file, ".qmd");
   const page = join(home, `${stem}.html`);
@@ -284,7 +285,7 @@ export async function renderLinked(entry) {
   return inDirectory(home, async () => {
     discard();
     const outcome = await render(file, undefined, false);
-    return { ...outcome, page: existsSync(page) ? page : null, directory: home, stem, discard };
+    return { ...outcome, page: existsSync(page) ? page : null, directory: home, root, stem, discard };
   });
 }
 

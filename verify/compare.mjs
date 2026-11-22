@@ -2,8 +2,7 @@ import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import { engine } from "./engines/index.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
-import { isMissingFile } from "./linked-artifacts.mjs";
-import { canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
+import { boundMap, canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 import { validStyles } from "./style-storage.mjs";
 
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
@@ -57,7 +56,7 @@ function canonicalGradient(body) {
 const unquotedFamilies = (declaration) =>
   declaration.replace(/font-family:(.*)$/, (_, value) => `font-family:${value.split(",").map(canonicalFontFamily).join(", ")}`);
 
-const canonicalCache = new Map();
+const canonicalCache = boundMap(new Map());
 const canonical = (declaration) => {
   let cached = canonicalCache.get(declaration);
   if (cached !== undefined) return cached;
@@ -83,7 +82,7 @@ const canonical = (declaration) => {
   return result;
 };
 
-const canonicalSetCache = new Map();
+const canonicalSetCache = boundMap(new Map());
 const getCanonicalSet = (candidate) => {
   let set = canonicalSetCache.get(candidate);
   if (!set) {
@@ -99,7 +98,7 @@ export const missingFrom = (reference, candidate = "") => {
   return reference.split(";").filter((declaration) => !present.has(canonical(declaration)));
 };
 
-const sameStyleCache = new Map();
+const sameStyleCache = boundMap(new Map());
 export const sameStyle = (left, right = "") => {
   if (left === right) return true;
   const key = left < right ? `${left}\0${right}` : `${right}\0${left}`;
@@ -245,7 +244,7 @@ function compareScreenshots(a, b, lossy, stats) {
       continue;
     }
     if (left.png === right.png || left.png.equals(right.png)) continue;
-    issues.push(...compareImageBytes(left.png, right.png, lossy, stats, true).map((issue) => `tile at ${left.x},${left.y}: ${issue}`));
+    issues.push(...compareImageBytes(left.png, right.png, lossy, stats, false).map((issue) => `tile at ${left.x},${left.y}: ${issue}`));
   }
   return issues;
 }
@@ -332,8 +331,9 @@ export function compare(before, after, lossy, stats) {
   const issues = [];
   if (!before.states.length) issues.push("original produced no states");
   const linked = before.checks?.missingFiles !== undefined || after.checks?.missingFiles !== undefined;
-  const beforeErrors = linked ? before.errors.filter((error) => !isMissingFile(error)) : before.errors;
-  const afterErrors = linked ? after.errors.filter((error) => !isMissingFile(error)) : after.errors;
+  const countedElsewhere = (error) => linked && MISSING_FILE_ERROR.test(error);
+  const beforeErrors = before.errors.filter((error) => !countedElsewhere(error)).sort();
+  const afterErrors = after.errors.filter((error) => !countedElsewhere(error)).sort();
   if (JSON.stringify(beforeErrors) !== JSON.stringify(afterErrors)) {
     issues.push(`console errors: ${JSON.stringify(beforeErrors)} vs ${JSON.stringify(afterErrors)}`);
   }
@@ -356,6 +356,8 @@ export function compare(before, after, lossy, stats) {
 
 const LAZY_RENDERER_FONT = /^(?:MathJax|KaTeX)_/;
 
+const MISSING_FILE_ERROR = /^Failed to load resource: (?:the server responded with a status of 404|net::ERR_FILE_NOT_FOUND)/;
+
 const stableFonts = (fonts) => fonts.filter((family) => !LAZY_RENDERER_FONT.test(family));
 
 const FONT_FILE = /.(?:woff2?|ttf|otf|eot)(?:[?#]|$)/i;
@@ -363,3 +365,5 @@ const FONT_FILE = /.(?:woff2?|ttf|otf|eot)(?:[?#]|$)/i;
 const significantRequests = (requests) => [...new Set(requests.filter((url) => !FONT_FILE.test(url)))].sort();
 
 export const signature = (issue) => issue.replace(/[0-9.]+/g, "#").replace(/\[[^\]]*\]/g, "[]").slice(0, 60);
+
+export { boundMap };
