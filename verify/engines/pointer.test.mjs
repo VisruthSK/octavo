@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { launch } from "./index.mjs";
-import { forcedStates, ownPoint } from "./pointer.mjs";
+import { forcedStates } from "./pointer.mjs";
 
 const directory = mkdtempSync(join(tmpdir(), "octavo-pointer-"));
 const selector = "a[href], button, input, select, summary, [role=tab], [tabindex]";
@@ -165,16 +165,23 @@ test("a target at the bottom edge of a page with a classic scrollbar is hovered 
   }
 });
 
-test("the hover point keeps clear of the bottom edge of the viewport when the target allows it", async () => {
+test("the last element of a page is centred for sampling and the page is left as it was", async () => {
   const browser = await launch();
   try {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    await page.setContent('<style>body { margin: 0 } a { position: fixed; left: 40px; bottom: 0; display: block; width: 28px; height: 29px }</style><a href="#x">x</a>');
-    const element = page.locator("a");
-    const point = await ownPoint(await element.elementHandle());
-    const box = await element.boundingBox();
-    assert.ok(box.y + point.y <= 900 - 24);
-    assert.ok(point.y >= 0 && point.y <= box.height);
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.setContent('<!DOCTYPE html><style>body { margin: 0; height: 2000px } a { position: absolute; left: 20px; top: 1976px; display: block; width: 22px; height: 24px; background: #eee } a:hover { background: #222 }</style><a href="#x">x</a>');
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const before = await page.evaluate(() => document.documentElement.scrollHeight);
+    const observe = ({ probe }) => {
+      const element = window[Symbol.for("octavo.interactive")][probe.index];
+      const box = element.getBoundingClientRect();
+      return { style: getComputedStyle(element).backgroundColor, writingMode: "horizontal-tb", states: { hover: element.matches(":hover"), focus: element.matches(":focus"), focusVisible: element.matches(":focus-visible"), active: element.matches(":active") }, middle: box.top > 200 && box.bottom < innerHeight - 200 };
+    };
+    const { checks } = await forcedStates(page, "a", observe);
+    assert.deepEqual(checks.details.hover, []);
+    assert.deepEqual(checks.details.active, []);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollHeight), before);
+    assert.equal(await page.evaluate(() => document.getElementById("octavo-sweep-spacer")), null);
   } finally {
     await browser.close();
   }

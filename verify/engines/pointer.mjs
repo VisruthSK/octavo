@@ -11,6 +11,16 @@ const GUARD = () => {
   window.octavoGuard = { hold, block };
 };
 
+const SPACER = "octavo-sweep-spacer";
+const ADD_SPACER = (id) => {
+  const spacer = document.createElement("div");
+  spacer.id = id;
+  spacer.style.cssText = "height:100vh;margin:0;padding:0;border:0;pointer-events:none;visibility:hidden";
+  (document.body ?? document.documentElement).append(spacer);
+};
+const REMOVE_SPACER = (id) => document.getElementById(id)?.remove();
+const CENTER = (target) => target.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+
 const UNGUARD = () => {
   if (!window.octavoGuard) return;
   for (const type of ["mousedown", "mouseup"]) document.removeEventListener(type, window.octavoGuard.hold, true);
@@ -100,9 +110,7 @@ export const ownPoint = (element) =>
         const left = Math.max(rect.left, 0);
         const top = Math.max(rect.top, 0);
         const width = Math.min(rect.right, root.clientWidth) - left;
-        const margin = 24;
-        const inner = Math.min(rect.bottom, root.clientHeight - margin) - top;
-        const height = inner > 0 ? inner : Math.min(rect.bottom, root.clientHeight) - top;
+        const height = Math.min(rect.bottom, root.clientHeight) - top;
         if (width <= 0 || height <= 0) continue;
         for (const down of [0.5, 0.1, 0.9, 0.3, 0.7]) {
           for (const across of [0.5, 0.1, 0.9, 0.3, 0.7]) {
@@ -181,6 +189,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
   if (print) await page.emulateMedia({ media: "screen" });
   try {
     await page.evaluate(GUARD);
+    await page.evaluate(ADD_SPACER, SPACER);
     for (let index = 0; index < count; index++) {
       onPhase(`forcedStates element ${index} pointer hover`);
       const element = interactive[index];
@@ -190,7 +199,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         continue;
       }
       onPhase(`forcedStates element ${index} scrollIntoView`);
-      await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+      await element.evaluate(CENTER).catch(() => {});
       checks.elements += 1;
       for (const state of CHECKS) checks.expected[state] += 1;
       const info = await element.evaluate((target) =>
@@ -334,6 +343,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       await restore();
     }
   } finally {
+    await page.evaluate(REMOVE_SPACER, SPACER).catch(() => {});
     await page.evaluate(UNGUARD);
     await page.evaluate(() => delete window[Symbol.for("octavo.interactive")]);
     await snapshot.dispose();
