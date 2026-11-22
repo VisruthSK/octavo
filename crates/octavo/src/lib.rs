@@ -623,7 +623,10 @@ pub enum Warning {
     /// offline. Carries the URL as written in the document.
     RemoteResource(Url),
     #[doc = "An exact transformation was rejected by its oracle."]
-    OracleRejected { transform: Transform, target: Target },
+    OracleRejected {
+        transform: Transform,
+        target: Target,
+    },
 }
 
 impl fmt::Display for Warning {
@@ -635,7 +638,9 @@ impl fmt::Display for Warning {
                     "loads {url} when opened, so the page does not work offline"
                 )
             }
-            Warning::OracleRejected { transform, target } => write!(f, "oracle rejected {transform} for {target}"),
+            Warning::OracleRejected { transform, target } => {
+                write!(f, "oracle rejected {transform} for {target}")
+            }
         }
     }
 }
@@ -794,40 +799,40 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         (Vec::new(), (Vec::new(), Vec::new(), edits, Vec::new()))
     } else {
         let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
-        || {
-            images::stage(
-                &doc,
-                options.images,
-                tuning,
-                (!options.keep_png).then(|| {
-                    options
-                        .image_memory
-                        .unwrap_or(Options::DEFAULT_IMAGE_MEMORY)
-                }),
-                false,
-            )
-        },
-        || {
-            let (markup, parts) = rayon::join(|| doc.markup(), || doc.word_parts());
-            let removals = quarto::stage(&doc, &markup);
-            let removed: Vec<Range<usize>> =
-                removals.iter().map(|edit| edit.span.clone()).collect();
-            let (scripts, (styles, kept_whole)) = rayon::join(
-                || js::stage(&doc, &removed, licenses),
-                || {
-                    let words = doc.words(markup, parts, &removed);
-                    css::stage(
-                        &doc,
-                        &words,
-                        options.subset_text_fonts,
-                        licenses,
-                        options.cache_directory.as_deref(),
-                        options.compression.tuning(),
-                    )
-                },
-            );
-            (removals, scripts, styles, kept_whole)
-        },
+            || {
+                images::stage(
+                    &doc,
+                    options.images,
+                    tuning,
+                    (!options.keep_png).then(|| {
+                        options
+                            .image_memory
+                            .unwrap_or(Options::DEFAULT_IMAGE_MEMORY)
+                    }),
+                    false,
+                )
+            },
+            || {
+                let (markup, parts) = rayon::join(|| doc.markup(), || doc.word_parts());
+                let removals = quarto::stage(&doc, &markup);
+                let removed: Vec<Range<usize>> =
+                    removals.iter().map(|edit| edit.span.clone()).collect();
+                let (scripts, (styles, kept_whole)) = rayon::join(
+                    || js::stage(&doc, &removed, licenses),
+                    || {
+                        let words = doc.words(markup, parts, &removed);
+                        css::stage(
+                            &doc,
+                            &words,
+                            options.subset_text_fonts,
+                            licenses,
+                            options.cache_directory.as_deref(),
+                            options.compression.tuning(),
+                        )
+                    },
+                );
+                (removals, scripts, styles, kept_whole)
+            },
         );
         (images, (removals, scripts, styles, kept_whole))
     };
@@ -942,7 +947,12 @@ impl Simplified {
     #[must_use]
     pub fn pack(&self, mode: Mode) -> Output {
         if mode == Mode::Exact && !self.exact {
-            return Output { html: self.original.clone(), applied: Vec::new(), skipped: Vec::new(), warnings: self.warnings.clone() };
+            return Output {
+                html: self.original.clone(),
+                applied: Vec::new(),
+                skipped: Vec::new(),
+                warnings: self.warnings.clone(),
+            };
         }
         let unpacked = || Output {
             html: self.scanned.html().to_string(),

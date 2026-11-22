@@ -123,7 +123,9 @@ pub(crate) fn normalize(uri: &str) -> Option<String> {
     }
     let at = lower.find(";base64,")?;
     let tail = &uri[at + 8..];
-    let (payload, fragment) = tail.split_once('#').map_or((tail, ""), |(payload, _)| (payload, &tail[payload.len()..]));
+    let (payload, fragment) = tail
+        .split_once('#')
+        .map_or((tail, ""), |(payload, _)| (payload, &tail[payload.len()..]));
     let canonical = STANDARD.encode(decode(uri)?.bytes);
     (canonical != payload).then(|| format!("{}{}{}", &uri[..at + 8], canonical, fragment))
 }

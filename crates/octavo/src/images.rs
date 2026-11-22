@@ -143,13 +143,13 @@ pub(crate) fn stage(
         .map(|image| {
             let Candidate { tag, mut uris } = image;
             let recompressed = uris.iter().any(|uri| uri.converted.is_some());
-            let edit = Edit {
+            Edit {
                 span: tag.span.clone(),
                 text: tag.open_tag(|name, value| {
                     uris.iter_mut()
                         .find(|uri| uri.attr == *name)
                         .and_then(|uri| uri.converted.take())
-                        .map(|text| Some(text))
+                        .map(Some)
                         .unwrap_or_else(|| {
                             if normalize {
                                 data::normalize(value)
@@ -167,8 +167,7 @@ pub(crate) fn stage(
                     Transform::NormalizedDataUrl
                 },
                 target: Target::Resource(tag.label().to_string()),
-            };
-            edit
+            }
         })
         .filter(Edit::shrinks)
         .collect()
@@ -353,9 +352,17 @@ fn recompress_png(bytes: &[u8], pixels: u64, tuning: Tuning) -> Option<Vec<u8>> 
         .filter(|better| better.len() < bytes.len())
 }
 
-pub(crate) fn exact_candidates(bytes: &[u8], tuning: Tuning, webp_memory: Option<u64>) -> Vec<(Mime, Vec<u8>)> {
-    let Ok(reader) = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format() else { return Vec::new() };
-    let Ok((width, height)) = reader.into_dimensions() else { return Vec::new() };
+pub(crate) fn exact_candidates(
+    bytes: &[u8],
+    tuning: Tuning,
+    webp_memory: Option<u64>,
+) -> Vec<(Mime, Vec<u8>)> {
+    let Ok(reader) = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format() else {
+        return Vec::new();
+    };
+    let Ok((width, height)) = reader.into_dimensions() else {
+        return Vec::new();
+    };
     let pixels = u64::from(width) * u64::from(height);
     let mut candidates = Vec::new();
     if pixels <= MAX_LOSSLESS_PIXELS && crate::exact::oracle::png_recompress_eligible(bytes) {
@@ -367,16 +374,30 @@ pub(crate) fn exact_candidates(bytes: &[u8], tuning: Tuning, webp_memory: Option
             color_type_reduction: false,
             palette_reduction: false,
             grayscale_reduction: false,
-            ..PngOptions::from_preset(tuning.png_preset.map_or(preset_for(pixels), |preset| preset.min(6)))
+            ..PngOptions::from_preset(
+                tuning
+                    .png_preset
+                    .map_or(preset_for(pixels), |preset| preset.min(6)),
+            )
         };
-        if let Ok(png) = oxipng::optimize_from_memory(bytes, &options) {
-            if png.len() < bytes.len() { candidates.push((Mime::ImagePng, png)); }
+        if let Ok(png) = oxipng::optimize_from_memory(bytes, &options)
+            && png.len() < bytes.len()
+        {
+            candidates.push((Mime::ImagePng, png));
         }
     }
     if let Some(memory) = webp_memory.filter(|_| crate::exact::oracle::webp_eligible(bytes)) {
-        let decoded = Decoded { image: data::DataUri { mime: Mime::ImagePng, bytes: bytes.to_vec() }, pixels };
-        if let Some(webp) = lossless_webp(&decoded, &MemoryBudget::new(memory)) {
-            if webp.len() < bytes.len() { candidates.push((Mime::ImageWebp, webp)); }
+        let decoded = Decoded {
+            image: data::DataUri {
+                mime: Mime::ImagePng,
+                bytes: bytes.to_vec(),
+            },
+            pixels,
+        };
+        if let Some(webp) = lossless_webp(&decoded, &MemoryBudget::new(memory))
+            && webp.len() < bytes.len()
+        {
+            candidates.push((Mime::ImageWebp, webp));
         }
     }
     candidates
