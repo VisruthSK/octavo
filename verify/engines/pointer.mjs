@@ -89,17 +89,20 @@ function noteUnreachable(checks, state, detail, unreachableStates) {
   if (unreachableStates.size === 1) checks.unreachable.elements += 1;
 }
 
-const ownPoint = (element) =>
+export const ownPoint = (element) =>
   element
     .evaluate((target) => {
       const box = target.getBoundingClientRect();
+      const root = document.scrollingElement ?? document.documentElement;
       const rects = target.getClientRects();
       const list = rects.length ? [...rects] : [box];
       for (const rect of list) {
         const left = Math.max(rect.left, 0);
         const top = Math.max(rect.top, 0);
-        const width = Math.min(rect.right, document.documentElement.clientWidth) - left;
-        const height = Math.min(rect.bottom, document.documentElement.clientHeight) - top;
+        const width = Math.min(rect.right, root.clientWidth) - left;
+        const margin = 24;
+        const inner = Math.min(rect.bottom, root.clientHeight - margin) - top;
+        const height = inner > 0 ? inner : Math.min(rect.bottom, root.clientHeight) - top;
         if (width <= 0 || height <= 0) continue;
         for (const down of [0.5, 0.1, 0.9, 0.3, 0.7]) {
           for (const across of [0.5, 0.1, 0.9, 0.3, 0.7]) {

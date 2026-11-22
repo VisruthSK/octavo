@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { launch } from "./index.mjs";
-import { forcedStates } from "./pointer.mjs";
+import { forcedStates, ownPoint } from "./pointer.mjs";
 
 const directory = mkdtempSync(join(tmpdir(), "octavo-pointer-"));
 const selector = "a[href], button, input, select, summary, [role=tab], [tabindex]";
@@ -160,6 +160,21 @@ test("a target at the bottom edge of a page with a classic scrollbar is hovered 
     const { checks } = await forcedStates(page, "a", observe);
     assert.deepEqual(checks.details.hover, []);
     assert.deepEqual(checks.details.active, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the hover point keeps clear of the bottom edge of the viewport when the target allows it", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.setContent('<style>body { margin: 0 } a { position: fixed; left: 40px; bottom: 0; display: block; width: 28px; height: 29px }</style><a href="#x">x</a>');
+    const element = page.locator("a");
+    const point = await ownPoint(await element.elementHandle());
+    const box = await element.boundingBox();
+    assert.ok(box.y + point.y <= 900 - 24);
+    assert.ok(point.y >= 0 && point.y <= box.height);
   } finally {
     await browser.close();
   }
