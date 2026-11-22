@@ -63,6 +63,13 @@ function seedRandom() {
 
 const TIMERS = Symbol.for("octavo.timers");
 
+export const finishTransitions = (page) =>
+  page
+    .evaluate(() => {
+      for (const animation of document.getAnimations()) if (animation instanceof CSSTransition) animation.finish();
+    })
+    .catch(() => {});
+
 export function trackTimers() {
   const from = 50;
   const to = 6000;
@@ -838,6 +845,7 @@ export async function capture(
     if (scripted && scenario.name === "desktop-light") {
       setPhase("resize viewport");
       await page.setViewportSize({ width: 900, height: 700 });
+      await finishTransitions(page);
       await wait("after resize");
       await record("resize");
       await page.setViewportSize(scenario.viewport);
@@ -876,7 +884,9 @@ export async function capture(
           }
         }
         await page.keyboard.press("Escape").catch(() => {});
+        await finishTransitions(page);
         await wait("after behaviour sweep");
+        await finishTransitions(page);
         await record("behaviour");
       }
     }

@@ -1,7 +1,8 @@
 import { webkit as launcher } from "playwright-core";
 import { executableFingerprint } from "./fingerprint.mjs";
 
-export { focus, forcedStates } from "./pointer.mjs";
+export { focus } from "./pointer.mjs";
+export { forcedStates } from "./states.mjs";
 
 export const name = "webkit";
 export const label = "WebKit";
