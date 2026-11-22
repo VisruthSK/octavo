@@ -88,6 +88,12 @@ pub struct Embedded {
 /// assert_eq!(embedded.html, "<script>let a = 1;</script>");
 /// assert_eq!(embedded.embedded, 1);
 /// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScriptInlining {
+    InPlace,
+    DataUri,
+}
+
 pub fn embed_resources(src: &str, resources: &mut dyn Resources) -> Embedded {
     let doc = Doc::new(src);
     let mut state = State {
@@ -101,10 +107,14 @@ pub fn embed_resources(src: &str, resources: &mut dyn Resources) -> Embedded {
     for tag in doc.tags().iter().filter(|tag| !tag.in_svg) {
         match tag.element {
             Element::Script => {
-                let inlinable = runs_in_place(tag);
+                let inlining = if runs_in_place(tag) {
+                    ScriptInlining::InPlace
+                } else {
+                    ScriptInlining::DataUri
+                };
                 if let Some(script) = tag
                     .attr(AttrName::Src)
-                    .and_then(|reference| state.script(reference, inlinable))
+                    .and_then(|reference| state.script(reference, inlining))
                 {
                     match script {
                         Script::Inline(text) => {
@@ -247,13 +257,13 @@ impl State<'_> {
         Some(self.encode(reference, loaded, depth))
     }
 
-    fn script(&mut self, reference: &str, inlinable: bool) -> Option<Script> {
+    fn script(&mut self, reference: &str, inlining: ScriptInlining) -> Option<Script> {
         let reference = reference.trim();
         if Url::parse(reference)?.origin() == Origin::Remote {
             return None;
         }
         let loaded = self.fetch(reference, "", 0)?;
-        if !inlinable {
+        if inlining != ScriptInlining::InPlace {
             return Some(Script::Uri(self.encode(reference, loaded, 0)));
         }
         let Loaded {
