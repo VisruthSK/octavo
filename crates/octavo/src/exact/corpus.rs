@@ -161,7 +161,7 @@ fn exact_corpus_and_byte_price() {
             if is_upstream && output.html.len() > source.len() {
                 upstream_grew += 1;
             }
-            let safe = optimize(&source, Mode::Safe).unwrap();
+            let safe = optimize(&source, Mode::Serve).unwrap();
             totals.0 += 1;
             totals.1 += source.len();
             totals.2 += output.html.len();

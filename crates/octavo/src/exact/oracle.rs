@@ -903,6 +903,10 @@ mod tests {
             r#"<img src="foo.png" id="bar">"#,
             r#"<img src=foo.png id=bar>"#
         ));
+        assert!(attr_quotes(
+            r#"<script class="test-class" data-val="abc_123">"#,
+            r#"<script class=test-class data-val=abc_123>"#
+        ));
         assert!(!attr_quotes(
             r#"<img src="foo.png">"#,
             r#"<img src="foo.jpg">"#
@@ -915,6 +919,18 @@ mod tests {
             r#"<img src="foo bar">"#,
             r#"<img src=foo bar>"#
         ));
+        assert!(!attr_quotes(r#"<div id="a">"#, r#"<div id="a" class="b">"#));
+        assert!(!attr_quotes(r#"<div id="a" class="b">"#, r#"<div id="a">"#));
+        assert!(!attr_quotes(r#"<div id="a">"#, r#"<div data-id="a">"#));
+        assert!(!attr_quotes(r#"<div id="a">"#, "not a tag"));
+        assert!(!attr_quotes("not a tag", r#"<div id="a">"#));
+        assert!(!attr_quotes("", r#"<div id="a">"#));
+        assert!(!attr_quotes(r#"<div id="a">"#, ""));
+        let original = r#"<img src="foo.png">"#.to_string();
+        let candidate = r#"<img src="bar.png">"#.to_string();
+        let proven = super::super::adopt(original.clone(), candidate, &AttrQuotes);
+        assert!(proven.rejected());
+        assert_eq!(proven.into_inner(), original);
     }
 
     #[test]
@@ -923,8 +939,40 @@ mod tests {
             "/* leading comment */\nfunction add(a, b) {\n    // return sum\n    return a + b;\n}";
         let candidate = "function add(a,b){return a+b;}";
         assert!(js_token_stream(original, candidate));
+        assert!(js_token_stream(
+            "import { x } from 'mod'; // comment\nexport const y = 10;",
+            "import {x} from 'mod';export const y=10;"
+        ));
+        assert!(js_token_stream(
+            "const val = /* compute */ (1 + 2) * 3;",
+            "const val=(1+2)*3;"
+        ));
         assert!(!js_token_stream(original, "function add(a,b){return a*b;}"));
         assert!(!js_token_stream(original, "function add(a,b){return a+c;}"));
         assert!(!js_token_stream("return\nx;", "return x;"));
+        assert!(!js_token_stream("throw\nx;", "throw x;"));
+        assert!(!js_token_stream("break\nx;", "break x;"));
+        assert!(!js_token_stream("continue\nx;", "continue x;"));
+        assert!(!js_token_stream("const a = 1;", "const a = 2;"));
+        assert!(!js_token_stream("let foo = 1;", "let bar = 1;"));
+        assert!(!js_token_stream("const s = '/* keep */';", "const s = '';"));
+        assert!(!js_token_stream("const r = /abc/;", "const r = /def/;"));
+        assert!(!js_token_stream("const x = 1;", "const x = ;"));
+        assert!(!js_token_stream("const x = ;", "const x = 1;"));
+        assert!(!js_token_stream(
+            "const x = 1;",
+            "const x = 1; const y = 2;"
+        ));
+        assert!(!js_token_stream(
+            "const x = 1; const y = 2;",
+            "const x = 1;"
+        ));
+        assert!(!js_token_stream("x + + y;", "x++y;"));
+        assert!(!js_token_stream("x - - y;", "x--y;"));
+        let original = "const x = 1;".to_string();
+        let candidate = "const x = 2;".to_string();
+        let proven = super::super::adopt(original.clone(), candidate, &JsTokenStream);
+        assert!(proven.rejected());
+        assert_eq!(proven.into_inner(), original);
     }
 }
