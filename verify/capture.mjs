@@ -611,7 +611,8 @@ export async function loadDocument(page, file, root, entryPath) {
       if (rel === ".." || rel.startsWith(`..${sep}`) || resolve(base, rel) !== path) throw new Error("outside root");
       await route.fulfill({ path });
     } catch {
-      await route.fulfill({ status: 404, body: "" });
+      if (route.request().isNavigationRequest() && route.request().frame() === page.mainFrame()) await route.abort("failed");
+      else await route.fulfill({ status: 404, body: "" });
     }
   });
   await page.route((url) => /^https?:$/.test(url.protocol) && url.hostname !== "localhost", (route) => route.abort("blockedbyclient"));
