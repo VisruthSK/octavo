@@ -106,3 +106,27 @@ test("archive no-js capture failures are not ignored", async () => {
   }
   assert.equal(ignoredArchiveNoJsIssue("pixels differ"), true);
 });
+
+test("runCorpus in --self mode produces byte identical output without running octavo", async () => {
+  const { runCorpus } = await import("./corpus.mjs");
+  const { mkdtempSync, readFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "octavo-self-test-"));
+  try {
+    const { results, failures } = await runCorpus(
+      ["node", "corpus.mjs", "--self", "--filter", "^assets-opaque-png-is-recompressed-as-png$", "--out", dir],
+      { exit: false }
+    );
+    assert.equal(failures.length, 0);
+    assert.ok(results.length > 0);
+    for (const entry of results) {
+      assert.equal(entry.outcome, "keeps");
+      assert.equal(entry.browser, true);
+      assert.equal(entry.problems.length, 0);
+      assert.equal(readFileSync(entry.output, "utf8"), readFileSync(entry.input, "utf8"));
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

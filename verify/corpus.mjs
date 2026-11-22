@@ -232,12 +232,12 @@ export function formatReport(results, options = {}) {
   return `${lines.join("\n")}\n`;
 }
 
-export async function runCorpus() {
+export async function runCorpus(args = process.argv, { exit = process.argv[1]?.endsWith("corpus.mjs") } = {}) {
   const jobStarted = process.hrtime.bigint();
   const root = resolve(import.meta.dirname, "..");
   const flag = (name, fallback) => {
-    const at = process.argv.indexOf(`--${name}`);
-    return at < 0 ? fallback : (process.argv[at + 1] ?? fallback);
+    const at = args.indexOf(`--${name}`);
+    return at < 0 ? fallback : (args[at + 1] ?? fallback);
   };
   const tier = flag("tier", "smoke");
   const deadlineMinutes = Number(flag("deadline-minutes", "0"));
@@ -250,10 +250,12 @@ export async function runCorpus() {
   const cores = cpus().length;
   const jobs = Number(flag("jobs", Math.max(1, Math.floor(cores / 2))));
   const threads = Math.max(1, Math.floor(cores / jobs));
-  const browser = process.argv.includes("--browser");
-  const verdictCache = !process.argv.includes("--no-verdict-cache");
-  const captureCache = !process.argv.includes("--no-capture-cache");
-  const upstream = !process.argv.includes("--no-upstream");
+  const browser = args.includes("--browser");
+  const selfIndex = args.indexOf("--self");
+  const selfMode = selfIndex >= 0 ? args[selfIndex + 1] !== "false" : flag("self", "false") === "true";
+  const verdictCache = !args.includes("--no-verdict-cache") && !selfMode;
+  const captureCache = !args.includes("--no-capture-cache") && !selfMode;
+  const upstream = !args.includes("--no-upstream");
   const octavoArgs = flag("octavo-args", "").split(/\s+/).filter(Boolean);
   const outDirectory = resolve(flag("out", join(root, "out", "corpus")));
 
@@ -261,12 +263,12 @@ export async function runCorpus() {
   const scratch = mkdtempSync(join(tmpdir(), "octavo-corpus-"));
   process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
   const binary = join(scratch, basename(built));
-  copyFileSync(built, binary);
+  if (!selfMode && existsSync(built)) copyFileSync(built, binary);
 
-  const run = (args) =>
+  const run = (runArgs) =>
     new Promise((done) => {
       const started = process.hrtime.bigint();
-      const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(binary, runArgs, { stdio: ["ignore", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (chunk) => (stdout += chunk));
@@ -291,7 +293,7 @@ export async function runCorpus() {
   const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
   const scenarioHash = sha256(Buffer.concat(readdirSync(join(root, "corpus")).filter((name) => name.endsWith(".mjs")).sort().flatMap((name) => [Buffer.from(name), readFileSync(join(root, "corpus", name))])));
 
-  const binaryVersion = (await run(["--version", ...octavoArgs])).stdout.trim();
+  const binaryVersion = selfMode ? "self" : (await run(["--version", ...octavoArgs])).stdout.trim();
   const costs = readCosts();
   const [shardPosition, shardCount] = flag("shard", "").split("/").map(Number);
   const shard = shardCount ? { index: shardPosition - 1, count: shardCount } : undefined;
@@ -350,6 +352,31 @@ export async function runCorpus() {
           problems: [`rendered file missing: ${input}`],
           excluded: null,
           browser: false,
+          input,
+          output,
+        };
+      }
+      if (selfMode) {
+        copyFileSync(input, output);
+        const source = readFileSync(input, "utf8");
+        const size = statSync(input).size;
+        return {
+          id: row.id,
+          category: row.category,
+          level,
+          inBytes: size,
+          outBytes: size,
+          ms: 0,
+          outcome: "keeps",
+          baselines: {
+            naive: naive(source).length,
+            brotliOriginal: brotli(source),
+            brotliOptimized: brotli(source),
+            gzipOptimized: gzip(source),
+          },
+          problems: [],
+          excluded: null,
+          browser: Boolean(row.browser),
           input,
           output,
         };
@@ -560,14 +587,16 @@ export async function runCorpus() {
   const timed = measured.filter((entry) => entry.outBytes !== null);
   const large = timed.filter((entry) => entry.inBytes >= RATE_FLOOR_BYTES);
   const medianRate = Math.max(median(large.map((entry) => entry.ms / entry.inBytes)), 1e-6);
-  for (const entry of timed) {
-    const allowed = STARTUP_ALLOWANCE_MS + SLOWDOWN_LIMIT * medianRate * entry.inBytes;
-    for (let attempt = 0; attempt < SLOWDOWN_RETRIES && entry.ms > allowed && !deadlineReached(); attempt++) {
-      const retry = await run([entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores), ...octavoArgs]);
-      entry.ms = Math.min(entry.ms, retry.ms);
-    }
-    if (entry.ms > allowed) {
-      entry.problems.push(`took ${entry.ms.toFixed(0)} ms, over ${SLOWDOWN_LIMIT}x the corpus median rate (${allowed.toFixed(0)} ms allowed)`);
+  if (!selfMode) {
+    for (const entry of timed) {
+      const allowed = STARTUP_ALLOWANCE_MS + SLOWDOWN_LIMIT * medianRate * entry.inBytes;
+      for (let attempt = 0; attempt < SLOWDOWN_RETRIES && entry.ms > allowed && !deadlineReached(); attempt++) {
+        const retry = await run([entry.input, entry.output.replace(/.html$/, ".retry.html"), "--level", entry.level, "--jobs", String(cores), ...octavoArgs]);
+        entry.ms = Math.min(entry.ms, retry.ms);
+      }
+      if (entry.ms > allowed) {
+        entry.problems.push(`took ${entry.ms.toFixed(0)} ms, over ${SLOWDOWN_LIMIT}x the corpus median rate (${allowed.toFixed(0)} ms allowed)`);
+      }
     }
   }
 
@@ -594,7 +623,10 @@ export async function runCorpus() {
   const failures = results.filter((entry) => entry.problems.length);
   const verifiedNothing = browser && selected.length > 0 && browserCache.hits + browserCache.misses === 0;
   if (verifiedNothing) console.error(`No browser comparison ran for ${selected.length} selected documents.`);
-  process.exit(failures.length || verifiedNothing ? 1 : 0);
+  if (exit) {
+    process.exit(failures.length || verifiedNothing ? 1 : 0);
+  }
+  return { results, failures, verifiedNothing, report };
 }
 
 if (process.argv[1]?.endsWith("corpus.mjs")) {

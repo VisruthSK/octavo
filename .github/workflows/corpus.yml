@@ -23,6 +23,10 @@ on:
         type: choice
         options: [smoke, full, select]
         default: smoke
+      self:
+        description: Run A/A self-verification where the optimized output is a copy of original
+        type: boolean
+        default: false
       engine_browser:
         description: Limit engine diagnostics to one browser
         type: choice
@@ -215,7 +219,7 @@ jobs:
           restore-keys: |
             verdicts-${{ matrix.browser }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}" --octavo-args "${{ inputs.octavo_args }}"
+      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}" --octavo-args "${{ inputs.octavo_args }}" ${{ (inputs.self == true || inputs.self == 'true') && '--self' || '' }}
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
       - uses: actions/cache/save@v6
         if: always()
