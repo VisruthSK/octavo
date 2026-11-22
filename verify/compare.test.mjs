@@ -2,10 +2,11 @@ import { captureScreenshot } from "./capture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PNG } from "pngjs";
-import { compare, differences, missingFrom } from "./compare.mjs";
-import { canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
+import { boundMap, compare, differences, missingFrom, sameStyle } from "./compare.mjs";
+import { canonicalCssValue, canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
-import { launch, incompleteChecks } from "./engines/index.mjs";
+import { launch, incompleteChecks, engine } from "./engines/index.mjs";
+import pixelmatch from "pixelmatch";
 
 const image = (width, height, fill = 200) => ({ width, height, data: new Uint8Array(width * height * 4).fill(fill) });
 
@@ -535,4 +536,387 @@ test("script-disabled tall pages compare their last tile", { timeout: 10000 }, a
   } finally {
     await browser.close();
   }
+});
+
+test("bounded map clears when it exceeds 50000 entries", () => {
+  const map = boundMap();
+  for (let i = 0; i < 50000; i++) map.set(i, i);
+  assert.equal(map.size, 50000);
+  map.set(50000, 50000);
+  assert.equal(map.size, 0);
+});
+
+test("bounded map helper clears custom limit", () => {
+  const map = boundMap(new Map(), 3);
+  map.set("a", 1);
+  map.set("b", 2);
+  map.set("c", 3);
+  assert.equal(map.size, 3);
+  map.set("d", 4);
+  assert.equal(map.size, 0);
+});
+
+const unquotedFamiliesRef = (declaration) =>
+  declaration.replace(/font-family:(.*)$/, (_, value) => `font-family:${value.split(",").map(canonicalFontFamily).join(", ")}`);
+
+const canonicalRef = (declaration) => {
+  let text = unquotedFamiliesRef(declaration);
+  const marker = "linear-gradient(";
+  const start = text.indexOf(marker);
+  if (start >= 0) {
+    const open = start + marker.length - 1;
+    let depth = 0;
+    let end = -1;
+    for (let at = open; at < text.length; at++) {
+      if (text[at] === "(") depth += 1;
+      else if (text[at] === ")" && --depth === 0) { end = at; break; }
+    }
+    if (end >= 0) {
+      const parts = [];
+      let d = 0;
+      let from = 0;
+      const body = text.slice(open + 1, end);
+      for (let at = 0; at < body.length; at++) {
+        if (body[at] === "(") d += 1;
+        else if (body[at] === ")") d -= 1;
+        else if (body[at] === "," && d === 0) {
+          parts.push(body.slice(from, at).trim());
+          from = at + 1;
+        }
+      }
+      parts.push(body.slice(from).trim());
+      const direction = /^-?[\d.]+deg$/.test(parts[0]) ? parts.shift() : null;
+      const angle = (((direction ? parseFloat(direction) : 180) % 360) + 360) % 360;
+      const stops = parts.map((part) => part.match(/^(.*\S)\s+(-?[\d.]+)%$/));
+      if (!stops.some((stop) => !stop) && (angle === 0 || angle === 180)) {
+        const placed = stops.map(([, color, position]) => [color, parseFloat(position)]);
+        const upright = angle === 0 ? placed.map(([color, position]) => [color, 100 - position]).reverse() : placed;
+        const replaced = `linear-gradient(180deg,${upright.map(([color, position]) => `${color} ${String(Number(position.toFixed(4)))}%`).join(",")})`;
+        text = text.slice(0, start) + replaced + text.slice(end + 1);
+      }
+    }
+  }
+  const pseudo = ["::before", "::after", "::marker", "::placeholder", "::selection", scrollbarPseudo].find((prefix) => text.startsWith(prefix)) ?? "";
+  const colon = text.indexOf(":", pseudo ? 2 : 0);
+  if (colon < 0 || text.slice(pseudo.length, colon) === "font-family") return text;
+  return `${text.slice(0, colon + 1)}${canonicalCssValue(text.slice(colon + 1))}`;
+};
+
+const missingFromRef = (reference, candidate = "") => {
+  const present = new Set(candidate.split(";").map(canonicalRef));
+  return reference.split(";").filter((declaration) => !present.has(canonicalRef(declaration)));
+};
+
+const sameStyleRef = (left, right = "") =>
+  left === right || (missingFromRef(left, right).length === 0 && missingFromRef(right, left).length === 0);
+
+function differencesRef(left, right, tolerance = engine.pixel) {
+  if (Buffer.from(left.data.buffer, left.data.byteOffset, left.data.byteLength).equals(Buffer.from(right.data.buffer, right.data.byteOffset, right.data.byteLength))) {
+    return { count: 0, rounded: 0, different: 0, max: 0, box: [Infinity, Infinity, -1, -1], anyBox: [Infinity, Infinity, -1, -1], where: "" };
+  }
+  const rounding = tolerance.channel;
+  const faintLevels = tolerance.faint;
+  const budget = tolerance.budget;
+  let count = 0;
+  let rounded = 0;
+  let different = 0;
+  let max = 0;
+  const faint = [];
+  let [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Infinity, Infinity, -1, -1];
+  let [minX, minY, maxX, maxY] = [Infinity, Infinity, -1, -1];
+  let first = "";
+  for (let y = 0; y < left.height; y++) {
+    for (let x = 0; x < left.width; x++) {
+      const at = (y * left.width + x) * 4;
+      const worst = Math.max(
+        Math.abs(left.data[at] - right.data[at]),
+        Math.abs(left.data[at + 1] - right.data[at + 1]),
+        Math.abs(left.data[at + 2] - right.data[at + 2]),
+        Math.abs(left.data[at + 3] - right.data[at + 3]),
+      );
+      if (worst > 0) {
+        different += 1;
+        max = Math.max(max, worst);
+        [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Math.min(anyMinX, x), Math.min(anyMinY, y), Math.max(anyMaxX, x), Math.max(anyMaxY, y)];
+      }
+      if (worst <= rounding) {
+        if (worst > 0) rounded += 1;
+        continue;
+      }
+      if (worst <= faintLevels) {
+        faint.push([x, y, at]);
+        continue;
+      }
+      count += 1;
+      first ||= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
+      [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
+    }
+  }
+  const spread = count > 0 || faint.length > budget;
+  if (!spread) rounded += faint.length;
+  else for (const [x, y, at] of faint) {
+    count += 1;
+    first ||= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
+    [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
+  }
+  return { count, rounded, different, max, box: [minX, minY, maxX, maxY], anyBox: [anyMinX, anyMinY, anyMaxX, anyMaxY], where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
+}
+
+function compareImageBytesRef(a, b, lossy, stats) {
+  if (a.equals(b)) return [];
+  const left = PNG.sync.read(a);
+  const right = PNG.sync.read(b);
+  if (left.width !== right.width || left.height !== right.height) {
+    return [`screenshot size ${left.width}x${left.height} vs ${right.width}x${right.height}`];
+  }
+  if (lossy) {
+    const differing = pixelmatch(left.data, right.data, null, left.width, left.height, { threshold: 0.1 });
+    return differing / (left.width * left.height) > 0.02 ? [`screenshot: ${differing} pixels differ`] : [];
+  }
+  const { count, rounded, where } = differencesRef(left, right);
+  if (stats) stats.roundedPixels += rounded;
+  return count ? [`screenshot: ${count} pixels differ by more than ${engine.pixel.channel}${where}`] : [];
+}
+
+function compareScreenshotsRef(a, b, lossy, stats) {
+  if (a?.kind === "limit" || b?.kind === "limit") {
+    if (a?.kind !== "limit" || b?.kind !== "limit") {
+      const limited = a?.kind === "limit" ? "original" : "optimized";
+      const screenshot = a?.kind === "limit" ? a : b;
+      return [`page too large for screenshots limit on ${limited}: ${screenshot.width}x${screenshot.height}, ${screenshot.reason ?? "pixels"} limit ${screenshot.limit}`];
+    }
+    return a.width === b.width && a.height === b.height && a.limit === b.limit
+      ? [`check incomplete: screenshot pixels not compared for page too large for screenshots limit: ${a.width}x${a.height}, ${a.reason ?? "pixels"} limit ${a.limit}`]
+      : [`page too large for screenshots limit differs: original ${a.width}x${a.height}, ${a.reason ?? "pixels"} limit ${a.limit}, optimized ${b.width}x${b.height}, ${b.reason ?? "pixels"} limit ${b.limit}`];
+  }
+  if (a.kind !== "tiles" && b.kind !== "tiles") return compareImageBytesRef(a, b, lossy, stats);
+  if (a.kind !== "tiles" || b.kind !== "tiles") return ["screenshot tile coverage differs"];
+  if (a.width !== b.width || a.height !== b.height) return [`screenshot size ${a.width}x${a.height} vs ${b.width}x${b.height}`];
+  if (a.tiles.length !== b.tiles.length) return [`screenshot tile count ${a.tiles.length} vs ${b.tiles.length}`];
+  const issues = [];
+  for (const [index, left] of a.tiles.entries()) {
+    const right = b.tiles[index];
+    if (left.x !== right.x || left.y !== right.y || left.width !== right.width || left.height !== right.height) {
+      issues.push(`screenshot tile ${index} region differs: ${left.x},${left.y} ${left.width}x${left.height} vs ${right.x},${right.y} ${right.width}x${right.height}`);
+      continue;
+    }
+    issues.push(...compareImageBytesRef(left.png, right.png, lossy, stats).map((issue) => `tile at ${left.x},${left.y}: ${issue}`));
+  }
+  return issues;
+}
+
+const MISSING_FILE_ERROR = /^Failed to load resource: (?:the server responded with a status of 404|net::ERR_FILE_NOT_FOUND)/;
+
+function compareRef(before, after, lossy, stats) {
+  if (before.crashed || after.crashed) return [`crashed: original=${before.crashed ?? "no"} optimized=${after.crashed ?? "no"}`];
+  const issues = [];
+  if (!before.states.length) issues.push("original produced no states");
+  const linked = before.checks?.missingFiles !== undefined || after.checks?.missingFiles !== undefined;
+  const countedElsewhere = (error) => linked && MISSING_FILE_ERROR.test(error);
+  const beforeErrors = before.errors.filter((error) => !countedElsewhere(error)).sort();
+  const afterErrors = after.errors.filter((error) => !countedElsewhere(error)).sort();
+  if (JSON.stringify(beforeErrors) !== JSON.stringify(afterErrors)) {
+    issues.push(`console errors: ${JSON.stringify(beforeErrors)} vs ${JSON.stringify(afterErrors)}`);
+  }
+  if (linked) {
+    const beforeCount = before.checks?.missingFiles ?? 0;
+    const afterCount = after.checks?.missingFiles ?? 0;
+    if (afterCount > beforeCount) {
+      issues.push(`${afterCount - beforeCount} more missing files on the optimized page`);
+    }
+  }
+  const requestsBefore = [...new Set(before.requests.filter((url) => !/.(?:woff2?|ttf|otf|eot)(?:[?#]|$)/i.test(url)))].sort();
+  const requestsAfter = [...new Set(after.requests.filter((url) => !/.(?:woff2?|ttf|otf|eot)(?:[?#]|$)/i.test(url)))].sort();
+  if (requestsBefore.join() !== requestsAfter.join()) issues.push(`requests: ${requestsBefore} vs ${requestsAfter}`);
+  if (before.states.length !== after.states.length) issues.push(`state count ${before.states.length} vs ${after.states.length}`);
+  for (const [i, state] of before.states.entries()) {
+    if (after.states[i]) {
+      const a = state;
+      const b = after.states[i];
+      const stateIssues = [];
+      if (a.unchanged || b.unchanged) {
+        if (a.digest !== b.digest) stateIssues.push("the page changed differently after this interaction");
+      } else {
+        if (a.title !== b.title) stateIssues.push(`title [${a.title}] vs [${b.title}]`);
+        if (a.accessibility !== b.accessibility) stateIssues.push("accessibility tree differs");
+        for (const [fi, [name, expected]] of (a.forced ?? []).entries()) {
+          const actual = b.forced?.[fi]?.[1] ?? "";
+          if (!sameStyleRef(expected, actual)) stateIssues.push(`forced ${name}: ${missingFromRef(expected, actual).slice(0, 3).join(" | ")}`);
+        }
+        if (a.dom !== b.dom) {
+          const len = Math.min(a.dom.length, b.dom.length);
+          let at = a.dom.length !== b.dom.length ? len : -1;
+          for (let di = 0; di < len; di++) {
+            if (a.dom.charCodeAt(di) !== b.dom.charCodeAt(di)) { at = di; break; }
+          }
+          stateIssues.push(`dom differs at ${at}: [${a.dom.slice(Math.max(0, at - 60), at + 100)}] vs [${b.dom.slice(Math.max(0, at - 60), at + 100)}]`);
+        }
+        const fontsA = a.fonts.filter((family) => !/^(?:MathJax|KaTeX)_/.test(family));
+        const fontsB = b.fonts.filter((family) => !/^(?:MathJax|KaTeX)_/.test(family));
+        if (fontsA.join() !== fontsB.join()) stateIssues.push(`fonts ${fontsA} vs ${fontsB}`);
+        if (a.animations.join("\n") !== b.animations.join("\n")) {
+          const present = new Set(b.animations);
+          const missing = a.animations.filter((animation) => !present.has(animation));
+          stateIssues.push(`animations ${a.animations.length} vs ${b.animations.length}, e.g. ${(missing[0] ?? "extra in optimized").slice(0, 160)}`);
+        }
+        if (a.sheets !== b.sheets) stateIssues.push(`style sheets ${a.sheets} vs ${b.sheets}`);
+        if (a.scroll.join() !== b.scroll.join()) stateIssues.push(`scroll size ${a.scroll} vs ${b.scroll}`);
+        if (a.labels.length !== b.labels.length) stateIssues.push(`element count ${a.labels.length} vs ${b.labels.length}`);
+        const tolerance = lossy ? 1 : 0.01;
+        const moved = a.rects.flatMap((rect, ri) =>
+          rect.every((n, k) => Math.abs(n - (b.rects[ri]?.[k] ?? Infinity)) <= tolerance) ? [] : [ri],
+        );
+        if (moved.length) {
+          const [first] = moved;
+          stateIssues.push(`${moved.length} elements laid out differently, e.g. ${a.labels[first]}: [${a.rects[first]}] vs [${b.rects[first]}]`);
+        }
+        const beforeStyles = a.styles ?? [];
+        const afterStyles = b.styles ?? [];
+        const styleAt = (s, styles, idx) => idx >= styles.length ? "" : s.styleValues === undefined ? styles[idx] : s.styleValues[styles[idx]];
+        if (beforeStyles.length !== afterStyles.length) stateIssues.push(`style count ${beforeStyles.length} vs ${afterStyles.length}`);
+        const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, si) => si).filter((si) => {
+          const beforeS = styleAt(a, beforeStyles, si);
+          const afterS = styleAt(b, afterStyles, si);
+          if (beforeS === afterS && a.writingModes?.[si] === b.writingModes?.[si]) return false;
+          return !sameStyleRef(canonicalStyle(beforeS, a.writingModes?.[si]), canonicalStyle(afterS, b.writingModes?.[si]));
+        });
+        if (differing.length) {
+          const [first] = differing;
+          const beforeS = styleAt(a, beforeStyles, first);
+          const afterS = styleAt(b, afterStyles, first);
+          const lost = missingFromRef(beforeS, afterS).slice(0, 3);
+          const gained = missingFromRef(afterS, beforeS).slice(0, 3);
+          stateIssues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first] ?? ""}: lost ${JSON.stringify(lost)} gained ${JSON.stringify(gained)}`);
+        }
+        if (!a.screenshot || !b.screenshot) {
+          const missing = [!a.screenshot && "original", !b.screenshot && "optimized"].filter(Boolean);
+          const details = [!a.screenshot && a.screenshotError && `original: ${a.screenshotError}`, !b.screenshot && b.screenshotError && `optimized: ${b.screenshotError}`].filter(Boolean);
+          stateIssues.push(`screenshot missing in ${missing.join(" and ")} capture${details.length ? ` (${details.join("; ")})` : ""}`);
+        } else {
+          stateIssues.push(...compareScreenshotsRef(a.screenshot, b.screenshot, lossy, stats));
+        }
+      }
+      issues.push(...stateIssues.map((issue) => `${state.label}: ${issue}`));
+    }
+  }
+  return issues;
+}
+
+test("proof: identical output to reference implementation across synthetic PNG pairs including edge pixels", () => {
+  const width = 64;
+  const height = 48;
+  const makeRaw = () => new Uint8Array(width * height * 4).fill(120);
+  const testPixels = [
+    [0, 0, 10],
+    [width - 1, 0, 10],
+    [0, height - 1, 10],
+    [width - 1, height - 1, 10],
+    [32, 24, 1],
+    [32, 24, 8],
+    [32, 24, 9],
+    [10, 10, 50],
+  ];
+  for (const [px, py, diff] of testPixels) {
+    const rawA = makeRaw();
+    const rawB = makeRaw();
+    const idx = (py * width + px) * 4;
+    rawB[idx] = Math.min(255, rawB[idx] + diff);
+    const imgA = { width, height, data: rawA };
+    const imgB = { width, height, data: rawB };
+    assert.deepEqual(differences(imgA, imgB), differencesRef(imgA, imgB));
+  }
+  const identicalA = { width, height, data: makeRaw() };
+  const identicalB = { width, height, data: makeRaw() };
+  assert.deepEqual(differences(identicalA, identicalB), differencesRef(identicalA, identicalB));
+  assert.deepEqual(differences(identicalA, identicalA), differencesRef(identicalA, identicalA));
+});
+
+test("proof: identical output to reference implementation across synthetic and real tiled PNGs", () => {
+  const makePngBuffer = (w, h, diffPixel = null) => {
+    const p = new PNG({ width: w, height: h });
+    p.data.fill(100);
+    if (diffPixel) {
+      const [x, y, v] = diffPixel;
+      p.data[(y * w + x) * 4] = v;
+    }
+    return PNG.sync.write(p);
+  };
+  const baseTile0 = makePngBuffer(100, 100);
+  const baseTile1 = makePngBuffer(100, 100);
+  const diffTileEdge = makePngBuffer(100, 100, [99, 99, 240]);
+  const diffTileTop = makePngBuffer(100, 100, [0, 0, 240]);
+
+  const tileSetA = {
+    kind: "tiles",
+    width: 100,
+    height: 200,
+    tiles: [
+      { x: 0, y: 0, width: 100, height: 100, png: baseTile0 },
+      { x: 0, y: 100, width: 100, height: 100, png: baseTile1 },
+    ],
+  };
+  const tileSetEdge = {
+    kind: "tiles",
+    width: 100,
+    height: 200,
+    tiles: [
+      { x: 0, y: 0, width: 100, height: 100, png: diffTileEdge },
+      { x: 0, y: 100, width: 100, height: 100, png: diffTileTop },
+    ],
+  };
+  const makeCap = (screenshot) => ({
+    states: [{
+      label: "load",
+      title: "t",
+      accessibility: "a",
+      forced: [],
+      dom: "<div></div>",
+      fonts: [],
+      animations: [],
+      sheets: 0,
+      scroll: [100, 200],
+      labels: [],
+      rects: [],
+      styles: [],
+      screenshot,
+    }],
+    errors: [],
+    requests: [],
+  });
+  assert.deepEqual(compare(makeCap(tileSetA), makeCap(tileSetA), false), compareRef(makeCap(tileSetA), makeCap(tileSetA), false));
+  assert.deepEqual(compare(makeCap(tileSetA), makeCap(tileSetEdge), false), compareRef(makeCap(tileSetA), makeCap(tileSetEdge), false));
+});
+
+test("proof: identical output to reference implementation across observation pairs", () => {
+  const makeObs = (modStyle = false, modRect = false, modDom = false) => ({
+    states: [{
+      label: "load",
+      title: "Test Observation",
+      accessibility: "tree",
+      forced: [[":hover", "color:red;font-size:16px"]],
+      dom: modDom ? "<div><span>different</span></div>" : "<div><span>same</span></div>",
+      fonts: ["Arial", "Inter"],
+      animations: ["anim1 1s ease"],
+      sheets: 1,
+      scroll: [100, 100],
+      labels: ["DIV", "SPAN"],
+      rects: modRect ? [[0, 0, 10, 10], [5, 5, 20, 20]] : [[0, 0, 10, 10], [5, 5, 10, 10]],
+      styles: modStyle
+        ? ["color:red;width:100.000000px;inline-size:100.000000px", "font-family:\"Arial\";color:#112233"]
+        : ["color:red;width:100.000000px;inline-size:100.000000px", "font-family:Arial;color:#112233"],
+      writingModes: ["horizontal-tb", "horizontal-tb"],
+      screenshot: Buffer.from("fake-png-identical"),
+    }],
+    errors: [],
+    requests: ["https://example.com/a.css"],
+  });
+  const o1 = makeObs(false, false, false);
+  const o2 = makeObs(true, false, false);
+  const o3 = makeObs(false, true, false);
+  const o4 = makeObs(false, false, true);
+
+  assert.deepEqual(compare(o1, o1, false), compareRef(o1, o1, false));
+  assert.deepEqual(compare(o1, o2, false), compareRef(o1, o2, false));
+  assert.deepEqual(compare(o1, o3, false), compareRef(o1, o3, false));
+  assert.deepEqual(compare(o1, o4, false), compareRef(o1, o4, false));
 });

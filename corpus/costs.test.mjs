@@ -8,12 +8,12 @@ test("readCosts reads committed costs table", () => {
   const table = readCosts();
   assert.equal(typeof table, "object");
   assert.equal(typeof table["quarto-cli-crossrefs-all"], "object");
-  assert.equal(table["quarto-cli-crossrefs-all"].chromium, 356);
-  assert.equal(table["quarto-cli-crossrefs-all"].firefox, 1080);
-  assert.equal(table["quarto-cli-crossrefs-all"].webkit, 1224);
-  assert.equal(table["twenty-thousand-paragraphs"].chromium, 904);
-  assert.equal(table["twenty-thousand-paragraphs"].firefox, 552);
-  assert.equal(table["twenty-thousand-paragraphs"].webkit, 432);
+  assert.equal(table["quarto-cli-crossrefs-all"].chromium, 528);
+  assert.equal(table["quarto-cli-crossrefs-all"].firefox, 1662);
+  assert.equal(table["quarto-cli-crossrefs-all"].webkit, 2448);
+  assert.equal(table["twenty-thousand-paragraphs"].chromium, 5910);
+  assert.equal(table["twenty-thousand-paragraphs"].firefox, 3216);
+  assert.equal(table["twenty-thousand-paragraphs"].webkit, 3423);
 });
 
 test("costOf uses costs table and documented fallbacks", () => {
