@@ -4,7 +4,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { cpus } from "node:os";
 import { basename, dirname, join, posix, relative } from "node:path";
 import { cacheDirectory } from "./build.mjs";
+import { readCosts } from "./costs.mjs";
 import { featuresOf, selectStratified } from "./select.mjs";
+import { shardSlice } from "./sharding.mjs";
 
 const quarto = process.env.QUARTO ?? "quarto";
 const downloads = join(cacheDirectory, "upstream");
@@ -182,6 +184,13 @@ const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const sourcesPath = join(import.meta.dirname, "sources.json");
 const pinnedPath = join(import.meta.dirname, "hardest.json");
 export const selectionPath = join(import.meta.dirname, "selection.json");
+export const manifestPath = join(import.meta.dirname, "manifest.json");
+
+export function selectedCount(tier = "smoke") {
+  const manifest = readJson(manifestPath).filter((entry) => tier === "full" || entry.tier === tier);
+  const upstream = readJson(selectionPath).filter((entry) => tier === "full" || entry.tier === tier);
+  return manifest.length + upstream.length;
+}
 
 export async function chooseUpstream({ jobs = 4 } = {}) {
   const sources = readJson(sourcesPath);
@@ -222,14 +231,20 @@ export async function chooseUpstream({ jobs = 4 } = {}) {
   return { candidates: candidatesSeen, selected, skipped };
 }
 
-export const inShard = (index, shard) => !shard || index % shard.count === shard.index;
+export const inShard = (entry, shard, allEntries = [], costs = readCosts(), engine = shard?.engine ?? process.env.OCTAVO_BROWSER ?? "chromium") => {
+  if (!shard || !shard.count || shard.count <= 1) return true;
+  if (typeof entry === "number") return entry % shard.count === shard.index;
+  const slice = shardSlice(allEntries, shard, costs, engine);
+  const id = typeof entry === "string" ? entry : entry?.id;
+  return slice.some((item) => (typeof item === "string" ? item : item?.id) === id);
+};
 
-export async function renderSelected({ jobs = 4, tier = "full", shard } = {}) {
+export async function renderSelected({ jobs = 4, tier = "full", shard, engine = process.env.OCTAVO_BROWSER ?? "chromium" } = {}) {
   const sources = readJson(sourcesPath);
   mkdirSync(rendered, { recursive: true });
-  const entries = readJson(selectionPath)
-    .filter((entry) => tier === "full" || entry.tier === tier)
-    .filter((_, index) => inShard(index, shard));
+  const allEntries = readJson(selectionPath)
+    .filter((entry) => tier === "full" || entry.tier === tier);
+  const entries = shardSlice(allEntries, shard, readCosts(), engine);
   const done = [];
   const failures = [];
   for (const source of sources) {
@@ -255,19 +270,22 @@ export async function renderSelected({ jobs = 4, tier = "full", shard } = {}) {
 
 export async function renderLinked(entry) {
   const source = readJson(sourcesPath).find((candidate) => candidate.name === entry.source.name);
-  const file = join(extract(source, await download(source)), entry.source.path);
+  const root = extract(source, await download(source));
+  const file = join(root, entry.source.path);
   const home = dirname(file);
   const stem = basename(file, ".qmd");
   const page = join(home, `${stem}.html`);
   const files = join(home, `${stem}_files`);
+  const octavoPage = join(home, `${stem}.octavo.html`);
   const discard = () => {
     rmSync(page, { force: true });
     rmSync(files, { recursive: true, force: true });
+    rmSync(octavoPage, { force: true });
   };
   return inDirectory(home, async () => {
     discard();
     const outcome = await render(file, undefined, false);
-    return { ...outcome, page: existsSync(page) ? page : null, directory: home, discard };
+    return { ...outcome, page: existsSync(page) ? page : null, directory: home, root, stem, discard };
   });
 }
 

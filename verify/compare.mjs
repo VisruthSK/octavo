@@ -1,7 +1,9 @@
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import { engine } from "./engines/index.mjs";
+import { scrollbarPseudo } from "./engines/pseudos.mjs";
 import { canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
+import { validStyles } from "./style-storage.mjs";
 
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
 
@@ -66,7 +68,7 @@ const canonical = (declaration) => {
       if (replaced) text = text.slice(0, start) + replaced + text.slice(end + 1);
     }
   }
-  const pseudo = ["::before", "::after", "::marker", "::placeholder"].find((prefix) => text.startsWith(prefix)) ?? "";
+  const pseudo = ["::before", "::after", "::marker", "::placeholder", "::selection", scrollbarPseudo].find((prefix) => text.startsWith(prefix)) ?? "";
   const colon = text.indexOf(":", pseudo ? 2 : 0);
   if (colon < 0 || text.slice(pseudo.length, colon) === "font-family") return text;
   return `${text.slice(0, colon + 1)}${canonicalCssValue(text.slice(colon + 1))}`;
@@ -142,10 +144,10 @@ const getPng = (buf) => {
   return png;
 };
 
-function compareImageBytes(a, b, lossy, stats) {
+function compareImageBytes(a, b, lossy, stats, cache = true) {
   if (a.equals(b)) return [];
-  const left = getPng(a);
-  const right = getPng(b);
+  const left = cache ? getPng(a) : PNG.sync.read(a);
+  const right = cache ? getPng(b) : PNG.sync.read(b);
   if (left.width !== right.width || left.height !== right.height) {
     return [`screenshot size ${left.width}x${left.height} vs ${right.width}x${right.height}`];
   }
@@ -159,7 +161,7 @@ function compareImageBytes(a, b, lossy, stats) {
 }
 
 const screenshotLimit = (screenshot) => screenshot?.kind === "limit";
-const limitDescription = (screenshot) => `${screenshot.width}x${screenshot.height} at ${screenshot.limit} pixels`;
+const limitDescription = (screenshot) => `${screenshot.width}x${screenshot.height}, ${screenshot.reason ?? "pixels"} limit ${screenshot.limit}`;
 
 function compareScreenshots(a, b, lossy, stats) {
   if (screenshotLimit(a) || screenshotLimit(b)) {
@@ -169,7 +171,7 @@ function compareScreenshots(a, b, lossy, stats) {
       return [`page too large for screenshots limit on ${limited}: ${limitDescription(screenshot)}`];
     }
     return a.width === b.width && a.height === b.height && a.limit === b.limit
-      ? []
+      ? [`check incomplete: screenshot pixels not compared for page too large for screenshots limit: ${limitDescription(a)}`]
       : [`page too large for screenshots limit differs: original ${limitDescription(a)}, optimized ${limitDescription(b)}`];
   }
   if (a.kind !== "tiles" && b.kind !== "tiles") return compareImageBytes(a, b, lossy, stats);
@@ -183,12 +185,13 @@ function compareScreenshots(a, b, lossy, stats) {
       issues.push(`screenshot tile ${index} region differs: ${left.x},${left.y} ${left.width}x${left.height} vs ${right.x},${right.y} ${right.width}x${right.height}`);
       continue;
     }
-    issues.push(...compareImageBytes(left.png, right.png, lossy, stats).map((issue) => `tile at ${left.x},${left.y}: ${issue}`));
+    issues.push(...compareImageBytes(left.png, right.png, lossy, stats, false).map((issue) => `tile at ${left.x},${left.y}: ${issue}`));
   }
   return issues;
 }
 
 function compareState(a, b, lossy, stats) {
+  if (!validStyles(a) || !validStyles(b)) throw new Error("invalid computed style storage");
   const issues = [];
   if (a.unchanged || b.unchanged) {
     if (a.digest !== b.digest) issues.push("the page changed differently after this interaction");
@@ -204,7 +207,9 @@ function compareState(a, b, lossy, stats) {
     const at = firstDifference(a.dom, b.dom);
     issues.push(`dom differs at ${at}: [${excerpt(a.dom, at)}] vs [${excerpt(b.dom, at)}]`);
   }
-  if (a.fonts.join() !== b.fonts.join()) issues.push(`fonts ${a.fonts} vs ${b.fonts}`);
+  const fontsA = stableFonts(a.fonts);
+  const fontsB = stableFonts(b.fonts);
+  if (fontsA.join() !== fontsB.join()) issues.push(`fonts ${fontsA} vs ${fontsB}`);
   if (a.animations.join("\n") !== b.animations.join("\n")) {
     const present = new Set(b.animations);
     const missing = a.animations.filter((animation) => !present.has(animation));
@@ -223,21 +228,26 @@ function compareState(a, b, lossy, stats) {
   }
   const beforeStyles = a.styles ?? [];
   const afterStyles = b.styles ?? [];
+  const styleAt = (state, styles, index) => index >= styles.length ? "" : state.styleValues === undefined ? styles[index] : state.styleValues[styles[index]];
   if (beforeStyles.length !== afterStyles.length) issues.push(`style count ${beforeStyles.length} vs ${afterStyles.length}`);
-  const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, i) => i).filter((i) =>
-    !sameStyle(canonicalStyle(beforeStyles[i] ?? "", a.writingModes?.[i]), canonicalStyle(afterStyles[i] ?? "", b.writingModes?.[i])),
-  );
+  const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, i) => i).filter((i) => {
+    const before = styleAt(a, beforeStyles, i);
+    const after = styleAt(b, afterStyles, i);
+    if (before === after && a.writingModes?.[i] === b.writingModes?.[i]) return false;
+    return !sameStyle(canonicalStyle(before, a.writingModes?.[i]), canonicalStyle(after, b.writingModes?.[i]));
+  });
   if (differing.length) {
     const [first] = differing;
-    const before = beforeStyles[first] ?? "";
-    const after = afterStyles[first] ?? "";
+    const before = styleAt(a, beforeStyles, first);
+    const after = styleAt(b, afterStyles, first);
     const lost = missingFrom(before, after).slice(0, 3);
     const gained = missingFrom(after, before).slice(0, 3);
     issues.push(`${differing.length} elements with different computed style, e.g. ${a.labels[first] ?? ""}: lost ${JSON.stringify(lost)} gained ${JSON.stringify(gained)}`);
   }
   if (!a.screenshot || !b.screenshot) {
     const missing = [!a.screenshot && "original", !b.screenshot && "optimized"].filter(Boolean);
-    issues.push(`screenshot missing in ${missing.join(" and ")} capture`);
+    const details = [!a.screenshot && a.screenshotError && `original: ${a.screenshotError}`, !b.screenshot && b.screenshotError && `optimized: ${b.screenshotError}`].filter(Boolean);
+    issues.push(`screenshot missing in ${missing.join(" and ")} capture${details.length ? ` (${details.join("; ")})` : ""}`);
   } else {
     issues.push(...compareScreenshots(a.screenshot, b.screenshot, lossy, stats));
   }
@@ -248,15 +258,38 @@ export function compare(before, after, lossy, stats) {
   if (before.crashed || after.crashed) return [`crashed: original=${before.crashed ?? "no"} optimized=${after.crashed ?? "no"}`];
   const issues = [];
   if (!before.states.length) issues.push("original produced no states");
-  if (JSON.stringify(before.errors) !== JSON.stringify(after.errors)) {
-    issues.push(`console errors: ${JSON.stringify(before.errors)} vs ${JSON.stringify(after.errors)}`);
+  const linked = before.checks?.missingFiles !== undefined || after.checks?.missingFiles !== undefined;
+  const countedElsewhere = (error) => linked && MISSING_FILE_ERROR.test(error);
+  const beforeErrors = before.errors.filter((error) => !countedElsewhere(error)).sort();
+  const afterErrors = after.errors.filter((error) => !countedElsewhere(error)).sort();
+  if (JSON.stringify(beforeErrors) !== JSON.stringify(afterErrors)) {
+    issues.push(`console errors: ${JSON.stringify(beforeErrors)} vs ${JSON.stringify(afterErrors)}`);
   }
-  if (before.requests.join() !== after.requests.join()) issues.push(`requests: ${before.requests} vs ${after.requests}`);
+  if (linked) {
+    const beforeCount = before.checks?.missingFiles ?? 0;
+    const afterCount = after.checks?.missingFiles ?? 0;
+    if (afterCount > beforeCount) {
+      issues.push(`${afterCount - beforeCount} more missing files on the optimized page`);
+    }
+  }
+  const requestsBefore = significantRequests(before.requests);
+  const requestsAfter = significantRequests(after.requests);
+  if (requestsBefore.join() !== requestsAfter.join()) issues.push(`requests: ${requestsBefore} vs ${requestsAfter}`);
   if (before.states.length !== after.states.length) issues.push(`state count ${before.states.length} vs ${after.states.length}`);
   for (const [i, state] of before.states.entries()) {
     if (after.states[i]) issues.push(...compareState(state, after.states[i], lossy, stats).map((issue) => `${state.label}: ${issue}`));
   }
   return issues;
 }
+
+const LAZY_RENDERER_FONT = /^(?:MathJax|KaTeX)_/;
+
+const MISSING_FILE_ERROR = /^Failed to load resource: (?:the server responded with a status of 404|net::ERR_FILE_NOT_FOUND)/;
+
+const stableFonts = (fonts) => fonts.filter((family) => !LAZY_RENDERER_FONT.test(family));
+
+const FONT_FILE = /.(?:woff2?|ttf|otf|eot)(?:[?#]|$)/i;
+
+const significantRequests = (requests) => [...new Set(requests.filter((url) => !FONT_FILE.test(url)))].sort();
 
 export const signature = (issue) => issue.replace(/[0-9.]+/g, "#").replace(/\[[^\]]*\]/g, "[]").slice(0, 60);

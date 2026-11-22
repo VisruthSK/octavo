@@ -4,7 +4,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeBrowser, verify, withTimeout } from "./verify.mjs";
-import { checksOf, engine, engineNames } from "./engines/index.mjs";
+import { checksOf, engine, engineNames, launch } from "./engines/index.mjs";
+import { focus } from "./engines/pointer.mjs";
 
 after(closeBrowser);
 
@@ -113,18 +114,18 @@ const reducedCase = ([name, change]) => {
   return [name, original, page(change(base))];
 };
 
-test("reduced scenario sets preserve every safe-set proof outside explicit exclusions", async () => {
+test("reduced scenario sets preserve every serve-set proof outside explicit exclusions", async () => {
   const problems = await Promise.all(
     breakages.map(reducedCase).map(async ([name, original, optimized], at) => {
       const originalFile = write(`reduced-${at}-original`, original);
       const changedFile = write(`reduced-${at}-changed`, optimized);
       if (reducedExclusions[name]) {
         const [scenario, reason] = reducedExclusions[name];
-        const safe = failingScenarios(await verify(originalFile, changedFile, { only: [scenario] }));
-        return safe.includes(scenario) ? [] : [`${name} was not caught by its listed exclusion: ${reason}`];
+        const serve = failingScenarios(await verify(originalFile, changedFile, { only: [scenario] }));
+        return serve.includes(scenario) ? [] : [`${name} was not caught by its listed exclusion: ${reason}`];
       }
       const missed = [];
-      for (const level of ["scripts", "packed"]) {
+      for (const level of ["portable", "archive"]) {
         if (!failingScenarios(await verify(originalFile, changedFile, { level })).length) missed.push(`${name} escaped ${level}`);
       }
       return missed;
@@ -140,11 +141,11 @@ const loaderBreakages = [
   ["deferred script moved", "window.ready=true;window.target.textContent='ready'", "window.target.textContent=window.ready?'ready':'early';window.ready=true"],
 ];
 
-test("scripts and packed scenarios catch loader restoration breakages", async () => {
+test("portable and archive scenarios catch loader restoration breakages", async () => {
   const shell = (script) => page("body{margin:8px}", `<h1 id="target">initial</h1><script>window.target=document.getElementById('target');window.order=[];${script}</script>`);
   const escaped = await Promise.all(
     loaderBreakages.flatMap(([name, expected, changed], at) =>
-      ["scripts", "packed"].map(async (level) => {
+      ["portable", "archive"].map(async (level) => {
         const originalFile = write(`loader-${at}-${level}-original`, shell(expected));
         const changedFile = write(`loader-${at}-${level}-changed`, shell(changed));
         const found = failingScenarios(await verify(originalFile, changedFile, { level }));
@@ -188,4 +189,75 @@ test("a dropped hover rule on a page with only a link is reported", async () => 
     .filter(({ issues }) => issues.length)
     .map(({ scenario }) => scenario);
   assert.ok(failing.includes("desktop-light"), `${failing}`);
+});
+
+test("a long-lived connection does not stall verification after settling", async () => {
+  const hanging = page(
+    base,
+    '<h1>Long</h1><script>fetch("http://127.0.0.1:1948/stream").catch(() => {});</script>',
+  );
+  const started = Date.now();
+  const report = await verify(write("long-original", hanging), write("long-changed", hanging), { only: ["desktop-light"] });
+  assert.deepEqual(failingScenarios(report), []);
+  assert.ok(Date.now() - started < 8000, `verification took ${Date.now() - started} ms`);
+});
+
+test("element with tabindex=-1 reaches the fallback and ends focused with no Tab presses counted", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<div id="target" tabindex="-1">Target</div>');
+    let tabPresses = 0;
+    const originalPress = page.keyboard.press.bind(page.keyboard);
+    page.keyboard.press = async (key, ...args) => {
+      if (key === "Tab") tabPresses++;
+      return originalPress(key, ...args);
+    };
+    const element = page.locator("#target");
+    const focused = await focus(page, element);
+    assert.strictEqual(focused, true);
+    assert.strictEqual(tabPresses, 0);
+    const isTarget = await element.evaluate((target) => document.activeElement === target);
+    assert.strictEqual(isTarget, true);
+    await page.close();
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a page with 3 tabbables never presses more than 5 times", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<button id="b1">1</button><button id="b2">2</button><button id="b3">3</button>');
+    let tabPresses = 0;
+    const originalPress = page.keyboard.press.bind(page.keyboard);
+    page.keyboard.press = async (key, ...args) => {
+      if (key === "Tab") tabPresses++;
+      return originalPress(key, ...args);
+    };
+    const element = page.locator("#b3");
+    const focused = await focus(page, element);
+    assert.strictEqual(focused, true);
+    assert.ok(tabPresses <= 5, `pressed ${tabPresses} times (expected <= 5)`);
+    await page.close();
+  } finally {
+    await browser.close();
+  }
+});
+
+test("unchanged result for an element that Tab can reach", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<button id="b1">1</button><button id="target">Target</button>');
+    const element = page.locator("#target");
+    const focused = await focus(page, element);
+    const isTarget = await element.evaluate((target) => document.activeElement === target);
+    assert.strictEqual(focused, true);
+    assert.strictEqual(isTarget, true);
+    await page.close();
+  } finally {
+    await browser.close();
+  }
 });

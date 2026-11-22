@@ -44,7 +44,7 @@ fn png_with_comment(comment: &str) -> Vec<u8> {
 fn png_only(src: &str) -> String {
     let mut options = Options::default();
     options.keep_png = true;
-    simplified(src, options).pack(Mode::Safe).html
+    simplified(src, options).pack(Mode::Serve).html
 }
 
 fn page(attr: &str, png: &[u8]) -> String {
@@ -79,8 +79,8 @@ fn embedded_pngs_are_recompressed_in_src_and_data_src() {
 
 #[test]
 fn already_minimal_pngs_and_other_formats_are_untouched() {
-    let minimal = optimized(&page("src", &png_with_comment("")), Mode::Safe).html;
-    assert_eq!(optimized(&minimal, Mode::Safe).html, minimal);
+    let minimal = optimized(&page("src", &png_with_comment("")), Mode::Serve).html;
+    assert_eq!(optimized(&minimal, Mode::Serve).html, minimal);
     let gif = crate::common::page(
         "",
         &format!(
@@ -88,7 +88,7 @@ fn already_minimal_pngs_and_other_formats_are_untouched() {
             crate::common::data_uri("image/gif", b"GIF89a0000")
         ),
     );
-    assert_eq!(optimized(&gif, Mode::Safe).html, gif);
+    assert_eq!(optimized(&gif, Mode::Serve).html, gif);
 }
 
 #[test]
@@ -129,14 +129,14 @@ fn lossy_mode_re_encodes_photographic_pngs_in_the_requested_format() {
         (ImageFormat::Avif, "image/avif"),
         (ImageFormat::Webp, "image/webp"),
     ] {
-        let out = simplified(&src, lossy(format, None)).pack(Mode::Safe).html;
+        let out = simplified(&src, lossy(format, None)).pack(Mode::Serve).html;
         assert!(
             out.contains(&format!("data:{mime};base64,")),
             "{mime}: {out:.200}"
         );
         assert!(out.len() < src.len());
     }
-    let lossless = simplified(&src, Options::default()).pack(Mode::Safe).html;
+    let lossless = simplified(&src, Options::default()).pack(Mode::Serve).html;
     assert!(!lossless.contains("data:image/avif"));
 }
 
@@ -144,10 +144,10 @@ fn lossy_mode_re_encodes_photographic_pngs_in_the_requested_format() {
 fn oversized_images_shrink_without_touching_the_tag() {
     let src = page("src", &photographic_png());
     let full = simplified(&src, lossy(ImageFormat::Webp, None))
-        .pack(Mode::Safe)
+        .pack(Mode::Serve)
         .html;
     let shrunk = simplified(&src, lossy(ImageFormat::Webp, NonZeroU32::new(24)))
-        .pack(Mode::Safe)
+        .pack(Mode::Serve)
         .html;
     assert!(shrunk.len() < full.len());
     assert!(shrunk.contains("<img class=\"figure\" src=\"data:image/webp;base64,"));
@@ -173,7 +173,7 @@ fn recompression_keeps_the_chunks_that_change_how_colours_render() {
         chunk(b"eXIf", b"MM\0*\0\0\0\x08\0\0\0\0\0\0\0\0"),
         chunk(b"tEXt", format!("Comment\0{}", "x".repeat(2000)).as_bytes()),
     ]);
-    let out = optimized(&page("src", &original), Mode::Safe).html;
+    let out = optimized(&page("src", &original), Mode::Serve).html;
     let names = chunk_names(&embedded_png(&out));
     for kept in [b"gAMA", b"cHRM", b"eXIf"] {
         assert!(
@@ -263,7 +263,7 @@ fn with_chunk_after_header(png: &[u8], extra: &[u8]) -> Vec<u8> {
 fn a_flat_png_becomes_lossless_webp_with_the_same_pixels() {
     let pixels = flat_rgba(96, 96, false);
     let png = encode_png(&pixels, 96, 96, image::ColorType::Rgba8);
-    let html = optimized(&page("src", &png), Mode::Safe).html;
+    let html = optimized(&page("src", &png), Mode::Serve).html;
     let webp = embedded_webp(&html).expect("the image is WebP");
     assert!(webp.len() < png.len());
     assert_eq!(decoded_rgba(&webp), pixels);
@@ -273,7 +273,7 @@ fn a_flat_png_becomes_lossless_webp_with_the_same_pixels() {
 fn colours_hidden_under_transparency_survive_the_conversion() {
     let pixels = flat_rgba(96, 96, true);
     let png = encode_png(&pixels, 96, 96, image::ColorType::Rgba8);
-    let html = optimized(&page("src", &png), Mode::Safe).html;
+    let html = optimized(&page("src", &png), Mode::Serve).html;
     let webp = embedded_webp(&html).expect("the image is WebP");
     assert_eq!(decoded_rgba(&webp), pixels);
 }
@@ -289,7 +289,7 @@ fn keep_png_leaves_the_image_a_png() {
 fn a_png_with_a_gamma_chunk_stays_a_png() {
     let png = encode_png(&flat_rgba(96, 96, false), 96, 96, image::ColorType::Rgba8);
     let tagged = with_chunk_after_header(&png, &chunk(b"gAMA", &45455u32.to_be_bytes()));
-    let html = optimized(&page("src", &tagged), Mode::Safe).html;
+    let html = optimized(&page("src", &tagged), Mode::Serve).html;
     assert!(embedded_webp(&html).is_none() && html.contains("data:image/png;base64,"));
 }
 
@@ -298,7 +298,7 @@ fn a_png_with_partly_transparent_pixels_stays_a_png() {
     let mut pixels = flat_rgba(96, 96, false);
     pixels[3] = 16;
     let png = encode_png(&pixels, 96, 96, image::ColorType::Rgba8);
-    let html = optimized(&page("src", &png), Mode::Safe).html;
+    let html = optimized(&page("src", &png), Mode::Serve).html;
     assert!(embedded_webp(&html).is_none());
 }
 
@@ -308,6 +308,6 @@ fn a_sixteen_bit_png_stays_a_png() {
         .flat_map(|_| [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xff, 0xff])
         .collect();
     let png = encode_png(&pixels, 96, 96, image::ColorType::Rgba16);
-    let html = optimized(&page("src", &png), Mode::Safe).html;
+    let html = optimized(&page("src", &png), Mode::Serve).html;
     assert!(embedded_webp(&html).is_none());
 }

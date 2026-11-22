@@ -23,7 +23,7 @@ pub(crate) enum Origin {
 /// use octavo::{optimize, Error, Mode};
 ///
 /// let src = "<html><head><script src=\"a.js\"></script></head></html>";
-/// let Err(Error::NotSelfContained(links)) = optimize(src, Mode::Safe) else {
+/// let Err(Error::NotSelfContained(links)) = optimize(src, Mode::Serve) else {
 ///     panic!("expected a self-containment error");
 /// };
 /// assert_eq!(links[0].as_str(), "a.js");
@@ -60,7 +60,7 @@ impl Url {
     /// use octavo::{optimize, Error, Mode};
     ///
     /// let src = "<html><head><script src=\"a.js\"></script></head></html>";
-    /// let Err(Error::NotSelfContained(links)) = optimize(src, Mode::Safe) else {
+    /// let Err(Error::NotSelfContained(links)) = optimize(src, Mode::Serve) else {
     ///     panic!("expected a self-containment error");
     /// };
     /// assert_eq!(links[0].as_str(), "a.js");

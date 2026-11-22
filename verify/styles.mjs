@@ -1,3 +1,5 @@
+import { scrollbarPseudo } from "./engines/pseudos.mjs";
+
 const KEYWORD_FAMILIES = new Set([
   "serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-serif", "ui-sans-serif",
   "ui-monospace", "ui-rounded", "math", "emoji", "fangsong", "inherit", "initial", "unset", "revert", "revert-layer", "default",
@@ -82,7 +84,7 @@ export const canonicalStyle = (style = "", writingMode = "horizontal-tb") => {
       continue;
     }
     const name = declaration.slice(0, colon);
-    const pseudo = ["::before", "::after", "::marker", "::placeholder"].find((prefix) => name.startsWith(prefix)) ?? "";
+    const pseudo = ["::before", "::after", "::marker", "::placeholder", "::selection", scrollbarPseudo].find((prefix) => name.startsWith(prefix)) ?? "";
     const property = name.slice(pseudo.length);
     if (["width", "height", "inline-size", "block-size"].includes(property)) {
       const physical = property === "inline-size" ? (horizontal ? "width" : "height") :

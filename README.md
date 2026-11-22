@@ -60,21 +60,21 @@ Output size as a share of the input, on Quarto's own test documents (every one t
   <img alt="Bar chart of output size as a share of the original at each level, for pages, slide decks, dashboards and all documents" src="docs/images/levels-light.svg" width="760">
 </picture>
 
-| Documents | Count | Input | `safe` | `scripts` | `packed` | Median shrink at `packed` |
+| Documents | Count | Input | `serve` | `portable` | `archive` | Median shrink at `archive` |
 |---|---|---|---|---|---|---|
 | HTML pages | 357 | 536 MiB | 23.6% | 18.8% | 12.1% | 18.2x |
 | Slide decks | 86 | 293 MiB | 23.2% | 18.8% | 16.2% | 6.5x |
 | Dashboards | 22 | 66 MiB | 28.0% | 21.4% | 7.9% | 17.1x |
 | **All** | **465** | **895 MiB** | **23.8%** | **19.0%** | **13.2%** | **12.8x** |
 
-Per document, the 10th and 90th percentiles of the shrink at `packed` are 5.6x and 28.4x. Slide decks shrink less than pages because most of their size is images, which Octavo recompresses without changing a pixel. Nine image-heavy decks of 4 to 14 MB, 85 MiB in total, come out at 39 MiB.
+Per document, the 10th and 90th percentiles of the shrink at `archive` are 5.6x and 28.4x. Slide decks shrink less than pages because most of their size is images, which Octavo recompresses without changing a pixel. Nine image-heavy decks of 4 to 14 MB, 85 MiB in total, come out at 39 MiB.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/distribution-dark.svg">
-  <img alt="Histogram of the shrink factor per document at the packed level, with the median at 12.8 times" src="docs/images/distribution-light.svg" width="760">
+  <img alt="Histogram of the shrink factor per document at the archive level, with the median at 12.8 times" src="docs/images/distribution-light.svg" width="760">
 </picture>
 
-Single documents, at `packed`:
+Single documents, at `archive`:
 
 | Document | Before | After | Shrink |
 |---|---|---|---|
@@ -122,8 +122,8 @@ flowchart TD
     F --> E
     E --> P[Apply all edits in one pass and rescan]
     P --> L{level}
-    L -->|safe| O[Optimized HTML]
-    L -->|scripts or packed| K[pack: compress into one blob, add loader]
+    L -->|serve| O[Optimized HTML]
+    L -->|portable or archive| K[pack: compress into one blob, add loader]
     K --> O
 ```
 
@@ -150,11 +150,11 @@ Everything else in the code only knows about HTML, CSS, JavaScript, fonts and im
 
 | Level | Behaviour |
 |---|---|
-| `safe` | Minify and prune. Stylesheets and scripts stay real elements, so the page works with JavaScript off. |
-| `scripts` | Also packs scripts and data blocks. Stylesheets and SVG stay real. |
-| `packed` | Packs everything. The page needs JavaScript to be styled, so use it for documents that already need JavaScript. |
+| `serve` | Smallest output when the server compresses it (removes what the page does not use, minifies, ordinary elements). |
+| `portable` | Smallest standalone file that still works with JavaScript off (Serve plus scripts and data compressed into one blob, styles stay real). |
+| `archive` | Smallest standalone file, needs JavaScript (everything including styles, SVG and images in the blob). |
 
-Output size shrinks in the order `safe`, `scripts`, `packed`.
+Output size shrinks in the order `serve`, `portable`, `archive`.
 
 `--audit` prints what each step saves at the chosen level and writes nothing:
 
@@ -165,7 +165,7 @@ script-minified        7   57.7 KiB   20.4 KiB   37.3 KiB
 stylesheet-pruned      6    2.3 MiB  411.8 KiB    1.9 MiB
 packed                 1  751.1 KiB  458.1 KiB  293.0 KiB
 
-packed level: 2.8 MiB -> 458.1 KiB (6.3x smaller)
+archive level: 2.8 MiB -> 458.1 KiB (6.3x smaller)
 ```
 
 Each row covers only the part of the file that step changed, and the steps run in the order shown. When a hinted static font is kept whole, a `font-kept-whole` row appears with a `0 B` saving, because those fonts are not subsetted.
@@ -190,8 +190,8 @@ The encoder needs about 20 bytes of memory per pixel. `--image-memory <MIB>` cap
 
 | Document | PNG only | Lossless WebP | `--lossy-images` (AVIF) |
 |---|---|---|---|
-| eCOTS 2026 deck, `packed` | 3.20 MiB | 2.56 MiB | 1.51 MiB |
-| CSURC 2026 deck, `packed` | 6.93 MiB | 4.43 MiB | |
+| eCOTS 2026 deck, `archive` | 3.20 MiB | 2.56 MiB | 1.51 MiB |
+| CSURC 2026 deck, `archive` | 6.93 MiB | 4.43 MiB | |
 
 Lossy AVIF is about 40% smaller than lossless WebP on the eCOTS deck, but it changes pixels. Lossless WebP does not.
 
@@ -231,8 +231,8 @@ A web file that cannot be downloaded does not stop the run. It is reported as a 
 
 ## Limits
 
-- `packed` rebuilds stylesheets with JavaScript while the page is parsed, so it needs JavaScript.
-- The Brotli decoder runs through `new Function`, and `packed` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` header that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, allow `unsafe-eval` for the packed pages or use `--level scripts`, which never needs it.
+- `archive` rebuilds stylesheets with JavaScript while the page is parsed, so it needs JavaScript.
+- The Brotli decoder runs through `new Function`, and `archive` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` header that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, allow `unsafe-eval` for the packed pages or use `--level portable`, which never needs it.
 - Modules, import maps and elements whose attributes contain character references are never packed.
 - Downloads trust Mozilla's root certificates. A web file that needs a login cannot be embedded.
 - Text fonts that are hinted static fonts are kept whole instead of subsetted, so subsetting saves nothing for them, as described under [Fonts](#fonts).
@@ -263,12 +263,12 @@ Apart from a small tag scanner that records byte ranges and two tiny CSS helpers
 
 ## As a library
 
-The `octavo` crate is the whole optimizer, and the command line is a thin wrapper around it. `Mode` is `Safe`, `Scripts` or `Packed`, matching the three command-line levels.
+The `octavo` crate is the whole optimizer, and the command line is a thin wrapper around it. `Mode` is `Serve`, `Portable` or `Archive`, matching the three command-line levels.
 
 ```rust
 use octavo::{optimize, Mode};
 
-let out = optimize(&html, Mode::Packed)?;
+let out = optimize(&html, Mode::Archive)?;
 println!("{} -> {} bytes", html.len(), out.html.len());
 for step in &out.applied {
     println!("{} {}: {} -> {}", step.transform, step.target, step.before, step.after);
@@ -290,7 +290,7 @@ let options = Options {
     cache_directory: Some("fonts-cache".into()),
     ..Options::default()
 };
-let out = simplify(&html, options)?.pack(Mode::Packed);
+let out = simplify(&html, options)?.pack(Mode::Archive);
 ```
 
 `Compression::Balanced` is the default, `Compression::Maximum` uses the slowest settings, and `Compression::Custom` takes a `Tuning` with the three values from the table above.
@@ -321,7 +321,7 @@ cd verify && npm install && node --test
 OCTAVO_BROWSER=firefox node --test
 OCTAVO_BROWSER=webkit node --test
 node verify.mjs original.html optimized.html [--allow-js-required]
-node bench.mjs packed ../corpus/html/train ../corpus/html/test
+node bench.mjs archive ../corpus/html/train ../corpus/html/test
 ```
 
 A pass means the tested matrix matched. It is not a proof of equivalence.

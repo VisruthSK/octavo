@@ -1,7 +1,8 @@
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { createHash } from "node:crypto";
+import { realpath } from "node:fs/promises";
+import { dirname, relative, resolve, sep } from "node:path";
 import { engine } from "./engines/index.mjs";
-import { isLinkedFileLoadFailure } from "./linked-artifacts.mjs";
+import { scrollbarPseudo } from "./engines/pseudos.mjs";
 import { canonicalFontFamily } from "./styles.mjs";
 
 export const SCENARIOS = {
@@ -15,20 +16,20 @@ export const SCENARIOS = {
 };
 
 export const SCENARIO_SETS = {
-  safe: {
+  serve: {
     scenarios: ["desktop-light", "desktop-dark", "mobile", "tablet", "motion", "no-js", "print"],
     sweep: ["desktop-light", "desktop-dark", "mobile", "tablet"],
   },
-  scripts: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
-  packed: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
+  portable: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
+  archive: { scenarios: ["desktop-light", "mobile", "no-js"], sweep: ["desktop-light"] },
 };
 
 export const scenariosFor = (level) => {
-  const set = SCENARIO_SETS[level] ?? SCENARIO_SETS.safe;
+  const set = SCENARIO_SETS[level] ?? SCENARIO_SETS.serve;
   return set.scenarios.map((name) => ({ ...SCENARIOS[name], sweep: set.sweep.includes(name) }));
 };
 
-export const scenarios = scenariosFor("safe");
+export const scenarios = scenariosFor("serve");
 
 const INTERACTIVE = "a[href], button, input, select, summary, [role=tab], [tabindex]";
 const NO_MOTION = "*,*::before,*::after{transition:none!important;animation:none!important}";
@@ -118,10 +119,10 @@ async function fingerprints({ lossy, linked }) {
   return Promise.all(embedded.map((value) => fingerprint(value).catch(() => value)));
 }
 
-function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true }) {
+function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true, scrollbarPseudo }) {
   const describe = (element, pseudo, baseStyle) => {
     const style = pseudo === null && baseStyle ? baseStyle : getComputedStyle(element, pseudo);
-    if (pseudo && style.content === "none") return "";
+    if ((pseudo === "::before" || pseudo === "::after") && style.content === "none") return "";
     const noImage = style.backgroundImage === "none";
     const legacyBox = style.display.includes("box");
     const prefix = pseudo ?? "";
@@ -177,7 +178,11 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
     img.removeAttribute(attribute);
     img.setAttribute(`pixels-${attribute}`, prints[at] ?? "skipped");
   }
-  const elements = [...document.body.querySelectorAll("*:not(script):not(style):not(link):not(noscript)")];
+  const roots = [document.documentElement, document.body].filter(Boolean);
+  const elements = [
+    ...roots,
+    ...document.body.querySelectorAll("*:not(script):not(style):not(link):not(noscript)"),
+  ];
   const animations = motion
     ? (() => {
         const list = document.getAnimations();
@@ -203,6 +208,8 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       animation.currentTime = 0;
     }
   }
+  const styleValues = [];
+  const styleIndexes = new Map();
   return {
     animations,
     title: document.title,
@@ -212,17 +219,33 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       const { x, y, width, height } = el.getBoundingClientRect();
       return [x, y, width, height].map((n) => Math.round(n * 100) / 100);
     }),
-    styles: elements.map((el) => {
-      const base = getComputedStyle(el);
-      const pseudos = [
-        null,
-        "::before",
-        "::after",
-        ...(base.display === "list-item" ? ["::marker"] : []),
-        ...(placeholderStyle && el.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
-      ];
-      return pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
-    }),
+    styles: (() => {
+      const sampleTags = new Set(["p", "a", "h1", "h2", "h3", "h4", "h5", "h6", "li", "code"]);
+      const sampled = new Set();
+      return elements.map((el) => {
+        const base = getComputedStyle(el);
+        const tag = el.tagName.toLowerCase();
+        const isRoot = el === document.documentElement || el === document.body;
+        const isSample = sampleTags.has(tag);
+        const hasScroll = isRoot || isSample || el.matches?.(".custom-scroll, [style*='overflow']") || (base.overflow && base.overflow !== "visible");
+        const pseudos = [
+          null,
+          "::before",
+          "::after",
+          ...(base.display === "list-item" || tag === "li" ? ["::marker"] : []),
+          ...(placeholderStyle && el.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
+          ...(isRoot || isSample ? ["::selection"] : []),
+          ...(hasScroll ? [scrollbarPseudo] : []),
+        ];
+        const value = pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
+        if (!styleIndexes.has(value)) {
+          styleIndexes.set(value, styleValues.length);
+          styleValues.push(value);
+        }
+        return styleIndexes.get(value);
+      });
+    })(),
+    styleValues,
     writingModes: elements.map((el) => getComputedStyle(el).writingMode),
     fonts: (() => {
       const weights = { normal: "400", bold: "700" };
@@ -230,7 +253,7 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       for (const font of document.fonts) {
         if (font.status !== "loaded") continue;
         const stretch = font.stretch === "normal" ? "100%" : font.stretch;
-        faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch, font.unicodeRange].join("|"), font.family);
+        faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch].join("|"), font.family);
       }
       return [...faces.values()].sort();
     })(),
@@ -247,7 +270,7 @@ const emptyChecks = (elements) => ({
 const QUIET = 150;
 const LIMIT = 3000;
 
-const probe = () => {
+const probe = ({ javaScriptEnabled = true } = {}) => {
   const state = globalThis[Symbol.for("octavo.timers")];
   const now = Date.now();
   let due = 0;
@@ -274,13 +297,53 @@ const probe = () => {
   const hub = window.MathJax?.Hub;
   const mathjax =
     Boolean(hub?.queue) && (Boolean(hub.queue.running) || Boolean(hub.queue.pending));
+  let revealReady = false;
+  try {
+    revealReady = typeof window.Reveal?.isReady === "function" ? Boolean(window.Reveal.isReady()) : false;
+  } catch {
+    revealReady = false;
+  }
+  const hasRevealScript = javaScriptEnabled && [...document.querySelectorAll("script")].some((script) =>
+    /reveal/i.test(script.src || "") || /reveal/i.test(script.textContent || "")
+  );
+  const reveal = Boolean(element) && javaScriptEnabled && (typeof window.Reveal !== "undefined" || hasRevealScript);
+  const inspectable = (doc) => {
+    const list = [];
+    try {
+      for (const iframe of doc.querySelectorAll("iframe")) {
+        let inner;
+        try {
+          inner = iframe.contentDocument;
+        } catch {
+          continue;
+        }
+        if (!inner) continue;
+        list.push(iframe);
+        list.push(...inspectable(inner));
+      }
+    } catch {}
+    return list;
+  };
+  const iframes = inspectable(document).every((iframe) => {
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) return true;
+      if (doc.readyState !== "complete") return false;
+      if (doc.fonts && doc.fonts.status !== "loaded") return false;
+      return true;
+    } catch {
+      return true;
+    }
+  });
   return {
     due,
     running: running.length,
     fonts: document.fonts.status === "loaded",
+    iframes,
     transitioning,
     indices,
-    reveal: typeof window.Reveal?.isReady === "function",
+    reveal,
+    revealReady,
     mathjax,
     mathjax3: Boolean(window.MathJax?.startup?.promise),
   };
@@ -294,47 +357,124 @@ const watch = () => {
   const touch = () => {
     state.changed = Date.now();
   };
-  const mutations = new MutationObserver(touch);
-  const resizes = new ResizeObserver(touch);
-  mutations.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-  resizes.observe(document.documentElement);
-  document.addEventListener("scroll", touch, { capture: true, passive: true });
+  const observeDoc = (doc) => {
+    try {
+      const mutations = new MutationObserver(touch);
+      const resizes = new ResizeObserver(touch);
+      mutations.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+      resizes.observe(doc.documentElement);
+      doc.addEventListener("scroll", touch, { capture: true, passive: true });
+      for (const iframe of doc.querySelectorAll("iframe")) {
+        try {
+          if (iframe.contentDocument) observeDoc(iframe.contentDocument);
+        } catch {}
+      }
+    } catch {}
+  };
+  observeDoc(document);
   return state;
 };
 
 const frames = async (page) => {
   await Promise.race([
-    page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))).catch(() => {}),
+    page.evaluate(() => {
+      const wait = (win) =>
+        new Promise((done) => {
+          try {
+            if (!win || typeof win.requestAnimationFrame !== "function") return done();
+            const timer = setTimeout(done, 500);
+            win.requestAnimationFrame(() =>
+              win.requestAnimationFrame(() => {
+                clearTimeout(timer);
+                done();
+              }),
+            );
+          } catch {
+            done();
+          }
+        });
+      const inspectable = (doc) => {
+        const wins = [];
+        try {
+          for (const iframe of doc.querySelectorAll("iframe")) {
+            let inner;
+            try {
+              inner = iframe.contentDocument;
+            } catch {
+              continue;
+            }
+            if (!inner || !iframe.contentWindow) continue;
+            wins.push(iframe.contentWindow);
+            wins.push(...inspectable(inner));
+          }
+        } catch {}
+        return wins;
+      };
+      return Promise.all([window, ...inspectable(document)].map(wait));
+    }).catch(() => {}),
     page.waitForTimeout(500),
   ]);
 };
 
-export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {}) {
+export function trackNetwork(page, requests = [], linked = false) {
+  const openRequests = new Set();
+  const network = { pending: 0, count: 0, last: 0, openRequests };
+  page.on("request", (request) => {
+    if (/^(data|blob|about):/.test(request.url())) return;
+    network.pending += 1;
+    network.count += 1;
+    network.last = Date.now();
+    openRequests.add(request);
+    if (!linked || !request.url().startsWith("http://localhost/")) requests.push(request.url());
+  });
+  const finished = (request) => {
+    if (!openRequests.delete(request)) return;
+    network.pending -= 1;
+    network.last = Date.now();
+  };
+  page.on("requestfinished", finished);
+  page.on("requestfailed", finished);
+  return network;
+}
+export async function settle(page, { quiet = QUIET, limit = LIMIT, network, longLived, javaScriptEnabled, scripted } = {}) {
+  const enabled = javaScriptEnabled ?? scripted ?? true;
   const deadline = Date.now() + limit;
-  await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
+  if (enabled) {
+    await page.waitForFunction(() => !document.querySelector(".reveal .scrollbar.visible"), null, { timeout: limit }).catch(() => {});
+  }
   await page.evaluate(watch).catch(() => {});
+  const isNetworkQuiet = () => {
+    if (!network) return true;
+    if (Date.now() - network.last < quiet) return false;
+    if (!network.pending) return true;
+    if (!network.openRequests) return false;
+    if (!network.openRequests.size) return false;
+    for (const request of network.openRequests) {
+      if (!longLived?.has(request)) return false;
+    }
+    return true;
+  };
   let previous = null;
   while (Date.now() < deadline) {
     if (network) {
       while (Date.now() < deadline) {
-        if (!network.pending && Date.now() - network.last >= quiet) break;
+        if (isNetworkQuiet()) break;
         await page.waitForTimeout(50);
       }
     }
-    const state = await page.evaluate(probe).catch(() => null);
+    const state = await page.evaluate(probe, { javaScriptEnabled: enabled }).catch(() => null);
     if (!state) {
       await page.waitForTimeout(50);
       continue;
     }
     if (state.reveal) {
-      const ready = await page.evaluate(() => Promise.resolve(window.Reveal.isReady())).catch(() => false);
-      if (ready !== true || state.transitioning || state.indices !== previous) {
+      if (state.revealReady !== true || state.transitioning || state.indices !== previous) {
         previous = state.indices;
         await page.waitForTimeout(100);
         continue;
       }
     }
-    if (!state.fonts) {
+    if (!state.fonts || !state.iframes) {
       await page.waitForTimeout(50);
       continue;
     }
@@ -375,7 +515,7 @@ export async function settle(page, { quiet = QUIET, limit = LIMIT, network } = {
     }
     await frames(page);
     const settled = await page.evaluate(() => globalThis[Symbol.for("octavo.quiet")]?.changed ?? Date.now()).catch(() => 0);
-    if (network && (network.pending || Date.now() - network.last < quiet)) continue;
+    if (!isNetworkQuiet()) continue;
     if (Date.now() - settled >= quiet) return true;
   }
   return false;
@@ -399,8 +539,8 @@ const HOVER = 3;
 const NAVIGATION = 4;
 const ALWAYS_OBSERVED = new Set([HOVER]);
 
-async function digestOf(page, forms = [], linked = false) {
-  return page.evaluate(async ({ forms, linked }) => {
+async function digestOf(page, linked = false) {
+  const text = await page.evaluate((linked) => {
     const clone = document.documentElement.cloneNode(true);
     clone.querySelectorAll("script, style, link, noscript").forEach((node) => node.remove());
     for (const node of clone.querySelectorAll(linked ? "[src], [data-src], [srcset]" : '[src^="data:"], [data-src^="data:"]')) {
@@ -409,36 +549,16 @@ async function digestOf(page, forms = [], linked = false) {
       if (linked) node.removeAttribute("srcset");
     }
     const html = `${clone.outerHTML}|${scrollX},${scrollY}|${innerWidth}x${innerHeight}`;
-    const text = forms.reduce((current, form) => current.split(form).join("{site}"), html);
-    const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-  }, { forms, linked });
+    return html;
+  }, linked);
+  return createHash("sha256").update(text).digest("hex");
 }
 
-function rootForms(root) {
-  if (!root) return [];
-  const slashed = resolve(root).replaceAll("\\", "/");
-  const withoutDrive = slashed.replace(/^[A-Za-z]:/, "");
-  const url = pathToFileURL(resolve(root)).href;
-  const forms = new Set([url, decodeURI(url), `file://${slashed}`, slashed, withoutDrive, encodeURI(slashed), encodeURI(withoutDrive)]);
-  return [...forms].filter((form) => form.length > 3).sort((a, b) => b.length - a.length);
-}
-
-function scrubDeep(value, forms) {
-  if (!forms.length) return value;
-  if (typeof value === "string") return forms.reduce((text, form) => text.split(form).join("{site}"), value);
-  if (Array.isArray(value)) return value.map((item) => scrubDeep(item, forms));
-  if (value && typeof value === "object" && !ArrayBuffer.isView(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrubDeep(item, forms)]));
-  }
-  return value;
-}
-
-export async function hasInteractions(browser, file) {
+export async function hasInteractions(browser, file, root) {
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
-    await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
+    await loadDocument(page, file, root);
     return await page.evaluate((selector) => Boolean(document.querySelector(selector)), INTERACTIVE_CONTENT);
   } finally {
     await context.close();
@@ -447,19 +567,31 @@ export async function hasInteractions(browser, file) {
 
 const PATIENCE = 4;
 const CAPTURE_TIMEOUT_MS = 300_000;
-const SCREENSHOT_TIMEOUT_MS = 5_000;
+const CAPTURE_TOTAL_FACTOR = 4;
+const MAX_FULL_PAGE_HEIGHT = 16384;
 const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
 const MAX_SCREENSHOT_PIXELS = 20_000_000;
+const MAX_SCREENSHOT_TILES = 2048;
+const MAX_SCREENSHOT_BYTES = 128 * 1024 * 1024;
 
-export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture") {
+export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture", totalMs = timeoutMs * CAPTURE_TOTAL_FACTOR) {
   let timedOut = false;
-  const timer = setTimeout(() => {
+  let timer;
+  const started = Date.now();
+  const expire = () => {
     timedOut = true;
     void context.close().catch(() => {});
-  }, timeoutMs);
+  };
+  const touch = () => {
+    clearTimeout(timer);
+    if (timedOut) return;
+    timer = setTimeout(expire, Math.max(0, Math.min(timeoutMs, started + totalMs - Date.now())));
+  };
+  touch();
   return {
     timedOut: () => timedOut,
     phase,
+    touch,
     close: async () => {
       clearTimeout(timer);
       await context.close().catch(() => {});
@@ -467,42 +599,98 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
   };
 }
 
-async function captureScreenshot(page, viewport) {
+export async function loadDocument(page, file, root, entryPath) {
+  const base = await realpath(root ?? dirname(file));
+  const entry = root ? (entryPath ?? relative(base, resolve(file))).split(sep).map(encodeURIComponent).join("/") : "index.html";
+  await page.route("http://localhost/**", async (route) => {
+    try {
+      const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
+      const candidate = pathname === `/${decodeURIComponent(entry)}` ? file : resolve(base, `.${pathname}`);
+      const path = await realpath(candidate);
+      const rel = relative(base, path);
+      if (rel === ".." || rel.startsWith(`..${sep}`) || resolve(base, rel) !== path) throw new Error("outside root");
+      await route.fulfill({ path });
+    } catch {
+      if (route.request().isNavigationRequest() && route.request().frame() === page.mainFrame()) await route.abort("failed");
+      else await route.fulfill({ status: 404, body: "" });
+    }
+  });
+  await page.route((url) => /^https?:$/.test(url.protocol) && url.hostname !== "localhost", (route) => route.abort("blockedbyclient"));
+  const response = await page.goto(`http://localhost/${entry}`, { waitUntil: "load", timeout: 0 });
+  if (!response || response.status() >= 400) throw new Error(`document did not load: HTTP ${response?.status() ?? "none"}`);
+  return response;
+}
+export async function settleFonts() {
+  const bare = (name) => name.trim().replace(/^["']|["']$/g, "").toLowerCase();
+  const used = new Set();
+  for (const element of document.querySelectorAll("*")) for (const name of getComputedStyle(element).fontFamily.split(",")) used.add(bare(name));
+  await Promise.all([...document.fonts].filter((face) => face.status === "unloaded" && used.has(bare(face.family))).map((face) => face.load().catch(() => {})));
+  const loaded = () => [...document.fonts].filter((face) => face.status === "loaded").length;
+  let previous = -1;
+  for (let round = 0; round < 8; round++) {
+    await document.fonts.ready;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const current = loaded();
+    if (current === previous && document.fonts.status === "loaded") return;
+    previous = current;
+  }
+}
+
+
+export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
   const pageSize = await page.evaluate(() => ({
     width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
     height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
   }));
   const width = Math.max(viewport.width, pageSize.width);
   const height = Math.max(viewport.height, pageSize.height);
-  try {
-    return await page.screenshot({ fullPage: true, animations: "disabled", timeout: SCREENSHOT_TIMEOUT_MS });
-  } catch {}
-  if (width * height > MAX_SCREENSHOT_PIXELS) {
-    return { kind: "limit", width, height, limit: MAX_SCREENSHOT_PIXELS };
+  let fullPageError = `page height exceeds ${MAX_FULL_PAGE_HEIGHT} pixels`;
+  if (height <= MAX_FULL_PAGE_HEIGHT) {
+    try {
+      return await page.screenshot({ fullPage: true, animations: "disabled", timeout: 0 });
+    } catch (error) {
+      fullPageError = error.message;
+    }
   }
   const tileWidth = Math.min(viewport.width, MAX_SCREENSHOT_TILE_HEIGHT);
-  const tileHeight = Math.min(viewport.height, MAX_SCREENSHOT_TILE_HEIGHT);
+  const tileHeight = Math.min(MAX_SCREENSHOT_TILE_HEIGHT, Math.floor(MAX_SCREENSHOT_PIXELS / tileWidth));
   const positions = (size, step) => Array.from({ length: Math.ceil(size / step) }, (_, index) => index * step);
+  if (Math.ceil(width / tileWidth) * Math.ceil(height / tileHeight) > MAX_SCREENSHOT_TILES) {
+    return { kind: "limit", width, height, limit: MAX_SCREENSHOT_TILES, reason: "tile count" };
+  }
   const originalScroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
   const tiles = [];
+  let bytes = 0;
   try {
     for (const y of positions(height, tileHeight)) {
       for (const x of positions(width, tileWidth)) {
-        await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), [x, y]);
-        const [left, top] = await page.evaluate(() => [window.scrollX, window.scrollY]);
-        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-        const clipX = x - left;
-        const clipY = y - top;
-        const clipWidth = Math.min(tileWidth, width - x);
-        const clipHeight = Math.min(tileHeight, height - y);
-        const png = await page.screenshot({
-          clip: { x: clipX, y: clipY, width: clipWidth, height: clipHeight },
-          animations: "disabled",
-          timeout: SCREENSHOT_TIMEOUT_MS,
-        });
-        tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
+        const started = performance.now();
+        let evaluated;
+        try {
+          await page.evaluate(([left, top, scripted]) => {
+            window.scrollTo({ left, top, behavior: "instant" });
+            if (scripted) return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          }, [x, y, javaScriptEnabled]);
+          evaluated = performance.now();
+          const clipWidth = Math.min(tileWidth, width - x);
+          const clipHeight = Math.min(tileHeight, height - y);
+          const png = await page.screenshot({
+            fullPage: true,
+            clip: { x, y, width: clipWidth, height: clipHeight },
+            animations: "disabled",
+            timeout: 0,
+          });
+          bytes += png.length;
+          if (bytes > MAX_SCREENSHOT_BYTES) return { kind: "limit", width, height, limit: MAX_SCREENSHOT_BYTES, reason: "tile bytes" };
+          tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
+        } finally {
+          const ended = performance.now();
+          onTile({ x, y, evaluateMs: (evaluated ?? ended) - started, screenshotMs: evaluated ? ended - evaluated : 0 });
+        }
       }
     }
+  } catch (error) {
+    throw new Error(`full-page screenshot: ${fullPageError}; tiled screenshot: ${error.message}`);
   } finally {
     await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), originalScroll);
   }
@@ -514,10 +702,9 @@ export async function capture(
   file,
   scenario,
   lossy,
-  { interact = true, patient = false, root, linked = false, linkedOriginal = false, timeoutMs = CAPTURE_TIMEOUT_MS } = {},
+  { interact = true, patient = false, root, linked = false, entryPath, timeoutMs = CAPTURE_TIMEOUT_MS, longLived, onPhase = () => {} } = {},
 ) {
   const pace = patient ? PATIENCE : 1;
-  const forms = rootForms(root);
   const scripted = scenario.javaScriptEnabled !== false;
   const context = await browser.newContext({
     viewport: scenario.viewport,
@@ -528,85 +715,182 @@ export async function capture(
     ...engine.contextOptions,
   });
   let phase = "new page";
+  let phaseStarted = performance.now();
+  const trace = process.env.OCTAVO_CAPTURE_TRACE === "1";
+  const log = (detail) => {
+    if (trace) console.error(`[capture] ${JSON.stringify({ file, scenario: scenario.name, rss: process.memoryUsage().rss, ...detail })}`);
+  };
+  const setPhase = (next) => {
+    log({ phase, ms: performance.now() - phaseStarted });
+    phase = next;
+    onPhase(next);
+    phaseStarted = performance.now();
+    deadline?.touch();
+  };
+  onPhase(phase);
   const deadline = captureDeadline(context, timeoutMs, () => phase);
   try {
-    phase = "install init scripts";
+    setPhase("install init scripts");
     await context.addInitScript(seedRandom);
     await context.addInitScript(trackTimers);
     const page = await context.newPage();
     const errors = [];
     const requests = [];
-    const network = { pending: 0, count: 0, last: 0 };
+    const network = trackNetwork(page, requests, linked);
+    const { openRequests } = network;
+    let missingFiles = linked ? 0 : undefined;
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
     page.on("console", (message) => {
       if (message.type() !== "error") return;
-      if (linkedOriginal && isLinkedFileLoadFailure(message.text(), message.location())) return;
       errors.push(engine.normalizeError(message.text()));
     });
-    page.on("request", (request) => {
-      if (/^(data|blob|about):/.test(request.url())) return;
-      network.pending += 1;
-      network.count += 1;
-      network.last = Date.now();
-      if (!/^file:/.test(request.url())) requests.push(request.url());
-    });
-    const finished = () => {
-      network.pending = Math.max(0, network.pending - 1);
-      network.last = Date.now();
-    };
-    page.on("requestfinished", finished);
-    page.on("requestfailed", finished);
+    if (linked) page.on("response", (response) => { if (response.status() === 404 && response.url().startsWith("http://localhost/")) missingFiles += 1; });
+    const knownLongLived = new Set(longLived ?? []);
     const waits = [];
     const wait = async (name, options = {}) => {
-      phase = `settle ${name}`;
-      waits.push(await engine.settle(page, settle, { quiet: (options.quiet ?? QUIET) * pace, limit: (options.limit ?? LIMIT) * pace, network }));
+      setPhase(`settle ${name}`);
+      waits.push(
+        await engine.settle(page, settle, {
+          quiet: (options.quiet ?? QUIET) * pace,
+          limit: (options.limit ?? LIMIT) * pace,
+          network,
+          longLived: knownLongLived,
+          javaScriptEnabled: options.javaScriptEnabled ?? scripted,
+        }),
+      );
     };
-    phase = "goto";
-    await page.goto(pathToFileURL(file).href, { waitUntil: "load" });
-    phase = "document body ready";
-    await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch(() => {});
-    if (!(await page.evaluate(() => Boolean(document.body)).catch(() => false))) throw new Error("document body did not appear after page load");
+    setPhase("goto");
+    const response = await loadDocument(page, file, root, entryPath).catch((error) => {
+      throw new Error(`navigation failed: ${JSON.stringify({ url: page.url(), error: error.message })}`);
+    });
+    setPhase("document body ready");
+    let waitError;
+    await page.waitForFunction(() => Boolean(document.body), null, { timeout: LIMIT * pace }).catch((error) => { waitError = error.message; });
+    let body;
+    let evaluateError;
+    try {
+      body = await page.evaluate(() => Boolean(document.body));
+    } catch (error) {
+      evaluateError = error.message;
+    }
+    if (!body) {
+      let documentState;
+      try {
+        documentState = await page.evaluate(() => {
+          const html = document.documentElement?.outerHTML ?? "";
+          return { readyState: document.readyState, bodyNull: document.body === null, htmlLength: html.length, htmlStart: html.slice(0, 200) };
+        });
+      } catch (error) {
+        documentState = { error: error.message };
+      }
+      throw new Error(`document body did not appear after page load: ${JSON.stringify({ waitError, evaluateError, url: page.url(), document: documentState, response: response ? { url: response.url(), status: response.status() } : null })}`);
+    }
     if (scenario.media) await page.emulateMedia({ media: scenario.media });
     if (scripted && !scenario.motion) await page.addStyleTag({ content: NO_MOTION });
-    phase = "fonts ready";
+    setPhase("fonts ready");
     if (scripted) await page.evaluate(() => document.fonts.ready);
     else await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 3000 }).catch(() => {});
+    await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: "instant" })).catch(() => {});
+    await frames(page);
     await wait("initial page");
+    for (const request of openRequests) knownLongLived.add(request);
+
+    let previousDigest = await digestOf(page, linked);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await page.waitForTimeout(50);
+      await frames(page);
+      const currentDigest = await digestOf(page, linked);
+      if (currentDigest === previousDigest) break;
+      previousDigest = currentDigest;
+      await wait(`stability ${attempt}`);
+    }
 
     const states = [];
     const record = async (label, extra = {}) => {
-      phase = `screenshot ${label}`;
+      setPhase(`screenshot ${label}`);
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
-      const screenshot = await captureScreenshot(page, scenario.viewport).catch(() => null);
-      phase = `image fingerprints ${label}`;
+      let screenshotError;
+      const screenshot = await captureScreenshot(page, scenario.viewport, (tile) => {
+        deadline.touch();
+        log({ phase, tile });
+      }, scripted).catch((error) => {
+        screenshotError = error.message;
+        return null;
+      });
+      setPhase(`image fingerprints ${label}`);
       const prints = scenario.pixels ? await page.evaluate(fingerprints, { lossy, linked }) : [];
-      phase = `page observation ${label}`;
-      const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle });
+      setPhase(`page observation ${label}`);
+      if (scripted) await page.evaluate(settleFonts).catch(() => {});
+      const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
-      states.push({ label, ...observation, screenshot, ...extra });
+      states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
     };
-    await wait("before forced states");
-    phase = "forcedStates element count";
+    await record("load", { digest: previousDigest });
+    setPhase("forcedStates element count");
     const forced = scripted && !scenario.motion
-      ? await engine.forcedStates(page, INTERACTIVE, observe, (detail) => { phase = detail; })
+      ? await engine.forcedStates(page, INTERACTIVE, observe, setPhase)
       : emptyChecks(0);
-    phase = "accessibility snapshot";
+    setPhase("accessibility snapshot");
     const accessibility = await settledAccessibilityTree(page);
-    await wait("before initial capture");
-    await record("load", { forced: forced.states, accessibility });
+    states[0].forced = forced.states;
+    states[0].accessibility = accessibility;
     const base = { states: states.slice(0, 1), errors: errors.slice(), requests: requests.slice() };
+    if (scripted && scenario.name === "desktop-light") {
+      setPhase("resize viewport");
+      await page.setViewportSize({ width: 900, height: 700 });
+      await wait("after resize");
+      await record("resize");
+      await page.setViewportSize(scenario.viewport);
+      await wait("after restore viewport");
+    }
+    if (interact && scripted && scenario.name === "desktop-light") {
+      setPhase("behaviour sweep selection");
+      const handles = await page.$$("button, summary, [role=button], [role=tab], input[type=checkbox], input[type=radio], select");
+      const safe = [];
+      for (const handle of handles) {
+        if (safe.length >= 8) break;
+        const valid = await handle.evaluate((el) => {
+          if (el.closest("a[href]")) return false;
+          if (el.tagName === "BUTTON" && el.type === "submit" && el.form?.getAttribute("action")) return false;
+          if (el.getAttribute("target") === "_blank") return false;
+          const rect = el.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return false;
+          const s = getComputedStyle(el);
+          return s.visibility !== "hidden" && s.display !== "none" && s.pointerEvents !== "none";
+        }).catch(() => false);
+        if (valid) safe.push(handle);
+      }
+      if (safe.length > 0) {
+        for (const [index, handle] of safe.entries()) {
+          setPhase(`behaviour sweep element ${index}`);
+          const isSelect = await handle.evaluate((el) => el.tagName === "SELECT").catch(() => false);
+          if (isSelect) {
+            await handle.evaluate((el) => {
+              if (el.options.length > 1) {
+                el.selectedIndex = el.selectedIndex === 0 ? 1 : 0;
+                el.dispatchEvent(new Event("change", { bubbles: true }));
+              }
+            }).catch(() => {});
+          } else {
+            await handle.click({ timeout: 1000 }).catch(() => {});
+          }
+        }
+        await page.keyboard.press("Escape").catch(() => {});
+        await wait("after behaviour sweep");
+        await record("behaviour");
+      }
+    }
     if (interact && scripted && scenario.sweep) {
-      phase = "reveal slide number lookup";
+      setPhase("reveal slide number lookup");
       const slideDeck = await page.evaluate(() => Boolean(document.querySelector(".reveal")));
-      let previous = await digestOf(page, forms, linked);
-      states[0].digest = previous;
+      let previous = previousDigest;
       for (const [index, interact] of interactions.entries()) {
-        phase = `interaction sweep step ${index} slide number lookup`;
+        setPhase(`interaction sweep step ${index} slide number lookup`);
         const slideNumber = await page.evaluate(() => {
           const index = window.Reveal?.getIndices?.();
           return index ? `${index.h}.${index.v}` : "none";
         }).catch(() => "unknown");
-        phase = `interaction sweep step ${index} slide ${slideNumber}`;
+        setPhase(`interaction sweep step ${index} slide ${slideNumber}`);
         const acted = await interact(page).catch((error) => errors.push(`interaction ${index}: ${error.message}`));
         const cursorDelay = slideDeck && index === HOVER
           ? await page.evaluate(() => window.Reveal?.getConfig?.().hideCursorTime ?? 0).catch(() => 0)
@@ -614,7 +898,7 @@ export async function capture(
         const quiet = slideDeck ? (index === NAVIGATION ? 1200 : Math.max(400, cursorDelay + QUIET)) : QUIET;
         const limit = slideDeck && index === HOVER ? Math.max(LIMIT, cursorDelay + quiet + 500) : LIMIT;
         await wait(`interaction sweep step ${index} slide ${slideNumber}`, { quiet, limit });
-        const digest = await digestOf(page, forms, linked);
+        const digest = await digestOf(page, linked);
         if (digest === previous && (!ALWAYS_OBSERVED.has(index) || acted === false)) {
           states.push({ label: `interaction ${index}`, digest, unchanged: true });
           continue;
@@ -624,27 +908,30 @@ export async function capture(
       }
     }
     const recorded = states.filter((state) => !state.unchanged);
-    return scrubDeep({
+    return {
       states,
       errors,
       requests,
+      openRequests: new Set([...openRequests].map((request) => request.url())),
       base,
       checks: {
         ...forced.checks,
         settled: waits.every((outcome) => outcome !== false),
+        ...(linked ? { missingFiles } : {}),
         screenshots: {
           taken: recorded.filter((state) => state.screenshot).length,
           total: recorded.length,
           limits: recorded.flatMap(({ label, screenshot }) =>
-            screenshot?.kind === "limit" ? [{ label, width: screenshot.width, height: screenshot.height, limit: screenshot.limit }] : [],
+            screenshot?.kind === "limit" ? [{ label, width: screenshot.width, height: screenshot.height, limit: screenshot.limit, reason: screenshot.reason }] : [],
           ),
         },
       },
-    }, forms);
+    };
   } catch (error) {
     if (deadline.timedOut()) throw new Error(`capture timed out during ${deadline.phase()} after ${timeoutMs} ms`);
     throw new Error(`capture failed during ${phase}: ${error.message}`);
   } finally {
+    onPhase(null);
     await deadline.close();
   }
 }

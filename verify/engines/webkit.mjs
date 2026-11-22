@@ -22,4 +22,5 @@ export const identity = (browser, { channel = "" } = {}) => {
 export const settle = (page, settlePage, options) => settlePage(page, options);
 const MISSING_VALUE_EXPRESSION = /\b(null|undefined) is not an object \(evaluating '[^']*'\)/g;
 
-export const normalizeError = (message) => message.replace(MISSING_VALUE_EXPRESSION, "$1 is not an object");
+export const normalizeError = (message) =>
+  message.replace(MISSING_VALUE_EXPRESSION, "$1 is not an object");

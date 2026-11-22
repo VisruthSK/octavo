@@ -8,6 +8,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ### Changed
 
+- The optimization levels are renamed: Mode::Safe becomes Mode::Serve, Mode::Scripts becomes Mode::Portable, and Mode::Packed becomes Mode::Archive.
+- Fonts that carry hinting tables (fpgm, prep, cvt) are kept whole, variable fonts included, because a subset of them rendered with different anti-aliasing in Firefox and WebKit on Linux.
 - Fonts are re-encoded to WOFF2 with [`ttf2woff2`](https://crates.io/crates/ttf2woff2), a pure Rust encoder, instead of `woofwoof`, which wraps Google's C++ WOFF2 library. `Tuning::woff2_quality` still controls the Brotli quality of the output. The `glyf`/`loca` transformation is applied only when the font's `glyf` table is at most 131070 bytes, so the rebuilt short `loca` table cannot overflow when `glyf` exceeds what the short format can address.
 - The public enums, `Options`, `Tuning`, `ImageEncoding` and the result types `Applied`, `Output` and `Simplified` are `#[non_exhaustive]`, so adding variants or fields later is not a breaking change.
 - The optimizer reports the edits it skipped because another edit claimed the same bytes (`Output::skipped`, `Simplified::skipped()`), naming the transform that lost and the one that won. The `after` minus `before` deltas in `applied` add up to the change in output size.
