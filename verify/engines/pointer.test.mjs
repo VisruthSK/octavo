@@ -130,3 +130,19 @@ test("a control revealed only while its card is hovered is still focused and sam
     await browser.close();
   }
 });
+
+test("a state that does not apply reports what is under the pointer", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<button id="target" class="sample">Target</button>');
+    const { checks } = await forcedStates(page, "button", () => ({ style: "", writingMode: "horizontal-tb", states: { hover: false, focus: false, focusVisible: false, active: false } }));
+    for (const state of ["hover", "focus", "focusVisible", "active"]) {
+      const context = JSON.parse(checks.details[state][0].split("; context ")[1]);
+      assert.deepEqual(context.hit, { tag: "button", id: "target", class: "sample", descendant: true });
+      assert.equal(context.probe.hover, false);
+    }
+  } finally {
+    await browser.close();
+  }
+});

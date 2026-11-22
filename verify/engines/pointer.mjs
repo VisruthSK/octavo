@@ -193,6 +193,23 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       const info = await element.evaluate((target) =>
         `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""}${target.className ? `.${String(target.className).trim().replaceAll(/\s+/g, ".")}` : ""} tabindex=${target.tabIndex}${target.getAttribute("href") ? ` href=${target.getAttribute("href")}` : ""}`,
       );
+      const hitContext = (target, point, probed) =>
+        target
+          .evaluate((node, at) => {
+            const box = node.getBoundingClientRect();
+            const x = box.left + (at?.x ?? box.width / 2);
+            const y = box.top + (at?.y ?? box.height / 2);
+            const hit = document.elementFromPoint(x, y);
+            return JSON.stringify({
+              point: { x, y },
+              hit: hit && { tag: hit.tagName.toLowerCase(), id: hit.id, class: hit.getAttribute("class"), descendant: node.contains(hit) },
+              box: { x: box.x, y: box.y, width: box.width, height: box.height },
+              viewport: { width: innerWidth, height: innerHeight },
+              scroll: { x: scrollX, y: scrollY },
+            });
+          }, point)
+          .then((text) => JSON.stringify({ ...JSON.parse(text), probe: probed?.states }))
+          .catch((error) => JSON.stringify({ error: error.message }));
       const detail = (state, reason) => `${info}, selector "${selector}", index ${index}: ${reason || "state did not apply although the target was reachable"}`;
       const unreachableStates = new Set();
       const hoverReason = await staticReason(element, "hover");
@@ -237,7 +254,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
             noteUnreachable(checks, "hover", detail("hover", reason), unreachableStates);
           } else {
             states.push([`:hover on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-            noteFailure(checks, "hover", detail("hover", ""));
+            noteFailure(checks, "hover", `${detail("hover", "")}; context ${await hitContext(element, spot, seen)}`);
           }
         }
       }
@@ -263,14 +280,14 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
           states.push([`:focus on interactive #${index}`, focusedStyle]);
         } else {
           states.push([`:focus on interactive #${index}`, focusedStyle]);
-          noteFailure(checks, "focus", detail("focus", ""));
+          noteFailure(checks, "focus", `${detail("focus", "")}; context ${await hitContext(element, spot, seen)}`);
         }
         if (seen.states.focusVisible) {
           checks.focusVisible += 1;
           states.push([`:focus-visible on interactive #${index}`, focusedStyle]);
         } else {
           states.push([`:focus-visible on interactive #${index}`, focusedStyle]);
-          noteFailure(checks, "focusVisible", detail("focus-visible", ""));
+          noteFailure(checks, "focusVisible", `${detail("focus-visible", "")}; context ${await hitContext(element, spot, seen)}`);
         }
       }
       await page.evaluate(() => document.activeElement?.blur());
@@ -305,7 +322,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
             noteUnreachable(checks, "active", detail("active", reason), unreachableStates);
           } else {
             states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-            noteFailure(checks, "active", detail("active", ""));
+            noteFailure(checks, "active", `${detail("active", "")}; context ${await hitContext(element, spot, seen)}`);
           }
         }
       }
