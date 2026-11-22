@@ -229,7 +229,47 @@ Octavo stops with an error when the input is not what it expects:
 
 A web file that cannot be downloaded does not stop the run. It is reported as a warning and the link stays, so the page needs the network for that file. With `--no-fetch`, every web link stays and is reported the same way.
 
+## Sites
+
+`octavo <directory>` optimizes the shared files of a rendered Quarto website once, instead of once per page. Point it at the output of a normal `quarto render` (the `_site` directory), not at pages rendered with `embed-resources: true`:
+
+```sh
+octavo _site                  # writes _site.min
+octavo _site public           # writes public
+octavo _site _site --in-place  # rewrites in place, which cannot be undone
+node verify/site.mjs _site _site.min   # compare every page in Chromium
+```
+
+Octavo reads every page, builds one index of the words used by all pages and all scripts, and then changes each shared file once:
+
+| File | What happens |
+|---|---|
+| Stylesheets that a page links, and any they import | Rules are pruned against the whole site's index, so a rule stays if any page needs it, and the sheet is minified |
+| Scripts that a page loads | Minified, as a module or a classic script according to how the page loads it |
+| WOFF, TrueType and OpenType fonts | Converted to WOFF2, and the `url()` that names them is rewritten. With text font subsetting (default, disabled by `--no-subset-fonts`) the text fonts are also cut to the characters that any page, script, stylesheet or JSON file of the site can show, and stay whole when one of those files cannot be read. The original font is removed unless another file mentions its name |
+| PNG images | Recompressed without changing a pixel. With `--lossy-images`, PNG and JPEG images that every page draws at a known width are instead re-encoded once as AVIF or WebP at the largest width any page draws them at, under the new format's name, and the pages' `src` attributes follow. An image stays lossless when its size is unknown on any page, when it is referenced outside `<img>` tags, and when a PNG has partial transparency |
+
+Run it on a complete, fresh render of the site. Octavo removes every style rule that no page in the directory uses, so a partial or incremental build, or a page published later from another build, can lose styling. Write to a separate output, which is the default, and run it again when pages change. Rewriting a directory in place needs `--in-place`, because it cannot be undone.
+
+The output is written in full before any of it is published. Octavo builds the whole tree in a staging directory next to the output, checks that every file it planned is there with the planned size, and only then promotes the tree with renames. If anything fails, the staging directory is removed and the previous output stays untouched. An earlier build's files that are no longer part of the site do not survive.
+
+Pages and every other file are copied unchanged, and files keep their names, so the site works as before and browsers still cache each shared file once. Text fonts are also cut by default to the characters that any page, script, stylesheet or JSON file of the site can show, including text that only the search index reveals; when one of those files cannot be read or `--no-subset-fonts` is given, every text font stays whole. With `--lossy-images`, PNG and JPEG images that every page draws at a known width are re-encoded once as AVIF or WebP at the largest width any page draws them at, under the new format's name, with the pages' `src` attributes rewritten to match; every other image is recompressed losslessly or left as it is, and a browser that has cached a file under its old content needs to revalidate it, so serve optimized files with a new URL or a short cache lifetime.
+
+Only regular files are read. A symbolic link that points at a regular file inside the site is copied as a regular file, and a symbolic link that points outside the site is an error that names the path. Any other kind of entry, such as a named pipe or a device, is an error too, so nothing is left out silently.
+
+A visitor's download, with each file Brotli-compressed as a static host sends it and shared files fetched once:
+
+| Site | Pages | First page | Five pages | Same site after `octavo` |
+|---|---|---|---|---|
+| Text pages | 5 | 351 KB | 379 KB | 260 KB and 287 KB |
+| Blog with a grid listing | 6 | 439 KB | 525 KB | 348 KB and 433 KB |
+| Listings with 30 screenshots | 15 | 1,413 KB | 1,989 KB | 1,093 KB and 1,524 KB |
+
+The same pages rendered with `embed-resources: true` each carry their own copy of the dependencies: 617 KB for the first page of the text site and 4.3 MB for five, because 49% to 89% of the bytes are copies repeated across pages. Octavo shrinks those pages, but a reader of several pages still downloads several times what the normal site sends, so use per-page embedding for documents that are read once and site mode for sites.
+
 ## Limits
+
+- Site mode follows static references (`<link>`, `<script src>`, `@import` and `url()`). A file that a script loads at run time under a name Octavo cannot see is left as it is, and a stylesheet that no page links is not pruned.
 
 - `archive` rebuilds stylesheets with JavaScript while the page is parsed, so it needs JavaScript.
 - The Brotli decoder runs through `new Function`, and `archive` uses Brotli whenever that makes the page smaller, which is common for large pages and for decks that repeat images. A page served with an HTTP `Content-Security-Policy` header that forbids `unsafe-eval` cannot load such a page. A `<meta>` policy is detected and disables packing, but a policy sent as a header is invisible to a static file. If you send that header, allow `unsafe-eval` for the packed pages or use `--level portable`, which never needs it.

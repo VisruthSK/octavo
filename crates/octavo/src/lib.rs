@@ -37,10 +37,15 @@ mod images;
 mod js;
 mod pack;
 mod quarto;
+mod site;
 mod words;
 
 pub use check::Url;
 pub use embed::{Embedded, Loaded, Resources, embed_resources};
+pub use site::{
+    SiteChange, SiteError, SiteFile, SiteFileKind, SiteKind, SitePlan, SiteReport,
+    optimize_directory, plan_directory,
+};
 
 use doc::{Doc, Edit, Edits};
 use std::{
