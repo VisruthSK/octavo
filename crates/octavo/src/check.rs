@@ -20,10 +20,10 @@ pub(crate) enum Origin {
 /// network.
 ///
 /// ```
-/// use octavo::{optimize, Error, Mode};
+/// use octavo::{Error, Packaging, optimize};
 ///
 /// let src = "<html><head><script src=\"a.js\"></script></head></html>";
-/// let Err(Error::NotSelfContained(links)) = optimize(src, Mode::Serve) else {
+/// let Err(Error::NotSelfContained(links)) = optimize(src, Packaging::Plain) else {
 ///     panic!("expected a self-containment error");
 /// };
 /// assert_eq!(links[0].as_str(), "a.js");
@@ -57,10 +57,10 @@ impl Url {
     /// The URL as written in the document.
     ///
     /// ```
-    /// use octavo::{optimize, Error, Mode};
+    /// use octavo::{Error, Packaging, optimize};
     ///
     /// let src = "<html><head><script src=\"a.js\"></script></head></html>";
-    /// let Err(Error::NotSelfContained(links)) = optimize(src, Mode::Serve) else {
+    /// let Err(Error::NotSelfContained(links)) = optimize(src, Packaging::Plain) else {
     ///     panic!("expected a self-containment error");
     /// };
     /// assert_eq!(links[0].as_str(), "a.js");

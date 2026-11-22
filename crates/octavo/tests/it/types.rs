@@ -1,6 +1,7 @@
 use crate::common::page;
 use octavo::{
-    ImageEncoding, ImageFormat, Library, Mode, Options, Quality, Target, Transform, Warning,
+    AuditEntry, AuditReport, Config, Effort, EvidenceClass, FontPolicy, ImageEncoding, ImageFormat,
+    Library, Licenses, Packaging, PngPolicy, Quality, Rule, Target, Transform, Warning,
 };
 use std::num::{NonZeroU32, NonZeroUsize};
 
@@ -25,16 +26,119 @@ fn each_format_has_its_own_default_quality() {
 }
 
 #[test]
-fn each_mode_has_a_name_and_parses_back() {
-    for (mode, name) in [
-        (Mode::Serve, "serve"),
-        (Mode::Portable, "portable"),
-        (Mode::Archive, "archive"),
+fn each_packaging_has_a_name_and_parses_back() {
+    for (packaging, name) in [
+        (Packaging::Plain, "plain"),
+        (Packaging::Scripts, "scripts"),
+        (Packaging::Packed, "packed"),
     ] {
-        assert_eq!(mode.to_string(), name);
-        assert_eq!(name.parse::<Mode>(), Ok(mode));
+        assert_eq!(packaging.to_string(), name);
+        assert_eq!(name.parse::<Packaging>(), Ok(packaging));
     }
-    assert!("verbose".parse::<Mode>().is_err());
+    assert!("serve".parse::<Packaging>().is_err());
+    assert!("portable".parse::<Packaging>().is_err());
+    assert!("archive".parse::<Packaging>().is_err());
+}
+
+#[test]
+fn each_effort_has_a_name_and_parses_back() {
+    for (effort, name) in [
+        (Effort::Fast, "fast"),
+        (Effort::Balanced, "balanced"),
+        (Effort::Maximum, "maximum"),
+    ] {
+        assert_eq!(effort.to_string(), name);
+        assert_eq!(name.parse::<Effort>(), Ok(effort));
+    }
+    assert!("unknown".parse::<Effort>().is_err());
+}
+
+#[test]
+fn each_evidence_class_has_a_name_and_parses_back() {
+    for (evidence, name) in [
+        (EvidenceClass::Exact, "exact"),
+        (EvidenceClass::Generic, "generic"),
+        (EvidenceClass::Quarto1, "quarto1"),
+    ] {
+        assert_eq!(evidence.to_string(), name);
+        assert_eq!(name.parse::<EvidenceClass>(), Ok(evidence));
+    }
+    assert!("heuristic".parse::<EvidenceClass>().is_err());
+}
+
+#[test]
+fn each_font_policy_has_a_name_and_parses_back() {
+    for (policy, name) in [
+        (FontPolicy::Auto, "auto"),
+        (FontPolicy::Force, "force"),
+        (FontPolicy::Off, "off"),
+    ] {
+        assert_eq!(policy.to_string(), name);
+        assert_eq!(name.parse::<FontPolicy>(), Ok(policy));
+    }
+    assert!("none".parse::<FontPolicy>().is_err());
+}
+
+#[test]
+fn each_licenses_policy_has_a_name_and_parses_back() {
+    for (licenses, name) in [(Licenses::Keep, "keep"), (Licenses::Strip, "strip")] {
+        assert_eq!(licenses.to_string(), name);
+        assert_eq!(name.parse::<Licenses>(), Ok(licenses));
+    }
+    assert!("drop".parse::<Licenses>().is_err());
+}
+
+#[test]
+fn each_png_policy_has_a_name_and_parses_back() {
+    for (png, name) in [
+        (PngPolicy::LosslessWebp, "lossless-webp"),
+        (PngPolicy::Preserve, "preserve"),
+    ] {
+        assert_eq!(png.to_string(), name);
+        assert_eq!(name.parse::<PngPolicy>(), Ok(png));
+    }
+    assert!("webp".parse::<PngPolicy>().is_err());
+}
+
+#[test]
+fn each_rule_has_a_name_and_authorizing_evidence() {
+    for (rule, name, evidence) in [
+        (
+            Rule::QuartoDeadLibrary,
+            "quarto-dead-library",
+            EvidenceClass::Quarto1,
+        ),
+        (Rule::ScriptMinified, "script-minified", EvidenceClass::Exact),
+        (
+            Rule::StylesheetPruned,
+            "stylesheet-pruned",
+            EvidenceClass::Generic,
+        ),
+        (
+            Rule::PngRecompressed,
+            "png-recompressed",
+            EvidenceClass::Generic,
+        ),
+        (
+            Rule::ImageReencoded,
+            "image-reencoded",
+            EvidenceClass::Generic,
+        ),
+        (
+            Rule::FontKeptWhole,
+            "font-kept-whole",
+            EvidenceClass::Generic,
+        ),
+        (
+            Rule::FontSubsetted,
+            "font-subsetted",
+            EvidenceClass::Generic,
+        ),
+        (Rule::PackResources, "pack-resources", EvidenceClass::Generic),
+    ] {
+        assert_eq!(rule.to_string(), name);
+        assert_eq!(rule.evidence_class(), evidence);
+    }
 }
 
 #[test]
@@ -94,7 +198,7 @@ fn a_remote_resource_warning_carries_the_url() {
         "<script src=\"https://cdn.example.com/lib.js\"></script>",
         "<p>hi",
     );
-    let out = octavo::optimize(&src, Mode::Serve).expect("supported");
+    let out = octavo::optimize(&src, Packaging::Plain).expect("supported");
     let [warning] = out.warnings.as_slice() else {
         panic!("expected one warning");
     };
@@ -110,9 +214,34 @@ fn a_remote_resource_warning_carries_the_url() {
 }
 
 #[test]
-fn defaults_are_lossless_and_subset_text_fonts() {
-    let options = Options::default();
-    assert!(options.images.is_none());
-    assert!(options.subset_text_fonts);
-    assert!(!options.strip_licenses);
+fn defaults_use_safe_orthogonal_settings() {
+    let config = Config::default();
+    assert!(config.images.is_none());
+    assert_eq!(config.fonts, FontPolicy::Auto);
+    assert_eq!(config.licenses, Licenses::Keep);
+    assert_eq!(config.png, PngPolicy::LosslessWebp);
+    assert_eq!(config.packaging, Packaging::Plain);
+    assert_eq!(config.effort, Effort::Balanced);
+    assert_eq!(config.evidence, EvidenceClass::Generic);
+    assert!(config.tuning.is_none());
+    assert!(config.cache.is_none());
+}
+
+#[test]
+fn audit_report_aggregates_records() {
+    let mut entry = AuditEntry::default();
+    entry.count = 2;
+    entry.before = 1000;
+    entry.after = 400;
+    assert_eq!(entry.saved(), 600);
+
+    let src = page(
+        "<script>let a = 1; let b = 2;</script>",
+        "<p class=\"test\">hello</p>",
+    );
+    let out = octavo::optimize(&src, Packaging::Plain).expect("supported");
+    let report: AuditReport = out.report();
+    assert!(report.by_transform.contains_key(&Transform::MinifiedScript));
+    assert!(report.by_rule.contains_key(&Rule::ScriptMinified));
+    assert!(report.by_evidence.contains_key(&EvidenceClass::Exact));
 }

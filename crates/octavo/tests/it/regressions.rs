@@ -1,5 +1,5 @@
 use crate::common::{archive, busy_script, data_uri, page, serve, simplified};
-use octavo::{Compression, Mode, Options, Tuning, optimize, simplify};
+use octavo::{Config, Effort, FontPolicy, Licenses, Packaging, Tuning, optimize, simplify};
 
 #[test]
 fn css_comments_mentioning_custom_properties_do_not_swallow_rules() {
@@ -220,7 +220,7 @@ fn scanner_survives_stray_angle_brackets_and_unterminated_constructs() {
         "<script>x</scriptx><script>y</script>",
         "<svg><svg><circle/></svg>",
     ] {
-        let _ = simplify(src, Options::default());
+        let _ = simplify(src, Config::default());
     }
 }
 
@@ -235,7 +235,7 @@ fn every_truncation_of_a_realistic_document_is_handled_without_panicking() {
         "<p class=\"a\">héllo ✓</p><svg><circle r=\"1\"/></svg>",
     );
     for end in (0..whole.len()).filter(|i| whole.is_char_boundary(*i)) {
-        let _ = optimize(&whole[..end], Mode::Archive);
+        let _ = optimize(&whole[..end], Packaging::Packed);
     }
 }
 
@@ -357,7 +357,7 @@ fn an_html_word_inside_a_script_is_not_a_document() {
         "<!-- <html> --><p>x</p>",
     ] {
         assert_eq!(
-            optimize(src, Mode::Serve).unwrap_err(),
+            optimize(src, Packaging::Plain).unwrap_err(),
             octavo::Error::NotHtml,
             "{src}"
         );
@@ -377,11 +377,11 @@ fn a_css_banner_is_printed_exactly_once_unless_licenses_are_stripped() {
     assert_eq!(kept.matches("Bootstrap v5.3.3").count(), 1, "{kept}");
     assert!(!kept.contains(".dead-0"), "{kept}");
     let stripped = simplified(&src, {
-        let mut options = Options::default();
-        options.strip_licenses = true;
-        options
+        let mut config = Config::default();
+        config.licenses = Licenses::Strip;
+        config
     })
-    .pack(Mode::Serve);
+    .package(Packaging::Plain);
     assert!(
         !stripped.html.contains("Bootstrap v5.3.3"),
         "{}",
@@ -440,11 +440,24 @@ fn font_page(text: &str) -> String {
     page(&format!("<style>{css}</style>"), &format!("<p>{text}</p>"))
 }
 
-fn cache_options(directory: &std::path::Path) -> Options {
-    let mut options = Options::default();
-    options.subset_text_fonts = false;
-    options.cache_directory = Some(directory.to_path_buf());
-    options
+fn cache_options(directory: &std::path::Path) -> Config {
+    struct TestCache(std::path::PathBuf);
+    impl octavo::Cache for TestCache {
+        fn get(&self, key: &str) -> Option<Vec<u8>> {
+            std::fs::read(self.0.join(key)).ok()
+        }
+        fn set(&self, key: &str, value: &[u8]) {
+            let path = self.0.join(key);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(path, value);
+        }
+    }
+    let mut config = Config::default();
+    config.fonts = FontPolicy::Off;
+    config.cache = Some(std::sync::Arc::new(TestCache(directory.to_path_buf())));
+    config
 }
 
 fn scratch(name: &str) -> std::path::PathBuf {
@@ -457,14 +470,14 @@ fn scratch(name: &str) -> std::path::PathBuf {
 fn a_cached_font_gives_exactly_the_same_output_as_a_converted_one() {
     let directory = scratch("font-cache-same");
     let html = font_page("A");
-    let mut whole = Options::default();
-    whole.subset_text_fonts = false;
+    let mut whole = Config::default();
+    whole.fonts = FontPolicy::Off;
     let uncached = simplify(&html, whole)
         .expect("supported")
-        .pack(Mode::Serve)
+        .package(Packaging::Plain)
         .html;
     let first = simplify(&html, cache_options(&directory)).expect("supported");
-    let first = first.pack(Mode::Serve).html;
+    let first = first.package(Packaging::Plain).html;
     assert_eq!(
         std::fs::read_dir(directory.join("fonts"))
             .expect("cache written")
@@ -472,7 +485,7 @@ fn a_cached_font_gives_exactly_the_same_output_as_a_converted_one() {
         1
     );
     let second = simplify(&html, cache_options(&directory)).expect("supported");
-    let second = second.pack(Mode::Serve).html;
+    let second = second.package(Packaging::Plain).html;
     assert_eq!(first, uncached);
     assert_eq!(second, uncached);
     assert_eq!(
@@ -488,7 +501,7 @@ fn only_whole_fonts_are_cached_and_subsets_never_add_entries() {
     let directory = scratch("font-cache-whole-only");
     let html = font_page("A");
     let mut subset = cache_options(&directory);
-    subset.subset_text_fonts = true;
+    subset.fonts = FontPolicy::Auto;
     simplify(&font_page("A"), subset.clone()).expect("supported");
     simplify(&font_page("B"), subset).expect("supported");
     assert!(!directory.join("fonts").exists());
@@ -516,18 +529,19 @@ fn a_damaged_cache_entry_is_ignored_and_replaced() {
     std::fs::write(&entry, b"not a cache entry").expect("overwrite");
     let out = simplify(&html, cache_options(&directory))
         .expect("supported")
-        .pack(Mode::Serve)
+        .package(Packaging::Plain)
         .html;
     assert!(out.contains("data:font/woff2"), "{out}");
     assert!(std::fs::read(&entry).expect("rewritten").len() > 20);
 }
 
-fn packed_size(html: &str, compression: Compression) -> usize {
-    let mut options = Options::default();
-    options.compression = compression;
-    simplify(html, options)
+fn packed_size(html: &str, effort: Effort, tuning: Option<Tuning>) -> usize {
+    let mut config = Config::default();
+    config.effort = effort;
+    config.tuning = tuning;
+    simplify(html, config)
         .expect("supported")
-        .pack(Mode::Archive)
+        .package(Packaging::Packed)
         .html
         .len()
 }
@@ -539,10 +553,10 @@ fn stronger_compression_is_never_larger() {
     tuning.woff2_quality = 0;
     tuning.png_preset = Some(0);
     tuning.brotli_quality = Some(0);
-    let weakest = Compression::Custom(tuning);
-    let sizes =
-        [Compression::Maximum, Compression::Balanced, weakest].map(|c| packed_size(&html, c));
-    assert!(sizes[0] <= sizes[1] && sizes[1] <= sizes[2], "{sizes:?}");
+    let maximum = packed_size(&html, Effort::Maximum, None);
+    let balanced = packed_size(&html, Effort::Balanced, None);
+    let weakest = packed_size(&html, Effort::Fast, Some(tuning));
+    assert!(maximum <= balanced && balanced <= weakest, "{maximum} {balanced} {weakest}");
 }
 
 #[test]
@@ -550,11 +564,11 @@ fn custom_font_quality_has_its_own_cache_entry() {
     let directory = scratch("font-cache-quality");
     let html = font_page("A");
     for woff2_quality in [3, 9, 9, 11] {
-        let mut options = cache_options(&directory);
+        let mut config = cache_options(&directory);
         let mut tuning = Tuning::BALANCED;
         tuning.woff2_quality = woff2_quality;
-        options.compression = Compression::Custom(tuning);
-        simplify(&html, options).expect("supported");
+        config.tuning = Some(tuning);
+        simplify(&html, config).expect("supported");
     }
     assert_eq!(
         std::fs::read_dir(directory.join("fonts"))

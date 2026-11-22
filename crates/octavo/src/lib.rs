@@ -10,17 +10,17 @@
 //! anything Octavo does not understand stays exactly as it was.
 //!
 //! ```
-//! use octavo::{optimize, Mode};
+//! use octavo::{Packaging, optimize};
 //!
 //! let html = "<!DOCTYPE html><html><head><style>.a{color:red}.b{color:blue}</style>\
 //!             </head><body><p class=a>hi</body></html>";
-//! let out = optimize(html, Mode::Serve)?;
+//! let out = optimize(html, Packaging::Plain)?;
 //! assert!(out.html.contains(".a{color:red}") && !out.html.contains(".b"));
 //! # Ok::<(), octavo::Error>(())
 //! ```
 //!
-//! To try several [`Mode`]s on one document, run [`simplify`] once and call
-//! [`Simplified::pack`] for each mode.
+//! To try several packaging formats on one document, run [`simplify`] once and call
+//! [`Simplified::package`] for each packaging target.
 
 mod ascii;
 mod cache;
@@ -37,289 +37,330 @@ mod pack;
 mod quarto;
 mod words;
 
+pub use cache::Cache;
 pub use check::Url;
 pub use embed::{Embedded, Loaded, Resources, embed_resources};
 
 use doc::{Doc, Edit, Edits};
 use std::{
+    collections::BTreeMap,
     fmt,
     num::{NonZeroU32, NonZeroUsize},
     ops::Range,
     str::FromStr,
+    sync::Arc,
 };
 
-/// How aggressively a document is rewritten.
-///
-/// The levels nest: each includes everything the previous level does, plus
-/// more.
-///
-/// ```
-/// use octavo::{optimize, Mode};
-///
-/// let serve = optimize("<html><head></head><body></body></html>", Mode::Serve)?;
-/// # assert_eq!(serve.html, "<html><head></head><body></body></html>");
-/// # Ok::<(), octavo::Error>(())
-/// ```
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
-pub enum Mode {
-    /// Smallest output when the server compresses it (removes what the page does
-    /// not use, minifies, ordinary elements).
+pub enum Packaging {
     #[default]
-    Serve,
-    /// Smallest standalone file that still works with JavaScript off (Serve plus
-    /// scripts and data compressed into one blob, styles stay real).
-    Portable,
-    /// Smallest standalone file, needs JavaScript (everything including styles,
-    /// SVG and images in the blob).
-    Archive,
+    Plain,
+    Scripts,
+    Packed,
 }
 
-impl fmt::Display for Mode {
+impl fmt::Display for Packaging {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
-            Mode::Serve => "serve",
-            Mode::Portable => "portable",
-            Mode::Archive => "archive",
+            Packaging::Plain => "plain",
+            Packaging::Scripts => "scripts",
+            Packaging::Packed => "packed",
         })
     }
 }
 
-impl FromStr for Mode {
+impl FromStr for Packaging {
     type Err = String;
 
-    /// Parses the lowercase names `serve`, `portable` and `archive`.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "serve" => Ok(Mode::Serve),
-            "portable" => Ok(Mode::Portable),
-            "archive" => Ok(Mode::Archive),
+            "plain" => Ok(Packaging::Plain),
+            "scripts" => Ok(Packaging::Scripts),
+            "packed" => Ok(Packaging::Packed),
             other => Err(format!(
-                "unknown level '{other}', expected one of: serve, portable, archive"
+                "unknown packaging '{other}', expected one of: plain, scripts, packed"
             )),
         }
     }
 }
 
-/// Settings for [`simplify`].
-///
-/// The default keeps images lossless, subsets text fonts to the characters
-/// the document uses (keeping hinted static fonts whole, because Chromium
-/// draws them with slightly different strokes on Linux after subsetting)
-/// and keeps license notices.
-///
-/// ```
-/// use octavo::{simplify, Options};
-///
-/// let options = Options::default();
-/// assert!(options.images.is_none() && options.subset_text_fonts && !options.strip_licenses);
-/// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
-pub struct Options {
-    /// Re-encode embedded PNG and JPEG images when that makes them smaller.
-    /// `None` keeps them as they are, recompressed losslessly.
-    pub images: Option<ImageEncoding>,
-    /// Subset embedded text fonts to the characters in the document plus
-    /// the Latin letters, digits and punctuation, keeping every layout
-    /// feature and all kerning. This is often the largest saving in a themed
-    /// document, and it is on by default. Hinted static fonts, those with
-    /// `fpgm`, `prep` and `cvt ` tables, are kept whole instead, because
-    /// Chromium on Linux draws them with slightly different strokes after
-    /// subsetting; variable fonts and fonts without hinting programs are
-    /// subsetted. When a font is kept whole for this reason, an entry with
-    /// [`Transform::FontKeptWhole`] appears in [`Applied`], so audits show
-    /// it. Text that JavaScript adds later with characters outside that set
-    /// falls back to a system font. Icon fonts are always subsetted to the
-    /// glyphs the CSS can reach.
-    pub subset_text_fonts: bool,
-    /// Drop the license and copyright notices of bundled libraries and
-    /// fonts. Most open-source licenses require them to stay with copies,
-    /// so only set this if the notices are shipped some other way. By
-    /// default the notices in scripts and stylesheets stay where they are,
-    /// and the copyright and license fields of a subsetted font move into a
-    /// comment beside its `@font-face`.
-    pub strip_licenses: bool,
-    /// Keep PNG images as PNG. By default an 8-bit PNG without colour
-    /// profile, gamma or animation chunks is re-encoded as lossless WebP when
-    /// that is smaller, which decodes to the same pixels. Every current
-    /// browser reads WebP, and on screenshots and charts it is often a third
-    /// of the PNG's size.
-    pub keep_png: bool,
-    /// The most memory, in bytes, that the lossless WebP encoder may use at
-    /// once across all images, or `None` for [`Options::DEFAULT_IMAGE_MEMORY`].
-    /// The encoder needs about 20 bytes per pixel, so an 81 megapixel image
-    /// needs about 1.6 GB. Images that need more than the limit stay PNG, and
-    /// the others wait for memory, so a lower limit costs time and a higher one
-    /// costs memory.
-    pub image_memory: Option<u64>,
-    /// The root of the cache that remembers work between runs, with one
-    /// subfolder per kind of entry. Today that is `fonts`: fonts converted
-    /// whole, which are the slowest step in most documents and repeat across
-    /// documents rendered by the same tool. There is one file per distinct
-    /// font, named by a hash of its bytes and quality; subsetted fonts are
-    /// cheap and are never stored, so the folder does not fill with variants.
-    /// `None` keeps nothing.
-    pub cache_directory: Option<std::path::PathBuf>,
-    /// How hard the compressors for fonts, PNG images and the packed blob
-    /// work. It is independent of the [`Mode`].
-    pub compression: Compression,
-}
-
-impl Options {
-    /// The memory limit for the lossless WebP encoder when
-    /// [`Options::image_memory`] is `None`: 2.5 GiB, which fits one 81
-    /// megapixel image at a time.
-    pub const DEFAULT_IMAGE_MEMORY: u64 = 2_684_354_560;
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            images: None,
-            subset_text_fonts: true,
-            strip_licenses: false,
-            keep_png: false,
-            image_memory: None,
-            cache_directory: None,
-            compression: Compression::default(),
-        }
-    }
-}
-
-/// How much time to spend compressing.
-///
-/// ```
-/// use octavo::{Compression, Tuning};
-///
-/// assert_eq!(Compression::default(), Compression::Balanced);
-/// assert!(Compression::Maximum.tuning().woff2_quality > Compression::Balanced.tuning().woff2_quality);
-/// let mut tuning = Tuning::BALANCED;
-/// tuning.png_preset = Some(0);
-/// let custom = Compression::Custom(tuning);
-/// assert_eq!(custom.tuning().png_preset, Some(0));
-/// ```
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Compression {
-    /// A good balance: output a few percent larger than the smallest
-    /// possible, in a fraction of the time.
+pub enum Effort {
+    Fast,
     #[default]
     Balanced,
-    /// The slowest, strongest settings everywhere, whatever they cost in
-    /// time. The output is usually a little smaller and takes several times
-    /// as long, so use it only when every byte matters.
     Maximum,
-    /// Your own settings.
-    Custom(Tuning),
 }
 
-impl Compression {
-    /// The settings this choice stands for.
+impl Effort {
     #[must_use]
-    pub fn tuning(self) -> Tuning {
+    pub const fn tuning(self) -> Tuning {
         match self {
-            Compression::Balanced => Tuning::BALANCED,
-            Compression::Maximum => Tuning::MAXIMUM,
-            Compression::Custom(tuning) => tuning,
+            Effort::Fast => Tuning::FAST,
+            Effort::Balanced => Tuning::BALANCED,
+            Effort::Maximum => Tuning::MAXIMUM,
         }
     }
 }
 
-/// The compressor settings behind a [`Compression`]. Values above a
-/// setting's range count as its maximum.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+impl fmt::Display for Effort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            Effort::Fast => "fast",
+            Effort::Balanced => "balanced",
+            Effort::Maximum => "maximum",
+        })
+    }
+}
+
+impl FromStr for Effort {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "fast" => Ok(Effort::Fast),
+            "balanced" => Ok(Effort::Balanced),
+            "maximum" => Ok(Effort::Maximum),
+            other => Err(format!(
+                "unknown effort '{other}', expected one of: fast, balanced, maximum"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
-pub struct Tuning {
-    /// The Brotli quality of re-encoded WOFF2 fonts, 0 to 11.
-    pub woff2_quality: u8,
-    /// The oxipng preset for PNG images, 0 (fast) to 6 (thorough). `None`
-    /// picks a preset by image size: big images get the quick ones.
-    pub png_preset: Option<u8>,
-    /// The Brotli quality of the packed blob, 0 to 11. `None` uses 6 and keeps
-    /// the result only when the page comes out smaller than with DEFLATE,
-    /// counting Brotli's own decoder. Brotli finds
-    /// repeated content far apart, such as the same image on many slides,
-    /// which DEFLATE cannot.
-    pub brotli_quality: Option<u8>,
+pub enum EvidenceClass {
+    Exact,
+    #[default]
+    Generic,
+    Quarto1,
 }
 
-impl Tuning {
-    /// The Brotli quality used when [`Tuning::brotli_quality`] is `None`.
-    /// The reference encoder uses its large-input hasher at quality 4 only for
-    /// inputs over 1 MB and the H5 and H6 hashers from 5 to 9. On an 11 MB
-    /// payload quality 5 did not beat DEFLATE where 4 and 6 to 9 beat it by 15
-    /// to 18 percent, so 6 is the lowest quality above that gap. It is within 2
-    /// percent of 7 in about half a second less.
-    pub const DEFAULT_BROTLI_QUALITY: u8 = 6;
-
-    /// What [`Compression::Balanced`] uses.
-    pub const BALANCED: Tuning = Tuning {
-        woff2_quality: 9,
-        png_preset: None,
-        brotli_quality: None,
-    };
-    /// What [`Compression::Maximum`] uses.
-    pub const MAXIMUM: Tuning = Tuning {
-        woff2_quality: 11,
-        png_preset: Some(6),
-        brotli_quality: Some(11),
-    };
-}
-
-/// The quality of a re-encoded image.
-///
-/// ```
-/// use octavo::Quality;
-///
-/// assert_eq!(Quality::new(80).map(Quality::get), Some(80));
-/// assert!(Quality::new(0).is_none() && Quality::new(101).is_none());
-/// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Quality(u8);
-
-impl Quality {
-    const AVIF: Quality = Quality(60);
-    const WEBP: Quality = Quality(80);
-
-    /// Creates a quality, if it is from 1 to 100.
-    ///
-    /// ```
-    /// use octavo::Quality;
-    ///
-    /// assert!(Quality::new(60).is_some());
-    /// assert!(Quality::new(0).is_none());
-    /// ```
-    pub fn new(quality: u8) -> Option<Self> {
-        (1..=100).contains(&quality).then_some(Quality(quality))
+impl fmt::Display for EvidenceClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            EvidenceClass::Exact => "exact",
+            EvidenceClass::Generic => "generic",
+            EvidenceClass::Quarto1 => "quarto1",
+        })
     }
+}
 
-    /// The quality as a number.
-    ///
-    /// ```
-    /// use octavo::Quality;
-    ///
-    /// assert_eq!(Quality::new(80).map(Quality::get), Some(80));
-    /// ```
+impl FromStr for EvidenceClass {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "exact" => Ok(EvidenceClass::Exact),
+            "generic" => Ok(EvidenceClass::Generic),
+            "quarto1" => Ok(EvidenceClass::Quarto1),
+            other => Err(format!(
+                "unknown evidence class '{other}', expected one of: exact, generic, quarto1"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum FontPolicy {
+    #[default]
+    Auto,
+    Force,
+    Off,
+}
+
+impl fmt::Display for FontPolicy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            FontPolicy::Auto => "auto",
+            FontPolicy::Force => "force",
+            FontPolicy::Off => "off",
+        })
+    }
+}
+
+impl FromStr for FontPolicy {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "auto" => Ok(FontPolicy::Auto),
+            "force" => Ok(FontPolicy::Force),
+            "off" => Ok(FontPolicy::Off),
+            other => Err(format!(
+                "unknown font policy '{other}', expected one of: auto, force, off"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Licenses {
+    #[default]
+    Keep,
+    Strip,
+}
+
+impl fmt::Display for Licenses {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            Licenses::Keep => "keep",
+            Licenses::Strip => "strip",
+        })
+    }
+}
+
+impl FromStr for Licenses {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "keep" => Ok(Licenses::Keep),
+            "strip" => Ok(Licenses::Strip),
+            other => Err(format!(
+                "unknown licenses policy '{other}', expected one of: keep, strip"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum PngPolicy {
+    #[default]
+    LosslessWebp,
+    Preserve,
+}
+
+impl fmt::Display for PngPolicy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            PngPolicy::LosslessWebp => "lossless-webp",
+            PngPolicy::Preserve => "preserve",
+        })
+    }
+}
+
+impl FromStr for PngPolicy {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "lossless-webp" => Ok(PngPolicy::LosslessWebp),
+            "preserve" => Ok(PngPolicy::Preserve),
+            other => Err(format!(
+                "unknown png policy '{other}', expected one of: lossless-webp, preserve"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Rule {
+    QuartoDeadLibrary,
+    ScriptMinified,
+    StylesheetPruned,
+    PngRecompressed,
+    ImageReencoded,
+    FontKeptWhole,
+    FontSubsetted,
+    PackResources,
+}
+
+impl Rule {
     #[must_use]
-    pub fn get(self) -> u8 {
-        self.0
+    pub const fn evidence_class(&self) -> EvidenceClass {
+        match self {
+            Rule::QuartoDeadLibrary => EvidenceClass::Quarto1,
+            Rule::ScriptMinified => EvidenceClass::Exact,
+            Rule::StylesheetPruned
+            | Rule::PngRecompressed
+            | Rule::ImageReencoded
+            | Rule::FontKeptWhole
+            | Rule::FontSubsetted
+            | Rule::PackResources => EvidenceClass::Generic,
+        }
     }
 }
 
-/// A lossy image format.
-///
-/// ```
-/// use octavo::ImageFormat;
-///
-/// assert_eq!("webp".parse::<ImageFormat>(), Ok(ImageFormat::Webp));
-/// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+impl fmt::Display for Rule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            Rule::QuartoDeadLibrary => "quarto-dead-library",
+            Rule::ScriptMinified => "script-minified",
+            Rule::StylesheetPruned => "stylesheet-pruned",
+            Rule::PngRecompressed => "png-recompressed",
+            Rule::ImageReencoded => "image-reencoded",
+            Rule::FontKeptWhole => "font-kept-whole",
+            Rule::FontSubsetted => "font-subsetted",
+            Rule::PackResources => "pack-resources",
+        })
+    }
+}
+
+#[derive(Clone)]
+#[non_exhaustive]
+pub struct Config {
+    pub packaging: Packaging,
+    pub effort: Effort,
+    pub evidence: EvidenceClass,
+    pub fonts: FontPolicy,
+    pub licenses: Licenses,
+    pub png: PngPolicy,
+    pub images: Option<ImageEncoding>,
+    pub image_memory: Option<NonZeroUsize>,
+    pub tuning: Option<Tuning>,
+    pub cache: Option<Arc<dyn Cache>>,
+}
+
+impl Config {
+    pub const DEFAULT_IMAGE_MEMORY: usize = 128 * 1_048_576;
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            packaging: Packaging::default(),
+            effort: Effort::default(),
+            evidence: EvidenceClass::default(),
+            fonts: FontPolicy::default(),
+            licenses: Licenses::default(),
+            png: PngPolicy::default(),
+            images: None,
+            image_memory: None,
+            tuning: None,
+            cache: None,
+        }
+    }
+}
+
+impl fmt::Debug for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Config")
+            .field("packaging", &self.packaging)
+            .field("effort", &self.effort)
+            .field("evidence", &self.evidence)
+            .field("fonts", &self.fonts)
+            .field("licenses", &self.licenses)
+            .field("png", &self.png)
+            .field("images", &self.images)
+            .field("image_memory", &self.image_memory)
+            .field("tuning", &self.tuning)
+            .field("cache", &self.cache.as_ref().map(|_| "..."))
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum ImageFormat {
-    /// AVIF: the smallest, and decoded by every current browser.
     Avif,
-    /// WebP: larger than AVIF, but faster to encode.
     Webp,
 }
 
@@ -335,90 +376,184 @@ impl fmt::Display for ImageFormat {
 impl FromStr for ImageFormat {
     type Err = String;
 
-    /// Parses the lowercase names `avif` and `webp`.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "avif" => Ok(ImageFormat::Avif),
             "webp" => Ok(ImageFormat::Webp),
             other => Err(format!(
-                "unknown format '{other}', expected one of: avif, webp"
+                "unknown image format '{other}', expected one of: avif, webp"
             )),
         }
     }
 }
 
-/// How to re-encode images.
-///
-/// ```
-/// use octavo::ImageEncoding;
-/// use octavo::ImageFormat;
-///
-/// let encoding = ImageEncoding::new(ImageFormat::Avif);
-/// assert_eq!(encoding.quality.get(), 60);
-/// assert_eq!(encoding.max_side.map(|side| side.get()), Some(3840));
-/// ```
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Quality(u8);
+
+impl Quality {
+    #[must_use]
+    pub const fn new(value: u8) -> Option<Self> {
+        if value >= 1 && value <= 100 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl fmt::Display for Quality {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ImageEncoding {
-    /// The format to encode to.
     pub format: ImageFormat,
-    /// The quality of the re-encoded image, from 1 to 100.
     pub quality: Quality,
-    /// Shrink images whose longest side is larger than this many pixels,
-    /// keeping the aspect ratio. Layout is unchanged while the page never
-    /// shows the image larger than this.
     pub max_side: Option<NonZeroU32>,
 }
 
 impl ImageEncoding {
-    /// The defaults for `format`: quality 60 for AVIF and 80 for WebP, and a
-    /// 3840 pixel cap on the longest side.
-    ///
-    /// ```
-    /// use octavo::{ImageEncoding, ImageFormat};
-    ///
-    /// let encoding = ImageEncoding::new(ImageFormat::Webp);
-    /// assert_eq!(encoding.quality.get(), 80);
-    /// ```
+    pub const DEFAULT_AVIF_QUALITY: Quality = Quality(60);
+    pub const DEFAULT_WEBP_QUALITY: Quality = Quality(80);
+    pub const DEFAULT_MAX_SIDE: NonZeroU32 = match NonZeroU32::new(3840) {
+        Some(side) => side,
+        None => panic!("non-zero side"),
+    };
+
     #[must_use]
-    pub fn new(format: ImageFormat) -> Self {
+    pub const fn new(format: ImageFormat) -> Self {
         let quality = match format {
-            ImageFormat::Avif => Quality::AVIF,
-            ImageFormat::Webp => Quality::WEBP,
+            ImageFormat::Avif => Self::DEFAULT_AVIF_QUALITY,
+            ImageFormat::Webp => Self::DEFAULT_WEBP_QUALITY,
         };
-        ImageEncoding {
+        Self {
             format,
             quality,
-            max_side: NonZeroU32::new(3840),
+            max_side: Some(Self::DEFAULT_MAX_SIDE),
         }
     }
 }
 
-/// The kind of change a stage made.
-///
-/// ```
-/// use octavo::Transform;
-///
-/// assert_eq!(Transform::DeadLibrary.to_string(), "dead-library");
-/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BrotliQuality(u8);
+
+impl BrotliQuality {
+    #[must_use]
+    pub const fn new(value: u8) -> Option<Self> {
+        if value <= 11 { Some(Self(value)) } else { None }
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl fmt::Display for BrotliQuality {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Tuning {
+    pub woff2_quality: u8,
+    pub png_preset: Option<u8>,
+    pub brotli_quality: Option<u8>,
+}
+
+impl Tuning {
+    pub const DEFAULT_BROTLI_QUALITY: u8 = 9;
+
+    pub const FAST: Self = Self {
+        woff2_quality: 1,
+        png_preset: Some(0),
+        brotli_quality: Some(5),
+    };
+
+    pub const BALANCED: Self = Self {
+        woff2_quality: 11,
+        png_preset: None,
+        brotli_quality: None,
+    };
+
+    pub const MAXIMUM: Self = Self {
+        woff2_quality: 11,
+        png_preset: Some(6),
+        brotli_quality: Some(11),
+    };
+}
+
+impl Default for Tuning {
+    fn default() -> Self {
+        Self::BALANCED
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Library {
+    Tippy,
+    Bootstrap,
+    Popper,
+    Clipboard,
+    Anchor,
+}
+
+impl Library {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Library::Tippy => "tippy",
+            Library::Bootstrap => "bootstrap",
+            Library::Popper => "Popper",
+            Library::Clipboard => "ClipboardJS",
+            Library::Anchor => "AnchorJS",
+        }
+    }
+}
+
+impl fmt::Display for Library {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(self.name())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Target {
+    Library(Library),
+    Resource(String),
+    Resources(NonZeroUsize),
+}
+
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Target::Library(library) => library.fmt(f),
+            Target::Resource(name) => f.pad(name),
+            Target::Resources(count) => write!(f, "{} resources", count.get()),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Transform {
-    /// A Quarto runtime library the document never uses was removed.
     DeadLibrary,
-    /// A script was minified.
     MinifiedScript,
-    /// A stylesheet lost unreachable rules and was minified.
     PrunedStylesheet,
-    /// A PNG was recompressed losslessly.
     RecompressedPng,
-    /// An image was re-encoded in a lossy format.
     ReencodedImage,
-    /// An hinted static text font was kept whole instead of subsetted,
-    /// because Chromium draws hinted static fonts differently on Linux
-    /// after subsetting.
     FontKeptWhole,
-    /// Resources were compressed into one blob.
     Packed,
 }
 
@@ -436,199 +571,110 @@ impl fmt::Display for Transform {
     }
 }
 
-/// A bundled Quarto library, named by the global it defined.
-///
-/// ```
-/// use octavo::{Library, Target};
-///
-/// assert_eq!(Target::Library(Library::Clipboard).to_string(), "ClipboardJS");
-/// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum Library {
-    /// `tippy.js`, bundled with Quarto to power footnote, citation and
-    /// cross-reference popups.
-    Tippy,
-    /// `Bootstrap` v5, the CSS framework behind every themed document.
-    Bootstrap,
-    /// `@popperjs/core`, the positioning engine behind Tippy.
-    Popper,
-    /// `clipboard.js` v2, bundled for the copy-code buttons.
-    Clipboard,
-    /// `AnchorJS`, bundled for the heading anchor links.
-    Anchor,
-}
-
-impl Library {
-    /// The name of the global the library defines, as written in the bundled
-    /// source.
-    ///
-    /// ```
-    /// use octavo::Library;
-    ///
-    /// assert_eq!(Library::Clipboard.name(), "ClipboardJS");
-    /// ```
-    #[must_use]
-    pub fn name(self) -> &'static str {
-        match self {
-            Library::Tippy => "tippy",
-            Library::Bootstrap => "bootstrap",
-            Library::Popper => "Popper",
-            Library::Clipboard => "ClipboardJS",
-            Library::Anchor => "AnchorJS",
-        }
-    }
-}
-
-impl fmt::Display for Library {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad(self.name())
-    }
-}
-
-/// What a transformation changed.
-///
-/// ```
-/// use octavo::Target;
-/// use std::num::NonZeroUsize;
-///
-/// assert_eq!(Target::Resources(NonZeroUsize::new(3).expect("non-zero")).to_string(), "3 resources");
-/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum Target {
-    /// A bundled library, named by the global it defined.
-    Library(Library),
-    /// A resource of the document, named by its `id` or by its element name.
-    Resource(String),
-    /// Resources compressed into one blob.
-    Resources(NonZeroUsize),
-}
-
-impl fmt::Display for Target {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Target::Library(library) => library.fmt(f),
-            Target::Resource(name) => f.pad(name),
-            Target::Resources(count) => write!(f, "{} resources", count.get()),
-        }
-    }
-}
-
-/// One transformation and the bytes it saved.
-///
-/// ```
-/// use octavo::optimize;
-/// use octavo::Mode;
-///
-/// let out = optimize("<html><head></head><body></body></html>", Mode::Serve)?;
-/// assert!(out.applied.iter().all(|step| step.after <= step.before));
-/// # Ok::<(), octavo::Error>(())
-/// ```
-#[derive(Clone, Debug)]
-#[non_exhaustive]
 pub struct Applied {
-    /// What kind of change this was.
+    pub rule: Rule,
+    pub evidence: EvidenceClass,
     pub transform: Transform,
-    /// What it changed.
     pub target: Target,
-    /// Size before, in bytes.
     pub before: usize,
-    /// Size after, in bytes.
     pub after: usize,
 }
 
-/// One edit the engine rejected because another edit claimed the same bytes.
-///
-/// Skipped edits are not applied and their sizes do not contribute to the
-/// byte accounting: the `after` minus `before` deltas of the [`Applied`]
-/// entries sum to the difference between the output and input sizes.
-#[derive(Clone, Debug)]
+impl Applied {
+    #[must_use]
+    pub fn saved(&self) -> usize {
+        self.before.saturating_sub(self.after)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Skipped {
-    /// The transformation that lost.
+    pub rule: Rule,
+    pub evidence: EvidenceClass,
     pub transform: Transform,
-    /// What it would have changed.
     pub target: Target,
-    /// The transformation whose edit kept the contested bytes.
     pub winner: Transform,
 }
 
-/// Something worth knowing about a document that does not stop optimization.
-///
-/// ```
-/// use octavo::{optimize, Mode, Warning};
-///
-/// let remote = "<!DOCTYPE html><html><head>\
-///     <script src=\"https://cdn.example.com/lib.js\"></script></head><body></body></html>";
-/// let out = optimize(remote, Mode::Serve)?;
-/// assert!(out.warnings.iter().any(|warning| matches!(warning, Warning::RemoteResource(_))));
-/// # Ok::<(), octavo::Error>(())
-/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Warning {
-    /// The page loads a resource from the network, so it cannot work
-    /// offline. Carries the URL as written in the document.
     RemoteResource(Url),
 }
 
 impl fmt::Display for Warning {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Warning::RemoteResource(url) => {
-                write!(
-                    f,
-                    "loads {url} when opened, so the page does not work offline"
-                )
-            }
+            Warning::RemoteResource(url) => write!(
+                f,
+                "the document loads a resource from the network: {url}; \
+                 the optimized output still depends on that resource being reachable"
+            ),
         }
     }
 }
 
-/// An optimized document and what happened to it.
-///
-/// ```
-/// use octavo::{optimize, Mode};
-///
-/// let html = "<!DOCTYPE html><html><head></head><body><p>hi</p></body></html>";
-/// let out = optimize(html, Mode::Serve)?;
-/// assert!(out.applied.is_empty());
-/// # Ok::<(), octavo::Error>(())
-/// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AuditEntry {
+    pub count: usize,
+    pub before: usize,
+    pub after: usize,
+}
+
+impl AuditEntry {
+    #[must_use]
+    pub fn saved(&self) -> usize {
+        self.before.saturating_sub(self.after)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AuditReport {
+    pub by_transform: BTreeMap<Transform, AuditEntry>,
+    pub by_rule: BTreeMap<Rule, AuditEntry>,
+    pub by_evidence: BTreeMap<EvidenceClass, AuditEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Output {
-    /// The optimized HTML.
     pub html: String,
-    /// Every transformation applied, in order.
     pub applied: Vec<Applied>,
-    /// Every edit rejected because another edit claimed the same bytes, with
-    /// the transform that lost and the one that won.
-    ///
-    /// The `after` minus `before` deltas of `applied` sum to `html.len()`
-    /// minus the input length; skipped edits change nothing.
     pub skipped: Vec<Skipped>,
-    /// Things worth knowing about the input, such as resources it loads from
-    /// the network and therefore cannot work without one.
     pub warnings: Vec<Warning>,
 }
 
-/// Why a document cannot be optimized.
-///
-/// ```
-/// use octavo::{optimize, Error, Mode};
-///
-/// assert_eq!(optimize("just some words", Mode::Serve).unwrap_err(), Error::NotHtml);
-/// ```
+impl Output {
+    #[must_use]
+    pub fn report(&self) -> AuditReport {
+        let mut report = AuditReport::default();
+        for step in &self.applied {
+            let t = report.by_transform.entry(step.transform).or_default();
+            t.count += 1;
+            t.before += step.before;
+            t.after += step.after;
+
+            let r = report.by_rule.entry(step.rule).or_default();
+            r.count += 1;
+            r.before += step.before;
+            r.after += step.after;
+
+            let e = report.by_evidence.entry(step.evidence).or_default();
+            e.count += 1;
+            e.before += step.before;
+            e.after += step.after;
+        }
+        report
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error {
-    /// The input has no `<html>` element.
     NotHtml,
-    /// The document links to local files instead of containing them, which
-    /// means it was not rendered with `embed-resources: true`. Holds the
-    /// links in document order.
     NotSelfContained(Vec<Url>),
 }
 
@@ -662,59 +708,19 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// Whether `src` links no local file, which is what [`optimize`] and
-/// [`simplify`] require. A document that fails this check can be passed
-/// through [`embed_resources`] first.
-///
-/// ```
-/// use octavo::is_self_contained;
-///
-/// assert!(is_self_contained("<html><head><style>a{}</style></head></html>"));
-/// assert!(!is_self_contained("<html><head><script src=\"app.js\"></script></head></html>"));
-/// ```
 #[must_use]
 pub fn is_self_contained(src: &str) -> bool {
-    check::links(&Doc::new(src)).is_self_contained()
+    let doc = Doc::new(src);
+    check::is_html(&doc) && check::links(&doc).is_self_contained()
 }
 
-/// Optimizes `src` in the given mode with the default [`Options`].
-///
-/// # Errors
-///
-/// Fails if `src` is not an HTML document or is not self-contained.
-///
-/// ```
-/// use octavo::{optimize, Mode};
-///
-/// let html = "<!DOCTYPE html><html><head><style>.a{color:red}.b{color:blue}</style>\
-///             </head><body><p class=a>hi</p></body></html>";
-/// let out = optimize(html, Mode::Serve)?;
-/// assert!(out.html.contains(".a{color:red}") && !out.html.contains(".b"));
-/// # Ok::<(), octavo::Error>(())
-/// ```
-pub fn optimize(src: &str, mode: Mode) -> Result<Output, Error> {
-    Ok(simplify(src, Options::default())?.pack(mode))
+pub fn optimize(src: &str, packaging: Packaging) -> Result<Output, Error> {
+    let mut config = Config::default();
+    config.packaging = packaging;
+    Ok(simplify(src, config)?.package(packaging))
 }
 
-/// Runs the stages that do not depend on a [`Mode`].
-///
-/// Call [`Simplified::pack`] on the result for each mode to try.
-///
-/// # Errors
-///
-/// Fails if `src` is not an HTML document or is not self-contained.
-///
-/// ```
-/// use octavo::{simplify, Mode, Options};
-///
-/// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
-/// for mode in [Mode::Serve, Mode::Portable, Mode::Archive] {
-///     let out = simplified.pack(mode);
-///     println!("{mode}: {} bytes", out.html.len());
-/// }
-/// # Ok::<(), octavo::Error>(())
-/// ```
-pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
+pub fn simplify(src: &str, config: Config) -> Result<Simplified, Error> {
     let doc = Doc::new(src);
     if !check::is_html(&doc) {
         return Err(Error::NotHtml);
@@ -723,21 +729,18 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     if !links.is_self_contained() {
         return Err(Error::NotSelfContained(links.local().cloned().collect()));
     }
-    let licenses = if options.strip_licenses {
-        Licenses::Strip
-    } else {
-        Licenses::Keep
-    };
+    let tuning = config.tuning.unwrap_or_else(|| config.effort.tuning());
+    let licenses = config.licenses;
     let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
         || {
             images::stage(
                 &doc,
-                options.images,
-                options.compression.tuning(),
-                (!options.keep_png).then(|| {
-                    options
+                config.images,
+                tuning,
+                (config.png == PngPolicy::LosslessWebp).then(|| {
+                    config
                         .image_memory
-                        .unwrap_or(Options::DEFAULT_IMAGE_MEMORY)
+                        .map_or(Config::DEFAULT_IMAGE_MEMORY as u64, |m| m.get() as u64)
                 }),
             )
         },
@@ -753,10 +756,10 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
                     css::stage(
                         &doc,
                         &words,
-                        options.subset_text_fonts,
+                        config.fonts,
                         licenses,
-                        options.cache_directory.as_deref(),
-                        options.compression.tuning(),
+                        config.cache.as_deref(),
+                        tuning,
                     )
                 },
             );
@@ -774,6 +777,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         .kept()
         .iter()
         .map(|edit| Applied {
+            rule: edit.rule,
+            evidence: edit.rule.evidence_class(),
             transform: edit.transform,
             target: edit.target.clone(),
             before: edit.span.len(),
@@ -781,6 +786,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         })
         .collect();
     applied.extend(kept_whole.into_iter().map(|(family, bytes)| Applied {
+        rule: Rule::FontKeptWhole,
+        evidence: EvidenceClass::Generic,
         transform: Transform::FontKeptWhole,
         target: Target::Resource(family),
         before: bytes,
@@ -790,6 +797,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         .skipped()
         .iter()
         .map(|edit| Skipped {
+            rule: edit.rule,
+            evidence: edit.rule.evidence_class(),
             transform: edit.transform,
             target: edit.target.clone(),
             winner: edit.winner,
@@ -798,7 +807,6 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     let html = edits.apply(src);
     Ok(Simplified {
         scanned: html::Scanned::new(html),
-        compression: options.compression,
         applied,
         skipped,
         warnings: links
@@ -806,23 +814,10 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             .cloned()
             .map(Warning::RemoteResource)
             .collect(),
+        tuning,
     })
 }
 
-/// A document after the stages that do not depend on a [`Mode`].
-///
-/// Packing is the only step left, and it is the expensive one, so it is kept
-/// separate: try several modes on one `Simplified` without redoing the rest.
-///
-/// ```
-/// use octavo::{simplify, Mode, Options};
-///
-/// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
-/// assert_eq!(simplified.warnings().len(), 0);
-/// let out = simplified.pack(Mode::Portable);
-/// # assert_eq!(out.html, "<html><head></head><body></body></html>");
-/// # Ok::<(), octavo::Error>(())
-/// ```
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Simplified {
@@ -830,69 +825,45 @@ pub struct Simplified {
     applied: Vec<Applied>,
     skipped: Vec<Skipped>,
     warnings: Vec<Warning>,
-    compression: Compression,
+    tuning: Tuning,
 }
 
 impl Simplified {
-    /// Things worth knowing about the input, such as resources it loads from
-    /// the network. The same list appears on every [`Output`].
-    ///
-    /// ```
-    /// use octavo::{simplify, Options};
-    ///
-    /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
-    /// assert!(simplified.warnings().is_empty());
-    /// # Ok::<(), octavo::Error>(())
-    /// ```
     #[must_use]
     pub fn warnings(&self) -> &[Warning] {
         &self.warnings
     }
 
-    /// The edits that were rejected because another edit claimed the same
-    /// bytes. Each names the transform that lost and the one that won.
-    ///
-    /// ```
-    /// use octavo::{simplify, Options};
-    ///
-    /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
-    /// assert!(simplified.skipped().is_empty());
-    /// # Ok::<(), octavo::Error>(())
-    /// ```
     #[must_use]
     pub fn skipped(&self) -> &[Skipped] {
         &self.skipped
     }
 
-    /// Produces the final document for `mode`, keeping the unpacked document
-    /// when packing would not make it smaller.
-    ///
-    /// ```
-    /// use octavo::{simplify, Mode, Options};
-    ///
-    /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
-    /// let out = simplified.pack(Mode::Archive);
-    /// assert_eq!(out.html, "<html><head></head><body></body></html>");
-    /// # Ok::<(), octavo::Error>(())
-    /// ```
     #[must_use]
-    pub fn pack(&self, mode: Mode) -> Output {
+    pub fn applied(&self) -> &[Applied] {
+        &self.applied
+    }
+
+    #[must_use]
+    pub fn package(&self, packaging: Packaging) -> Output {
         let unpacked = || Output {
             html: self.scanned.html().to_string(),
             applied: self.applied.clone(),
             skipped: self.skipped.clone(),
             warnings: self.warnings.clone(),
         };
-        if mode == Mode::Serve {
+        if packaging == Packaging::Plain {
             return unpacked();
         }
-        let Some(packed) = pack::run(&self.scanned, mode, self.compression.tuning())
+        let Some(packed) = pack::run(&self.scanned, packaging, self.tuning)
             .filter(|p| p.html.len() < self.scanned.html().len())
         else {
             return unpacked();
         };
         let mut applied = self.applied.clone();
         applied.push(Applied {
+            rule: Rule::PackResources,
+            evidence: EvidenceClass::Generic,
             transform: Transform::Packed,
             target: Target::Resources(packed.blobs),
             before: self.scanned.html().len(),
@@ -906,48 +877,19 @@ impl Simplified {
         }
     }
 
-    /// Produces the final document for `mode`, but only if `accept` approves
-    /// it. A rejected result is replaced by the next safer mode (`Archive`,
-    /// then `Portable`, then `Serve`), and `None` means every mode was
-    /// rejected, so the caller should keep the original. `accept` sees each
-    /// candidate with the mode that produced it, and the mode returned is the
-    /// one that was accepted.
-    ///
-    /// Use it to put your own check, such as a browser comparison, between
-    /// Octavo and the file it writes.
-    ///
-    /// ```
-    /// use octavo::{simplify, Mode, Options};
-    ///
-    /// let simplified = simplify("<html><head></head><body></body></html>", Options::default())?;
-    /// let mut tried = Vec::new();
-    /// let accepted = simplified.pack_checked(Mode::Archive, |mode, _| {
-    ///     tried.push(mode);
-    ///     mode == Mode::Serve
-    /// });
-    /// assert_eq!(tried, [Mode::Archive, Mode::Portable, Mode::Serve]);
-    /// assert_eq!(accepted.map(|(mode, _)| mode), Some(Mode::Serve));
-    /// # Ok::<(), octavo::Error>(())
-    /// ```
-    pub fn pack_checked(
+    pub fn package_checked(
         &self,
-        mode: Mode,
-        mut accept: impl FnMut(Mode, &Output) -> bool,
-    ) -> Option<(Mode, Output)> {
-        let ladder: &[Mode] = match mode {
-            Mode::Archive => &[Mode::Archive, Mode::Portable, Mode::Serve],
-            Mode::Portable => &[Mode::Portable, Mode::Serve],
-            Mode::Serve => &[Mode::Serve],
+        packaging: Packaging,
+        mut accept: impl FnMut(Packaging, &Output) -> bool,
+    ) -> Option<(Packaging, Output)> {
+        let ladder: &[Packaging] = match packaging {
+            Packaging::Packed => &[Packaging::Packed, Packaging::Scripts, Packaging::Plain],
+            Packaging::Scripts => &[Packaging::Scripts, Packaging::Plain],
+            Packaging::Plain => &[Packaging::Plain],
         };
         ladder.iter().find_map(|&step| {
-            let candidate = self.pack(step);
+            let candidate = self.package(step);
             accept(step, &candidate).then_some((step, candidate))
         })
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Licenses {
-    Keep,
-    Strip,
 }

@@ -1,5 +1,5 @@
 use crate::{
-    Licenses, Mode, Tuning,
+    Licenses, Packaging, Tuning,
     ascii::contains_ignore_case,
     data::{self, Mime},
     html::{AttrName, Attribute, Element, Rel, Scanned, Tag},
@@ -15,12 +15,8 @@ use libdeflater::{CompressionLvl, Compressor};
 use rayon::prelude::*;
 use std::{borrow::Cow, collections::BTreeMap, num::NonZeroUsize, ops::Range, sync::OnceLock};
 
-// Smallest total over 12 real documents: 0.3 percent below packing every fragment,
-// and 0.9 percent below thresholds sixteen times larger.
 const MIN_BLOB: usize = 256;
 const MIN_FRAGMENT: usize = 1024;
-// Chunks of this size cost under 0.1 percent against one stream on four decks of
-// 4 to 11 MiB, where 64 KiB chunks cost about 0.5 percent.
 const DEFLATE_CHUNK: usize = 512 * 1024;
 const LOADER: &str = include_str!("../loader/loader.js");
 const BROTLI_DECODER: &str = include_str!("../loader/brotli.js");
@@ -50,15 +46,15 @@ pub(crate) struct Packed {
     pub(crate) blobs: NonZeroUsize,
 }
 
-pub(crate) fn run(scanned: &Scanned, mode: Mode, tuning: Tuning) -> Option<Packed> {
+pub(crate) fn run(scanned: &Scanned, packaging: Packaging, tuning: Tuning) -> Option<Packed> {
     let src = scanned.html();
-    if mode == Mode::Serve || contains_ignore_case(src, "content-security-policy") {
+    if packaging == Packaging::Plain || contains_ignore_case(src, "content-security-policy") {
         return None;
     }
     let mut blobs = Blobs::default();
     let mut sites: Vec<Site> = Vec::new();
     for tag in scanned.tags().iter().filter(|t| !t.in_svg) {
-        if let Some(c) = candidate(src, tag, mode) {
+        if let Some(c) = candidate(src, tag, packaging) {
             sites.push(Site {
                 span: tag.span.clone(),
                 call: call_site(blobs.add(c.text), c.kind, &c.attrs),
@@ -88,8 +84,8 @@ pub(crate) fn run(scanned: &Scanned, mode: Mode, tuning: Tuning) -> Option<Packe
     })
 }
 
-fn candidate<'a>(src: &'a str, tag: &Tag, mode: Mode) -> Option<Candidate<'a>> {
-    let styles = mode == Mode::Archive;
+fn candidate<'a>(src: &'a str, tag: &Tag, packaging: Packaging) -> Option<Candidate<'a>> {
+    let styles = packaging == Packaging::Packed;
     let (kind, text) = match tag.element {
         Element::Script
             if tag.attr(AttrName::Src).is_none()

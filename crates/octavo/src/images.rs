@@ -1,5 +1,5 @@
 use crate::{
-    ImageEncoding, ImageFormat, Target, Transform, Tuning,
+    ImageEncoding, ImageFormat, Rule, Target, Transform, Tuning,
     data::{self, Mime},
     doc::{Doc, Edit},
     html::{AttrName, Element, Tag},
@@ -26,23 +26,12 @@ const RENDERING_CHUNKS: [[u8; 4]; 10] = [
     *b"fdAT",
 ];
 
-// Preset 0 costs about 40 ns per pixel, so this keeps one image under about 1.6 s.
 const MAX_LOSSLESS_PIXELS: u64 = 40_000_000;
 const MAX_LOSSY_PIXELS: u64 = 200_000_000;
-// The slowest measured cost of oxipng 10 presets 0 to 4 on 14 PNGs from real decks
-// of 0.2 to 8 million pixels, single-threaded. Content moves the cost by about 2x.
 const PRESET_NANOSECONDS_PER_PIXEL: [u64; 5] = [50, 101, 215, 335, 540];
-// At 500 ms per image the output is 0.8 percent smaller but the run takes 30 percent longer.
 const PRESET_TIME_BUDGET_NANOSECONDS: u64 = 75_000_000;
-// AVIF speed 10 encodes about 65 percent faster than speed 8, but made three of five
-// sample images 44 to 62 percent larger, so it is kept for the largest images only.
 const LARGE_IMAGE_PIXELS: u64 = 8_000_000;
-// A whole process encoding one 81 megapixel RGB PNG peaked at 15.4 bytes per pixel: the decoded
-// image, libwebp's own ARGB copy and its encoder state. RGBA input adds a byte per pixel on top,
-// and images are encoded in parallel, so they share a budget.
 const WEBP_BYTES_PER_PIXEL: u64 = 20;
-// Method 2 at quality 50 gave the best size for its time on 3 to 81 megapixel graphics, at about
-// 65 ns per pixel. Method 1 at quality 20 takes half as long for a result 10 points larger.
 const WEBP_THOROUGH_PIXELS: u64 = 20_000_000;
 
 struct Decoded {
@@ -155,6 +144,11 @@ pub(crate) fn stage(
                     Transform::RecompressedPng
                 },
                 target: Target::Resource(tag.label().to_string()),
+                rule: if lossy.is_some() {
+                    Rule::ImageReencoded
+                } else {
+                    Rule::PngRecompressed
+                },
             }
         })
         .filter(Edit::shrinks)
@@ -201,47 +195,48 @@ fn recompress(decoded: &Decoded, tuning: Tuning, webp: Option<&MemoryBudget>) ->
 }
 
 struct MemoryBudget {
-    total: u64,
-    free: Mutex<u64>,
-    freed: Condvar,
+    state: Mutex<MemoryBudgetState>,
+    cvar: Condvar,
 }
 
-struct Held<'a> {
+struct MemoryBudgetState {
+    remaining: u64,
+}
+
+struct MemoryBudgetPermit<'a> {
     budget: &'a MemoryBudget,
-    amount: u64,
+    bytes: u64,
 }
 
 impl MemoryBudget {
-    fn new(total: u64) -> MemoryBudget {
-        MemoryBudget {
-            total,
-            free: Mutex::new(total),
-            freed: Condvar::new(),
+    fn new(total: u64) -> Self {
+        Self {
+            state: Mutex::new(MemoryBudgetState { remaining: total }),
+            cvar: Condvar::new(),
         }
     }
 
-    fn take(&self, amount: u64) -> Option<Held<'_>> {
-        if amount > self.total {
-            return None;
+    fn take(&self, bytes: u64) -> Option<MemoryBudgetPermit<'_>> {
+        let mut state = self.state.lock().ok()?;
+        loop {
+            if state.remaining >= bytes {
+                state.remaining -= bytes;
+                return Some(MemoryBudgetPermit {
+                    budget: self,
+                    bytes,
+                });
+            }
+            state = self.cvar.wait(state).ok()?;
         }
-        let mut free = self.free.lock().ok()?;
-        while *free < amount {
-            free = self.freed.wait(free).ok()?;
-        }
-        *free -= amount;
-        Some(Held {
-            budget: self,
-            amount,
-        })
     }
 }
 
-impl Drop for Held<'_> {
+impl Drop for MemoryBudgetPermit<'_> {
     fn drop(&mut self) {
-        if let Ok(mut free) = self.budget.free.lock() {
-            *free += self.amount;
+        if let Ok(mut state) = self.budget.state.lock() {
+            state.remaining += self.bytes;
+            self.budget.cvar.notify_all();
         }
-        self.budget.freed.notify_all();
     }
 }
 
@@ -279,7 +274,7 @@ fn png_converts_exactly(png: &[u8]) -> bool {
 }
 
 fn has_partial_alpha(image: &image::DynamicImage) -> bool {
-    let partial = |alpha: &u8| *alpha != 0 && *alpha != 255;
+    let partial = |&alpha: &u8| alpha != 0 && alpha != 255;
     match image {
         image::DynamicImage::ImageRgba8(rgba) => {
             rgba.as_raw().iter().skip(3).step_by(4).any(partial)

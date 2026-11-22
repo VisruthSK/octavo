@@ -1,5 +1,5 @@
 use crate::{
-    Target, Transform, data,
+    Rule, Target, Transform, data,
     html::{self, AttrName, Element, Tag},
     words::Words,
 };
@@ -11,6 +11,7 @@ pub(crate) struct Edit {
     pub(crate) text: String,
     pub(crate) transform: Transform,
     pub(crate) target: Target,
+    pub(crate) rule: Rule,
 }
 
 impl Edit {
@@ -23,6 +24,7 @@ pub(crate) struct SkippedEdit {
     pub(crate) transform: Transform,
     pub(crate) target: Target,
     pub(crate) winner: Transform,
+    pub(crate) rule: Rule,
 }
 
 pub(crate) struct Edits {
@@ -41,6 +43,7 @@ impl Edits {
                     transform: edit.transform,
                     target: edit.target,
                     winner: last.transform,
+                    rule: edit.rule,
                 }),
                 _ => items.push(edit),
             }
@@ -178,12 +181,13 @@ mod tests {
     use super::*;
     use crate::Target;
 
-    fn edit(span: Range<usize>, text: &str, transform: Transform) -> Edit {
+    fn edit(span: Range<usize>, text: &str, transform: Transform, rule: Rule) -> Edit {
         Edit {
             span,
             text: text.to_string(),
             transform,
             target: Target::Resource("x".to_string()),
+            rule,
         }
     }
 
@@ -191,9 +195,9 @@ mod tests {
     fn two_overlapping_edits_report_the_one_that_lost() {
         let src = "0123456789ab";
         let edits = Edits::new(vec![
-            edit(0..6, "a", Transform::MinifiedScript),
-            edit(3..9, "b", Transform::PrunedStylesheet),
-            edit(9..12, "c", Transform::RecompressedPng),
+            edit(0..6, "a", Transform::MinifiedScript, Rule::ScriptMinified),
+            edit(3..9, "b", Transform::PrunedStylesheet, Rule::StylesheetPruned),
+            edit(9..12, "c", Transform::RecompressedPng, Rule::PngRecompressed),
         ]);
         let kept: Vec<Transform> = edits.kept().iter().map(|edit| edit.transform).collect();
         assert_eq!(
@@ -205,6 +209,7 @@ mod tests {
         assert_eq!(skipped.transform, Transform::PrunedStylesheet);
         assert_eq!(skipped.target.to_string(), "x");
         assert_eq!(skipped.winner, Transform::MinifiedScript);
+        assert_eq!(skipped.rule, Rule::StylesheetPruned);
         let out = edits.apply(src);
         assert_eq!(out, "a678c");
         let delta: isize = edits
@@ -218,8 +223,8 @@ mod tests {
     #[test]
     fn equal_spans_keep_the_first_proposal() {
         let edits = Edits::new(vec![
-            edit(2..4, "x", Transform::DeadLibrary),
-            edit(2..4, "y", Transform::MinifiedScript),
+            edit(2..4, "x", Transform::DeadLibrary, Rule::QuartoDeadLibrary),
+            edit(2..4, "y", Transform::MinifiedScript, Rule::ScriptMinified),
         ]);
         assert_eq!(edits.kept().len(), 1);
         assert_eq!(
@@ -231,6 +236,7 @@ mod tests {
             [Transform::MinifiedScript]
         );
         assert_eq!(edits.skipped()[0].winner, Transform::DeadLibrary);
+        assert_eq!(edits.skipped()[0].rule, Rule::ScriptMinified);
         assert_eq!(edits.apply("abcdef"), "abxef");
     }
 }

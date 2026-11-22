@@ -1,25 +1,33 @@
 #![allow(dead_code)]
 
-use octavo::{Mode, Options, Output, Simplified, optimize, simplify};
+use octavo::{Config, Output, Packaging, Simplified, optimize, simplify};
 
 pub fn page(head: &str, body: &str) -> String {
     format!("<!DOCTYPE html><html><head>{head}</head><body>{body}</body></html>")
 }
 
+pub fn plain(src: &str) -> String {
+    optimized(src, Packaging::Plain).html
+}
+
 pub fn serve(src: &str) -> String {
-    optimized(src, Mode::Serve).html
+    plain(src)
 }
 
 pub fn archive(src: &str) -> String {
-    optimized(src, Mode::Archive).html
+    packed(src)
 }
 
-pub fn optimized(src: &str, mode: Mode) -> Output {
-    optimize(src, mode).expect("a supported document")
+pub fn packed(src: &str) -> String {
+    optimized(src, Packaging::Packed).html
 }
 
-pub fn simplified(src: &str, options: Options) -> Simplified {
-    simplify(src, options).expect("a supported document")
+pub fn optimized(src: &str, packaging: Packaging) -> Output {
+    optimize(src, packaging).expect("a supported document")
+}
+
+pub fn simplified(src: &str, config: Config) -> Simplified {
+    simplify(src, config).expect("a supported document")
 }
 
 pub fn busy_script(prefix: &str) -> String {

@@ -1,5 +1,5 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
-use octavo::{Loaded, Mode, Resources, embed_resources, is_self_contained, optimize};
+use octavo::{Loaded, Packaging, Resources, embed_resources, is_self_contained, optimize};
 use std::collections::HashMap;
 
 struct Files(HashMap<&'static str, Vec<u8>>);
@@ -136,7 +136,7 @@ fn an_embedded_page_can_be_optimized() {
         &page(r#"<link rel="stylesheet" href="style.css"><p class="used">x</p>"#),
         &mut files,
     );
-    let out = optimize(&embedded.html, Mode::Serve).expect("self-contained after embedding");
+    let out = optimize(&embedded.html, Packaging::Plain).expect("self-contained after embedding");
     assert!(
         out.html.contains(".used{color:red}") && !out.html.contains("unused"),
         "{}",

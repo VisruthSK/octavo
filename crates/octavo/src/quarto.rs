@@ -1,5 +1,5 @@
 use crate::{
-    Library, Target, Transform,
+    Library, Rule, Target, Transform,
     doc::{Doc, Edit},
     html::{AttrName, Element, Tag},
     words::Words,
@@ -61,8 +61,6 @@ const LIBRARIES: [Bundled; 5] = [
 ];
 
 const NULL_OBJECT: &str = "let n=new Proxy(function(){},{get:(_,k)=>k==Symbol.toPrimitive?()=>\"\":n,apply:()=>n,construct:()=>n});";
-// In 12 real documents each library signature starts within 100 bytes of its script,
-// and the shortest library script is 5.9 KB.
 const BANNER_BYTES: usize = 300;
 const MIN_LIBRARY_BYTES: usize = 2000;
 
@@ -119,6 +117,7 @@ pub(crate) fn stage(doc: &Doc, markup: &Words) -> Vec<Edit> {
             },
             transform: Transform::DeadLibrary,
             target: Target::Library(lib.global),
+            rule: Rule::QuartoDeadLibrary,
         })
         .collect()
 }

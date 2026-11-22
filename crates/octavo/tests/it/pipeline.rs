@@ -1,5 +1,5 @@
 use crate::common::{busy_script, optimized, page, serve, simplified};
-use octavo::{Mode, Options, Target, Transform};
+use octavo::{Config, Packaging, Target, Transform};
 use std::num::NonZeroUsize;
 
 #[test]
@@ -74,7 +74,7 @@ fn invalid_css_passes_through_unchanged() {
 fn packing_replaces_large_scripts_with_call_sites() {
     let big = "window.counter=(window.counter||0)+1;".repeat(80);
     let src = page(&format!("<script>{big}</script>"), "<p>");
-    let out = optimized(&src, Mode::Archive).html;
+    let out = optimized(&src, Packaging::Packed).html;
     assert!(
         out.contains("$o(0")
             && !out.contains("window.counter=(window.counter||0)+1;window.counter")
@@ -88,7 +88,7 @@ fn identical_resources_share_one_blob() {
         .map(|i| format!("window.v{i}=Math.sqrt({});", i * 31))
         .collect();
     let tag = format!("<script>{script}</script>");
-    let out = optimized(&page(&format!("{tag}{tag}{tag}"), "<p>"), Mode::Archive);
+    let out = optimized(&page(&format!("{tag}{tag}{tag}"), "<p>"), Packaging::Packed);
     assert!(out.applied.iter().any(|a| a.transform == Transform::Packed
         && a.target == Target::Resources(NonZeroUsize::new(1).expect("non-zero"))));
 }
@@ -102,7 +102,7 @@ fn content_security_policy_disables_packing() {
         ),
         "<p>",
     );
-    assert!(!optimized(&src, Mode::Archive).html.contains("$o("));
+    assert!(!optimized(&src, Packaging::Packed).html.contains("$o("));
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn keep_styles_leaves_stylesheets_untouched_by_the_packer() {
             .map(|i| format!("<p class=k>{i}"))
             .collect::<String>(),
     );
-    let out = optimized(&src, Mode::Portable).html;
+    let out = optimized(&src, Packaging::Scripts).html;
     assert!(out.contains("<style>") && out.matches("$o(").count() == 1);
 }
 
@@ -133,7 +133,7 @@ fn dead_quarto_libraries_are_removed_and_stubbed() {
         ),
         "<p>no code here</p>",
     );
-    let out = optimized(&src, Mode::Serve).html;
+    let out = optimized(&src, Packaging::Plain).html;
     assert!(!out.contains("clipboard.js v2") && out.contains("window.ClipboardJS="));
 }
 
@@ -145,7 +145,7 @@ fn quarto_libraries_stay_when_markup_needs_them() {
             &format!("<script>{clipboard}</script>"),
             "<button class=\"code-copy-button\"></button>",
         ),
-        Mode::Serve,
+        Packaging::Plain,
     )
     .html;
     assert!(out.contains("var q=1;") || out.contains("q=1"));
@@ -161,8 +161,8 @@ fn big_svg() -> String {
 #[test]
 fn large_inline_svg_is_packed_only_when_javascript_is_required() {
     let src = page("", &format!("<div>{}</div>", big_svg()));
-    assert!(optimized(&src, Mode::Archive).html.contains("$o(0,3)"));
-    assert!(optimized(&src, Mode::Portable).html.contains("<path"));
+    assert!(optimized(&src, Packaging::Packed).html.contains("$o(0,3)"));
+    assert!(optimized(&src, Packaging::Scripts).html.contains("<path"));
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn inert_data_scripts_keep_their_type_when_packed() {
         "",
         &format!("<script type=\"application/json\" data-for=\"w\">[{data}0]</script>"),
     );
-    let out = optimized(&src, Mode::Portable).html;
+    let out = optimized(&src, Packaging::Scripts).html;
     assert!(out.contains(r#"$o(0,0,{"data-for":"w","type":"application/json"})"#));
 }
 
@@ -184,7 +184,7 @@ fn inline_modules_are_never_packed() {
         .map(|i| format!("window.m{i}={i};"))
         .collect::<String>();
     let src = page(&format!("<script type=\"module\">{body}</script>"), "<p>");
-    assert!(!optimized(&src, Mode::Archive).html.contains("$o("));
+    assert!(!optimized(&src, Packaging::Packed).html.contains("$o("));
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn code_annotations_keep_tippy_and_popper() {
             &format!("<script>{tippy}</script>"),
             "<a class=\"code-annotation-anchor\" data-target-annotation=\"1\"></a>",
         ),
-        Mode::Serve,
+        Packaging::Plain,
     )
     .html;
     assert!(out.contains("t=1"));
@@ -213,55 +213,55 @@ fn packable() -> String {
 
 #[test]
 fn an_accepted_first_choice_is_returned_untouched() {
-    let simplified = simplified(&packable(), Options::default());
+    let simplified = simplified(&packable(), Config::default());
     let mut tried = Vec::new();
-    let (mode, output) = simplified
-        .pack_checked(Mode::Archive, |mode, _| {
-            tried.push(mode);
+    let (packaging, output) = simplified
+        .package_checked(Packaging::Packed, |packaging, _| {
+            tried.push(packaging);
             true
         })
         .expect("accepted");
-    assert_eq!((mode, tried), (Mode::Archive, vec![Mode::Archive]));
-    assert_eq!(output.html, simplified.pack(Mode::Archive).html);
+    assert_eq!((packaging, tried), (Packaging::Packed, vec![Packaging::Packed]));
+    assert_eq!(output.html, simplified.package(Packaging::Packed).html);
 }
 
 #[test]
-fn a_rejected_mode_steps_down_one_level_at_a_time() {
-    let simplified = simplified(&packable(), Options::default());
+fn a_rejected_packaging_steps_down_one_level_at_a_time() {
+    let simplified = simplified(&packable(), Config::default());
     let mut tried = Vec::new();
-    let (mode, output) = simplified
-        .pack_checked(Mode::Archive, |mode, _| {
-            tried.push(mode);
-            mode == Mode::Portable
+    let (packaging, output) = simplified
+        .package_checked(Packaging::Packed, |packaging, _| {
+            tried.push(packaging);
+            packaging == Packaging::Scripts
         })
-        .expect("portable accepted");
-    assert_eq!(tried, [Mode::Archive, Mode::Portable]);
-    assert_eq!(mode, Mode::Portable);
-    assert_eq!(output.html, simplified.pack(Mode::Portable).html);
+        .expect("scripts accepted");
+    assert_eq!(tried, [Packaging::Packed, Packaging::Scripts]);
+    assert_eq!(packaging, Packaging::Scripts);
+    assert_eq!(output.html, simplified.package(Packaging::Scripts).html);
 }
 
 #[test]
-fn rejecting_every_mode_returns_nothing_after_trying_each_once() {
-    let simplified = simplified(&packable(), Options::default());
+fn rejecting_every_packaging_returns_nothing_after_trying_each_once() {
+    let simplified = simplified(&packable(), Config::default());
     let mut tried = Vec::new();
-    let result = simplified.pack_checked(Mode::Archive, |mode, _| {
-        tried.push(mode);
+    let result = simplified.package_checked(Packaging::Packed, |packaging, _| {
+        tried.push(packaging);
         false
     });
     assert!(result.is_none());
-    assert_eq!(tried, [Mode::Archive, Mode::Portable, Mode::Serve]);
+    assert_eq!(tried, [Packaging::Packed, Packaging::Scripts, Packaging::Plain]);
 }
 
 #[test]
-fn modes_riskier_than_the_requested_one_are_never_tried() {
-    let simplified = simplified(&packable(), Options::default());
+fn packaging_formats_riskier_than_the_requested_one_are_never_tried() {
+    let simplified = simplified(&packable(), Config::default());
     for (start, expected) in [
-        (Mode::Portable, vec![Mode::Portable, Mode::Serve]),
-        (Mode::Serve, vec![Mode::Serve]),
+        (Packaging::Scripts, vec![Packaging::Scripts, Packaging::Plain]),
+        (Packaging::Plain, vec![Packaging::Plain]),
     ] {
         let mut tried = Vec::new();
-        let _ = simplified.pack_checked(start, |mode, _| {
-            tried.push(mode);
+        let _ = simplified.package_checked(start, |packaging, _| {
+            tried.push(packaging);
             false
         });
         assert_eq!(tried, expected);
@@ -270,20 +270,20 @@ fn modes_riskier_than_the_requested_one_are_never_tried() {
 
 #[test]
 fn the_check_sees_the_document_that_would_be_written() {
-    let simplified = simplified(&packable(), Options::default());
+    let simplified = simplified(&packable(), Config::default());
     let mut seen = None;
-    let _ = simplified.pack_checked(Mode::Archive, |_, output| {
+    let _ = simplified.package_checked(Packaging::Packed, |_, output| {
         seen = Some(output.html.clone());
         true
     });
-    assert_eq!(seen.expect("checked"), simplified.pack(Mode::Archive).html);
+    assert_eq!(seen.expect("checked"), simplified.package(Packaging::Packed).html);
 }
 
 #[test]
 fn applied_byte_deltas_sum_to_the_output_size_change() {
     let src = include_str!("../../../../corpus/.cache/unused-rules-are-pruned.html");
-    for mode in [Mode::Serve, Mode::Portable, Mode::Archive] {
-        let out = optimized(src, mode);
+    for packaging in [Packaging::Plain, Packaging::Scripts, Packaging::Packed] {
+        let out = optimized(src, packaging);
         let delta: i64 = out
             .applied
             .iter()

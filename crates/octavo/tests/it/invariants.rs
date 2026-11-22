@@ -1,10 +1,10 @@
 use crate::common::page;
-use octavo::{Mode, optimize};
+use octavo::{Packaging, optimize};
 use proptest::{prelude::*, test_runner::FileFailurePersistence};
 use regex::Regex;
 use std::sync::LazyLock;
 
-const MODES: [Mode; 3] = [Mode::Serve, Mode::Portable, Mode::Archive];
+const PACKAGING: [Packaging; 3] = [Packaging::Plain, Packaging::Scripts, Packaging::Packed];
 
 static TARGETS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?is)<script\b.*?</script\s*>|<style\b.*?</style\s*>|<svg\b.*?</svg\s*>|<link\b[^>]*>|<img\b[^>]*>")
@@ -61,33 +61,33 @@ proptest! {
 
     #[test]
     fn everything_outside_the_targeted_elements_is_left_exactly_as_it_was(src in document()) {
-        let out = optimize(&src, Mode::Serve).expect("supported").html;
+        let out = optimize(&src, Packaging::Plain).expect("supported").html;
         prop_assert_eq!(outside_targets(&out), outside_targets(&src));
     }
 
     #[test]
     fn output_is_never_larger_and_never_panics_in_any_mode(src in document()) {
-        for mode in MODES {
-            let out = optimize(&src, mode).expect("supported");
-            prop_assert!(out.html.len() <= src.len(), "{mode:?}: {} > {}", out.html.len(), src.len());
+        for packaging in PACKAGING {
+            let out = optimize(&src, packaging).expect("supported");
+            prop_assert!(out.html.len() <= src.len(), "{packaging:?}: {} > {}", out.html.len(), src.len());
         }
     }
 
     #[test]
     fn optimizing_is_deterministic(src in document()) {
-        for mode in MODES {
-            let first = optimize(&src, mode).expect("supported").html;
-            let second = optimize(&src, mode).expect("supported").html;
+        for packaging in PACKAGING {
+            let first = optimize(&src, packaging).expect("supported").html;
+            let second = optimize(&src, packaging).expect("supported").html;
             prop_assert_eq!(first, second);
         }
     }
 
     #[test]
     fn a_second_pass_never_makes_the_output_larger(src in document()) {
-        for mode in MODES {
-            let once = optimize(&src, mode).expect("supported").html;
-            let twice = optimize(&once, mode).expect("the output is still supported").html;
-            prop_assert!(twice.len() <= once.len(), "{mode:?}: {} > {}", twice.len(), once.len());
+        for packaging in PACKAGING {
+            let once = optimize(&src, packaging).expect("supported").html;
+            let twice = optimize(&once, packaging).expect("the output is still supported").html;
+            prop_assert!(twice.len() <= once.len(), "{packaging:?}: {} > {}", twice.len(), once.len());
         }
     }
 }
@@ -138,7 +138,7 @@ proptest! {
             }
         }
         let head = format!("<style>{rules}</style><script>{script}</script>");
-        let out = optimize(&page(&head, &markup), Mode::Serve).expect("supported").html;
+        let out = optimize(&page(&head, &markup), Packaging::Plain).expect("supported").html;
         for (i, usage) in uses.iter().enumerate() {
             let (name, kept) = match usage {
                 Use::Nowhere => (format!(".gone{i}{{"), false),

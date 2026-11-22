@@ -1,5 +1,6 @@
 use crate::{
-    Licenses, Tuning, cache,
+    FontPolicy, Licenses, Tuning,
+    cache::{self, Cache},
     data::{self, Mime},
     words::Words,
 };
@@ -24,7 +25,7 @@ use read_fonts::{
     types::{GlyphId, NameId, Tag as SfntTag},
 };
 use skrifa::{FontRef, MetadataProvider, raw::TableProvider, string::StringId};
-use std::{borrow::Cow, collections::HashSet, convert::Infallible, ops::Range, path::Path};
+use std::{borrow::Cow, collections::HashSet, convert::Infallible, ops::Range};
 
 const WESTERN_TEXT: [Range<u32>; 3] = [0x20..0x250, 0x2000..0x2070, 0x20A0..0x20D0];
 const QUOTES: [char; 2] = ['"', '\''];
@@ -79,9 +80,9 @@ struct Chars {
 pub(crate) struct Settings<'a> {
     pub(crate) src: &'a str,
     pub(crate) words: &'a Words,
-    pub(crate) subset_text_fonts: bool,
+    pub(crate) fonts: FontPolicy,
     pub(crate) notices: Licenses,
-    pub(crate) cache: Option<&'a Path>,
+    pub(crate) cache: Option<&'a (dyn Cache + 'a)>,
     pub(crate) tuning: Tuning,
 }
 
@@ -181,17 +182,20 @@ fn collect_chars(css: &[&str], loose: &[&str], settings: &Settings) -> Chars {
     for text in css.iter().chain(loose) {
         icons.extend(content_chars(text));
     }
-    let text = settings.subset_text_fonts.then(|| {
-        let cased: Vec<char> = icons
-            .iter()
-            .flat_map(|c| c.to_uppercase().chain(c.to_lowercase()))
-            .collect();
-        let western = WESTERN_TEXT
-            .into_iter()
-            .flatten()
-            .filter_map(char::from_u32);
-        icons.iter().copied().chain(western).chain(cased).collect()
-    });
+    let text = match settings.fonts {
+        FontPolicy::Off => None,
+        FontPolicy::Auto | FontPolicy::Force => Some({
+            let cased: Vec<char> = icons
+                .iter()
+                .flat_map(|c| c.to_uppercase().chain(c.to_lowercase()))
+                .collect();
+            let western = WESTERN_TEXT
+                .into_iter()
+                .flatten()
+                .filter_map(char::from_u32);
+            icons.iter().copied().chain(western).chain(cased).collect()
+        }),
+    };
     Chars { icons, text }
 }
 
@@ -224,6 +228,7 @@ fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Out
         &font.bytes,
         subset,
         text,
+        settings.fonts == FontPolicy::Force,
         settings.notices,
         settings.cache,
         settings.tuning,
@@ -482,8 +487,9 @@ fn transcode(
     bytes: &[u8],
     chars: Option<&HashSet<char>>,
     text: bool,
+    force: bool,
     notices: Licenses,
-    cache: Option<&Path>,
+    cache: Option<&dyn Cache>,
     tuning: Tuning,
 ) -> Option<Transcoded> {
     let quality = tuning.woff2_quality.min(11);
@@ -492,25 +498,23 @@ fn transcode(
         b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
         _ => Cow::Borrowed(bytes),
     };
-    let kept_whole = text && chars.is_some() && !subsetting_is_exact(&sfnt);
+    let kept_whole = !force && text && chars.is_some() && !subsetting_is_exact(&sfnt);
     let chars = if kept_whole { None } else { chars };
-    let (Some(root), None) = (cache, chars) else {
+    let (Some(cache), None) = (cache, chars) else {
         return convert(&sfnt, chars, notices, quality).map(|converted| Transcoded {
             kept_whole,
             ..converted
         });
     };
-    let directory = root.join(cache::FONTS);
-    let key = cache::key(&[bytes, &[quality]]);
-    if let Some(entry) = cache::load(&directory, &key).and_then(|entry| Transcoded::decode(&entry))
-    {
+    let key = format!("{}/{}", cache::FONTS, cache::key(&[bytes, &[quality]]));
+    if let Some(entry) = cache.get(&key).and_then(|entry| Transcoded::decode(&entry)) {
         return Some(Transcoded {
             kept_whole,
             ..entry
         });
     }
     let converted = convert(&sfnt, chars, notices, quality)?;
-    cache::store(&directory, &key, &converted.encode());
+    cache.set(&key, &converted.encode());
     Some(Transcoded {
         kept_whole,
         ..converted

@@ -1,5 +1,6 @@
 use crate::{
-    Licenses, Target, Transform, Tuning,
+    FontPolicy, Licenses, Rule, Target, Transform, Tuning,
+    cache::Cache,
     data::{self, Mime},
     doc::{Doc, Edit},
     fonts,
@@ -20,7 +21,6 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     convert::Infallible,
-    path::Path,
     sync::{Arc, RwLock},
 };
 
@@ -484,9 +484,9 @@ fn variable_references(css: &str) -> impl Iterator<Item = &str> {
 pub(crate) fn stage(
     doc: &Doc,
     words: &Words,
-    subset_text_fonts: bool,
+    fonts: FontPolicy,
     licenses: Licenses,
-    cache: Option<&Path>,
+    cache: Option<&dyn Cache>,
     tuning: Tuning,
 ) -> (Vec<Edit>, Vec<(String, usize)>) {
     let sources: Vec<(&Tag, Cow<str>)> = doc
@@ -551,7 +551,7 @@ pub(crate) fn stage(
     let settings = fonts::Settings {
         src: doc.src(),
         words,
-        subset_text_fonts,
+        fonts,
         notices: licenses,
         cache,
         tuning,
@@ -597,6 +597,7 @@ pub(crate) fn stage(
                 text,
                 transform: Transform::PrunedStylesheet,
                 target: Target::Resource(tag.label().to_string()),
+                rule: Rule::StylesheetPruned,
             })
         })
         .filter(Edit::shrinks)
