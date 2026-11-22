@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { closeBrowser, verify } from "./verify.mjs";
@@ -22,5 +22,28 @@ test("linked comparison ignores local resources but compares external requests",
   } finally {
     await closeBrowser();
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+
+test("linked comparison loads resources from the source tree above the document", async () => {
+  const root = await mkdtemp(join(tmpdir(), "octavo-linked-parent-"));
+  const dir = join(root, "doc");
+  const original = join(dir, "page.html");
+  const optimized = join(dir, "page.octavo.html");
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="50"><rect width="80" height="50" fill="red"/></svg>';
+  try {
+    await mkdir(dir);
+    await writeFile(join(root, "image.svg"), svg);
+    await writeFile(original, '<!doctype html><img src="../image.svg">');
+    await writeFile(optimized, `<!doctype html><img src="data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}">`);
+    const options = { linked: true, only: ["desktop-light"] };
+    const limited = await verify(original, optimized, { ...options, roots: { original: dir, optimized: dir } });
+    assert.ok(limited.flatMap(({ issues }) => issues).length);
+    const report = await verify(original, optimized, { ...options, roots: { original: root, optimized: root } });
+    assert.deepEqual(report.flatMap(({ issues }) => issues), []);
+  } finally {
+    await closeBrowser();
+    await rm(root, { recursive: true, force: true });
   }
 });
