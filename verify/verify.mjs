@@ -18,6 +18,7 @@ export class Slots {
   capacity = pages;
   running = 0;
   exclusive = 0;
+  exclusiveQueue = [];
   priorityQueue = [];
   queue = [];
 
@@ -28,18 +29,34 @@ export class Slots {
       count = 1;
     }
     const isExclusive = count >= this.capacity && this.capacity > 1;
-    if (isExclusive) this.exclusive += 1;
     const free = this.capacity - this.running;
-    if (this.priorityQueue.length === 0 && this.queue.length === 0 && (!isExclusive ? this.exclusive === 0 && free >= count : this.running === 0)) {
-      if (isExclusive) this.exclusive -= 1;
+    if (isExclusive) {
+      if (this.exclusiveQueue.length === 0 && this.running === 0) {
+        this.running += count;
+        onWait(0);
+        return Promise.resolve();
+      }
+      this.exclusive += 1;
+      const started = process.hrtime.bigint();
+      return new Promise((wake) => {
+        this.exclusiveQueue.push({ count, onWait, started, wake });
+      });
+    }
+    if (
+      this.exclusive === 0 &&
+      this.exclusiveQueue.length === 0 &&
+      this.priorityQueue.length === 0 &&
+      (priority ? true : this.queue.length === 0) &&
+      free >= count
+    ) {
       this.running += count;
       onWait(0);
       return Promise.resolve();
     }
     const started = process.hrtime.bigint();
     return new Promise((wake) => {
-      const entry = { count, onWait, priority, isExclusive, started, wake };
-      if (priority || isExclusive) this.priorityQueue.push(entry);
+      const entry = { count, onWait, started, wake };
+      if (priority) this.priorityQueue.push(entry);
       else this.queue.push(entry);
     });
   }
@@ -51,29 +68,27 @@ export class Slots {
 
   dispatch() {
     while (true) {
+      if (this.exclusiveQueue.length > 0) {
+        if (this.running === 0) {
+          const next = this.exclusiveQueue.shift();
+          this.exclusive -= 1;
+          this.running += next.count;
+          next.onWait(Number(process.hrtime.bigint() - next.started) / 1e6);
+          next.wake();
+        }
+        break;
+      }
+      if (this.exclusive > 0) break;
       const free = this.capacity - this.running;
       if (free <= 0) break;
       const nextQueue = this.priorityQueue.length > 0 ? this.priorityQueue : this.queue;
       if (nextQueue.length === 0) break;
-      const nextEntry = nextQueue[0];
-      if (nextEntry.isExclusive) {
-        if (this.running === 0) {
-          nextQueue.shift();
-          this.exclusive -= 1;
-          this.running += nextEntry.count;
-          nextEntry.onWait(Number(process.hrtime.bigint() - nextEntry.started) / 1e6);
-          nextEntry.wake();
-          break;
-        } else {
-          break;
-        }
-      }
-      if (this.exclusive > 0) break;
-      if (nextEntry.count > free) break;
+      const next = nextQueue[0];
+      if (next.count > free) break;
       nextQueue.shift();
-      this.running += nextEntry.count;
-      nextEntry.onWait(Number(process.hrtime.bigint() - nextEntry.started) / 1e6);
-      nextEntry.wake();
+      this.running += next.count;
+      next.onWait(Number(process.hrtime.bigint() - next.started) / 1e6);
+      next.wake();
     }
   }
 
@@ -455,7 +470,7 @@ export async function verify(original, optimized, { lossy = false, level = "serv
   return Array.isArray(optimized) ? reports : reports[0];
 }
 
-if (process.argv[1].endsWith("verify.mjs")) {
+if (process.argv[1]?.endsWith("verify.mjs")) {
   const flags = process.argv.slice(2).filter((arg) => arg.startsWith("--"));
   const [original, optimized] = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
   const report = (await verify(original, optimized, { lossy: flags.includes("--lossy"), captureCache: !flags.includes("--no-capture-cache") })).filter(

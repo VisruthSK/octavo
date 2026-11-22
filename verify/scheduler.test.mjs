@@ -90,3 +90,16 @@ test("Slots handles exclusive tasks", async () => {
   assert.deepEqual(order, ["exclusive-start", "exclusive-end", "normal"]);
 });
 
+test("Slots handles concurrent priority and exclusive tasks without deadlocking", async () => {
+  const slots = new Slots();
+  slots.capacity = 2;
+  let unblock;
+  const blocker = new Promise((resolve) => { unblock = resolve; });
+  const first = slots.using(() => blocker);
+  const priority = slots.using(async () => "priority", 1, () => {}, true);
+  const exclusive = slots.using(async () => "exclusive", 2);
+  unblock();
+  const results = await Promise.all([first, priority, exclusive]);
+  assert.deepEqual(results.slice(1), ["priority", "exclusive"]);
+});
+
