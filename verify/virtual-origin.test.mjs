@@ -58,3 +58,20 @@ test(`${engine.name} serves the virtual origin as a secure context so image fing
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test(`${engine.name} blocks every request that leaves the virtual origin`, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "octavo-hermetic-"));
+  const browser = await engine.launch();
+  try {
+    const page = await browser.newPage();
+    const failed = [];
+    page.on("requestfailed", (request) => failed.push(request.url()));
+    const file = join(dir, "page.html");
+    await writeFile(file, '<!DOCTYPE html><title>x</title><script src="https://example.com/a.js"></script><p>x</p>');
+    await loadDocument(page, file);
+    assert.deepEqual(failed, ["https://example.com/a.js"]);
+  } finally {
+    await browser.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
