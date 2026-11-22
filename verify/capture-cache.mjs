@@ -60,7 +60,7 @@ const cacheable = (result) => {
   const screenshots = result.checks?.screenshots;
   return (
     result.checks?.settled !== false &&
-    result.requests.every((url) => url === "http://octavo.test/index.html") &&
+    result.requests.every((url) => url === "http://localhost/index.html") &&
     (!screenshots || screenshots.taken === screenshots.total)
   );
 };

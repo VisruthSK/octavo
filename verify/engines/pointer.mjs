@@ -11,6 +11,16 @@ const GUARD = () => {
   window.octavoGuard = { hold, block };
 };
 
+const SPACER = "octavo-sweep-spacer";
+const ADD_SPACER = (id) => {
+  const spacer = document.createElement("div");
+  spacer.id = id;
+  spacer.style.cssText = "height:100vh;margin:0;padding:0;border:0;pointer-events:none;visibility:hidden";
+  (document.body ?? document.documentElement).append(spacer);
+};
+const REMOVE_SPACER = (id) => document.getElementById(id)?.remove();
+const CENTER = (target) => target.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+
 const UNGUARD = () => {
   if (!window.octavoGuard) return;
   for (const type of ["mousedown", "mouseup"]) document.removeEventListener(type, window.octavoGuard.hold, true);
@@ -89,17 +99,18 @@ function noteUnreachable(checks, state, detail, unreachableStates) {
   if (unreachableStates.size === 1) checks.unreachable.elements += 1;
 }
 
-const ownPoint = (element) =>
+export const ownPoint = (element) =>
   element
     .evaluate((target) => {
       const box = target.getBoundingClientRect();
+      const root = document.scrollingElement ?? document.documentElement;
       const rects = target.getClientRects();
       const list = rects.length ? [...rects] : [box];
       for (const rect of list) {
         const left = Math.max(rect.left, 0);
         const top = Math.max(rect.top, 0);
-        const width = Math.min(rect.right, innerWidth) - left;
-        const height = Math.min(rect.bottom, innerHeight) - top;
+        const width = Math.min(rect.right, root.clientWidth) - left;
+        const height = Math.min(rect.bottom, root.clientHeight) - top;
         if (width <= 0 || height <= 0) continue;
         for (const down of [0.5, 0.1, 0.9, 0.3, 0.7]) {
           for (const across of [0.5, 0.1, 0.9, 0.3, 0.7]) {
@@ -178,6 +189,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
   if (print) await page.emulateMedia({ media: "screen" });
   try {
     await page.evaluate(GUARD);
+    await page.evaluate(ADD_SPACER, SPACER);
     for (let index = 0; index < count; index++) {
       onPhase(`forcedStates element ${index} pointer hover`);
       const element = interactive[index];
@@ -187,12 +199,29 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
         continue;
       }
       onPhase(`forcedStates element ${index} scrollIntoView`);
-      await element.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+      await element.evaluate(CENTER).catch(() => {});
       checks.elements += 1;
       for (const state of CHECKS) checks.expected[state] += 1;
       const info = await element.evaluate((target) =>
         `${target.tagName.toLowerCase()}${target.id ? `#${target.id}` : ""}${target.className ? `.${String(target.className).trim().replaceAll(/\s+/g, ".")}` : ""} tabindex=${target.tabIndex}${target.getAttribute("href") ? ` href=${target.getAttribute("href")}` : ""}`,
       );
+      const hitContext = (target, point, probed) =>
+        target
+          .evaluate((node, at) => {
+            const box = node.getBoundingClientRect();
+            const x = box.left + (at?.x ?? box.width / 2);
+            const y = box.top + (at?.y ?? box.height / 2);
+            const hit = document.elementFromPoint(x, y);
+            return JSON.stringify({
+              point: { x, y },
+              hit: hit && { tag: hit.tagName.toLowerCase(), id: hit.id, class: hit.getAttribute("class"), descendant: node.contains(hit) },
+              box: { x: box.x, y: box.y, width: box.width, height: box.height },
+              viewport: { width: innerWidth, height: innerHeight },
+              scroll: { x: scrollX, y: scrollY },
+            });
+          }, point)
+          .then((text) => JSON.stringify({ ...JSON.parse(text), probe: probed?.states }))
+          .catch((error) => JSON.stringify({ error: error.message }));
       const detail = (state, reason) => `${info}, selector "${selector}", index ${index}: ${reason || "state did not apply although the target was reachable"}`;
       const unreachableStates = new Set();
       const hoverReason = await staticReason(element, "hover");
@@ -237,7 +266,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
             noteUnreachable(checks, "hover", detail("hover", reason), unreachableStates);
           } else {
             states.push([`:hover on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-            noteFailure(checks, "hover", detail("hover", ""));
+            noteFailure(checks, "hover", `${detail("hover", "")}; context ${await hitContext(element, spot, seen)}`);
           }
         }
       }
@@ -263,14 +292,14 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
           states.push([`:focus on interactive #${index}`, focusedStyle]);
         } else {
           states.push([`:focus on interactive #${index}`, focusedStyle]);
-          noteFailure(checks, "focus", detail("focus", ""));
+          noteFailure(checks, "focus", `${detail("focus", "")}; context ${await hitContext(element, spot, seen)}`);
         }
         if (seen.states.focusVisible) {
           checks.focusVisible += 1;
           states.push([`:focus-visible on interactive #${index}`, focusedStyle]);
         } else {
           states.push([`:focus-visible on interactive #${index}`, focusedStyle]);
-          noteFailure(checks, "focusVisible", detail("focus-visible", ""));
+          noteFailure(checks, "focusVisible", `${detail("focus-visible", "")}; context ${await hitContext(element, spot, seen)}`);
         }
       }
       await page.evaluate(() => document.activeElement?.blur());
@@ -305,7 +334,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
             noteUnreachable(checks, "active", detail("active", reason), unreachableStates);
           } else {
             states.push([`:active on interactive #${index}`, canonicalStyle(seen.style, seen.writingMode)]);
-            noteFailure(checks, "active", detail("active", ""));
+            noteFailure(checks, "active", `${detail("active", "")}; context ${await hitContext(element, spot, seen)}`);
           }
         }
       }
@@ -314,6 +343,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
       await restore();
     }
   } finally {
+    await page.evaluate(REMOVE_SPACER, SPACER).catch(() => {});
     await page.evaluate(UNGUARD);
     await page.evaluate(() => delete window[Symbol.for("octavo.interactive")]);
     await snapshot.dispose();
