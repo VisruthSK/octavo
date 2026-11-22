@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { launch } from "./index.mjs";
+import { launch, incompleteChecks } from "./index.mjs";
 import { forcedStates } from "./states.mjs";
 
 const directory = mkdtempSync(join(tmpdir(), "octavo-states-"));
@@ -104,4 +104,36 @@ test("a dropped state rule changes the recorded state", async () => {
   const first = await run(withRule, (tab) => forcedStates(tab, selector, observe));
   const second = await run(without, (tab) => forcedStates(tab, selector, observe));
   assert.notDeepEqual(first.states, second.states);
+});
+
+test("a stylesheet the page cannot read is reported as an incomplete check", async () => {
+  const browser = await launch();
+  try {
+    const tab = await browser.newPage();
+    await tab.route("http://page.test/", (route) =>
+      route.fulfill({ contentType: "text/html", body: '<!DOCTYPE html><html><head><link rel="stylesheet" href="http://other.test/a.css"></head><body><a href="#x">x</a></body></html>' }),
+    );
+    await tab.route("http://other.test/a.css", (route) => route.fulfill({ contentType: "text/css", body: "a:hover{color:red}" }));
+    await tab.goto("http://page.test/", { waitUntil: "load" });
+    const { checks } = await forcedStates(tab, selector, observe);
+    assert.deepEqual(checks.unreadable, ["http://other.test/a.css"]);
+    assert.match(incompleteChecks(checks)[0], /1 stylesheets could not be read/);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("imported, adopted and shadow root stylesheets are mirrored and a readable page reports nothing missing", async () => {
+  const url = page("shapes", "a{color:rgb(1,1,1)}", '<a href="#x">x</a><div id="host"></div>');
+  await run(url, async (tab) => {
+    await tab.evaluate(() => {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync("a:hover{color:rgb(6,6,6)}");
+      document.adoptedStyleSheets = [sheet];
+    });
+    const { states, checks } = await forcedStates(tab, selector, observe);
+    assert.match(stateOf(states, ":hover on interactive #0"), /6, 6, 6/);
+    assert.equal(checks.mirrored, 1);
+    assert.deepEqual(incompleteChecks(checks), []);
+  });
 });

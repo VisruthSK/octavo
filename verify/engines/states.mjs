@@ -3,35 +3,43 @@ import { canonicalStyle } from "../styles.mjs";
 const STATES = ["hover", "focus", "focus-visible", "active"];
 const CHECKS = { hover: "hover", focus: "focus", "focus-visible": "focusVisible", active: "active" };
 const LIMIT = 40;
-const MIRRORS = Symbol.for("octavo.mirrors");
 
 const MIRROR = (names) => {
-  const pattern = new RegExp(`:(${names.join("|")})(?![\w-])`, "g");
+  const alternatives = names.join("|");
+  const test = new RegExp(`:(?:${alternatives})(?![\\w-])`);
+  const replace = new RegExp(`:(${alternatives})(?![\\w-])`, "g");
   const mirrors = [];
-  const visit = (parent) => {
+  const unreadable = [];
+  let failed = 0;
+  const visit = (parent, label) => {
     let rules;
     try {
       rules = parent.cssRules;
     } catch {
+      unreadable.push(label);
       return;
     }
     for (let index = rules.length - 1; index >= 0; index--) {
       const rule = rules[index];
-      if (rule.cssRules?.length) visit(rule);
+      if (rule.styleSheet) visit(rule.styleSheet, rule.href ?? "import");
+      if (rule.cssRules?.length) visit(rule, label);
       const selector = rule.selectorText;
-      if (!selector || !pattern.test(selector)) continue;
-      pattern.lastIndex = 0;
+      if (!selector || !test.test(selector)) continue;
       const body = rule.cssText.slice(selector.length);
       try {
-        const at = parent.insertRule(`${selector.replace(pattern, (_, name) => `[data-octavo-${name}]`)}${body}`, index + 1);
+        const at = parent.insertRule(`${selector.replace(replace, "[data-octavo-$1]")}${body}`, index + 1);
         mirrors.push({ parent, rule: parent.cssRules[at] });
-      } catch {}
-      pattern.lastIndex = 0;
+      } catch {
+        failed += 1;
+      }
     }
   };
-  for (const sheet of document.styleSheets) visit(sheet);
+  const roots = [document, ...[...document.querySelectorAll("*")].flatMap((element) => (element.shadowRoot ? [element.shadowRoot] : []))];
+  for (const root of roots) {
+    for (const sheet of [...root.styleSheets, ...root.adoptedStyleSheets]) visit(sheet, sheet.href ?? "inline");
+  }
   window[Symbol.for("octavo.mirrors")] = mirrors;
-  return mirrors.length;
+  return { mirrored: mirrors.length, unreadable, failed };
 };
 
 const UNMIRROR = () => {
@@ -61,14 +69,14 @@ const APPLY = ({ selector, index, name, on }) => {
 
 export async function forcedStates(page, selector, observe, onPhase = () => {}) {
   onPhase("forcedStates mirror rules");
-  await page.evaluate(MIRROR, STATES);
+  const { mirrored, unreadable, failed } = await page.evaluate(MIRROR, STATES);
   const count = await page.evaluate((selector) => {
     const found = document.querySelectorAll(selector);
     window[Symbol.for("octavo.interactive")] = found;
     return found.length;
   }, selector);
   const states = [];
-  const checks = { elements: Math.min(count, LIMIT), hover: 0, focus: 0, focusVisible: 0, active: 0 };
+  const checks = { elements: Math.min(count, LIMIT), hover: 0, focus: 0, focusVisible: 0, active: 0, mirrored, unreadable, unmirrored: failed };
   for (let index = 0; index < checks.elements; index++) {
     for (const name of STATES) {
       onPhase(`forcedStates element ${index} ${name}`);
