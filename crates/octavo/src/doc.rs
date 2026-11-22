@@ -1,5 +1,5 @@
 use crate::{
-    Target, Transform, data,
+    Rule, Target, Transform, data,
     html::{self, AttrName, Element, Tag},
     words::Words,
 };
@@ -11,6 +11,7 @@ pub(crate) struct Edit {
     pub(crate) text: String,
     pub(crate) transform: Transform,
     pub(crate) target: Target,
+    pub(crate) rule: Rule,
 }
 
 impl Edit {
@@ -23,6 +24,7 @@ pub(crate) struct SkippedEdit {
     pub(crate) transform: Transform,
     pub(crate) target: Target,
     pub(crate) winner: Transform,
+    pub(crate) rule: Rule,
 }
 
 pub(crate) struct Edits {
@@ -41,6 +43,7 @@ impl Edits {
                     transform: edit.transform,
                     target: edit.target,
                     winner: last.transform,
+                    rule: edit.rule,
                 }),
                 _ => items.push(edit),
             }
@@ -184,6 +187,7 @@ mod tests {
             text: text.to_string(),
             transform,
             target: Target::Resource("x".to_string()),
+            rule: Rule::from(transform),
         }
     }
 

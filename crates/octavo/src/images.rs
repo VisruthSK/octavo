@@ -1,5 +1,5 @@
 use crate::{
-    ImageEncoding, ImageFormat, Target, Transform, Tuning,
+    ImageEncoding, ImageFormat, Rule, Target, Transform, Tuning,
     data::{self, Mime},
     doc::{Doc, Edit},
     html::{AttrName, Element, Tag},
@@ -155,6 +155,11 @@ pub(crate) fn stage(
                     Transform::RecompressedPng
                 },
                 target: Target::Resource(tag.label().to_string()),
+                rule: if lossy.is_some() {
+                    Rule::ImageReencoded
+                } else {
+                    Rule::PngRecompressed
+                },
             }
         })
         .filter(Edit::shrinks)

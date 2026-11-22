@@ -1,5 +1,5 @@
 use crate::{
-    Licenses, Target, Transform, Tuning,
+    Licenses, Rule, Target, Transform, Tuning,
     data::{self, Mime},
     doc::{Doc, Edit},
     fonts,
@@ -597,6 +597,7 @@ pub(crate) fn stage(
                 text,
                 transform: Transform::PrunedStylesheet,
                 target: Target::Resource(tag.label().to_string()),
+                rule: Rule::StylesheetPruned,
             })
         })
         .filter(Edit::shrinks)
