@@ -150,3 +150,20 @@ test("state rules on a pseudo-element are mirrored onto the element that owns it
     assert.equal(checks.mirrored, 2);
   });
 });
+
+test("a stylesheet whose request the verifier blocked has no rules to force and is not reported", async () => {
+  const browser = await launch();
+  try {
+    const tab = await browser.newPage();
+    await tab.route("http://page.test/", (route) =>
+      route.fulfill({ contentType: "text/html", body: '<!DOCTYPE html><html><head><link rel="stylesheet" href="http://other.test/a.css"></head><body><a href="#x">x</a></body></html>' }),
+    );
+    await tab.route("http://other.test/a.css", (route) => route.fulfill({ contentType: "text/css", body: "a:hover{color:red}" }));
+    await tab.goto("http://page.test/", { waitUntil: "load" });
+    tab.blockedUrls = new Set(["http://other.test/a.css"]);
+    const { checks } = await forcedStates(tab, selector, observe);
+    assert.deepEqual(checks.unreadable, []);
+  } finally {
+    await browser.close();
+  }
+});

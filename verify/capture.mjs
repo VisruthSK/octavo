@@ -629,7 +629,11 @@ export async function loadDocument(page, file, root, entryPath) {
       else await route.fulfill({ status: 404, body: "" });
     }
   });
-  await page.route((url) => /^https?:$/.test(url.protocol) && url.hostname !== "localhost", (route) => route.abort("blockedbyclient"));
+  page.blockedUrls = new Set();
+  await page.route((url) => /^https?:$/.test(url.protocol) && url.hostname !== "localhost", (route) => {
+    page.blockedUrls.add(route.request().url());
+    return route.abort("blockedbyclient");
+  });
   const response = await page.goto(`http://localhost/${entry}`, { waitUntil: "load", timeout: 0 });
   if (!response || response.status() >= 400) throw new Error(`document did not load: HTTP ${response?.status() ?? "none"}`);
   return response;

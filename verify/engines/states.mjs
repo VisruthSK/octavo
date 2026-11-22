@@ -71,7 +71,9 @@ const APPLY = ({ selector, index, name, on }) => {
 
 export async function forcedStates(page, selector, observe, onPhase = () => {}) {
   onPhase("forcedStates mirror rules");
-  const { mirrored, unreadable, failed } = await page.evaluate(MIRROR, STATES);
+  const found = await page.evaluate(MIRROR, STATES);
+  const { mirrored, failed } = found;
+  const unreadable = found.unreadable.filter((href) => !page.blockedUrls?.has(href));
   const count = await page.evaluate((selector) => {
     const found = document.querySelectorAll(selector);
     window[Symbol.for("octavo.interactive")] = found;
