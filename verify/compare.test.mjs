@@ -479,6 +479,7 @@ test("lazily loaded math renderer fonts are not part of the loaded fonts compari
   const run = (before, after) => compare({ states: [state(before)], errors: [], requests: [] }, { states: [state(after)], errors: [], requests: [] }, false);
   assert.deepEqual(run(["MathJax_Main", "Source Sans Pro"], ["MathJax_Main", "MathJax_Size4", "Source Sans Pro"]), []);
   assert.deepEqual(run(["KaTeX_Main", "Inter"], ["Inter"]), []);
+  assert.deepEqual(run(["Lato", "Lato", "bootstrap-icons"], ["Lato", "Lato", "Lato", "bootstrap-icons"]), []);
   assert.ok(run(["Inter", "Source Sans Pro"], ["Inter"]).some((issue) => issue.includes("fonts ")));
   assert.ok(run(["Inter"], ["Inter", "Source Sans Pro"]).some((issue) => issue.includes("fonts ")));
 });

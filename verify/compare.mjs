@@ -283,7 +283,7 @@ export function compare(before, after, lossy, stats) {
 
 const LAZY_RENDERER_FONT = /^(?:MathJax|KaTeX)_/;
 
-const stableFonts = (fonts) => fonts.filter((family) => !LAZY_RENDERER_FONT.test(family));
+const stableFonts = (fonts) => [...new Set(fonts.filter((family) => !LAZY_RENDERER_FONT.test(family)))].sort();
 
 const FONT_FILE = /.(?:woff2?|ttf|otf|eot)(?:[?#]|$)/i;
 
