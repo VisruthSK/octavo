@@ -162,7 +162,7 @@ jobs:
           retention-days: 3
 
   engines:
-    name: ${{ matrix.browser }} checks (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
+    name: ${{ fromJSON('{"chromium":"Chromium","firefox":"Firefox","webkit":"WebKit"}')[matrix.browser] }} checks (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select' && inputs.diagnose != 'experiment'
     runs-on: ubuntu-24.04
