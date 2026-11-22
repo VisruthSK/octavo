@@ -10,7 +10,7 @@ const MIRROR = (names) => {
   const replace = new RegExp(`:(${alternatives})(?![\\w-])`, "g");
   const mirrors = [];
   const unreadable = [];
-  let failed = 0;
+  const failed = [];
   const visit = (parent, label) => {
     let rules;
     try {
@@ -25,12 +25,13 @@ const MIRROR = (names) => {
       if (rule.cssRules?.length) visit(rule, label);
       const selector = rule.selectorText;
       if (!selector || !test.test(selector)) continue;
-      const body = rule.cssText.slice(selector.length);
+      const body = rule.cssRules?.length ? rule.cssText.slice(rule.cssText.indexOf("{")) : `{ ${rule.style.cssText} }`;
+      const mirrored = selector.replace(replace, "[data-octavo-$1]");
       try {
-        const at = parent.insertRule(`${selector.replace(replace, "[data-octavo-$1]")}${body}`, index + 1);
+        const at = parent.insertRule(`${mirrored} ${body}`, index + 1);
         mirrors.push({ parent, rule: parent.cssRules[at] });
       } catch {
-        failed += 1;
+        failed.push(mirrored);
       }
     }
   };
@@ -76,7 +77,7 @@ export async function forcedStates(page, selector, observe, onPhase = () => {}) 
     return found.length;
   }, selector);
   const states = [];
-  const checks = { elements: Math.min(count, LIMIT), hover: 0, focus: 0, focusVisible: 0, active: 0, mirrored, unreadable, unmirrored: failed };
+  const checks = { elements: Math.min(count, LIMIT), hover: 0, focus: 0, focusVisible: 0, active: 0, mirrored, unreadable, unmirrored: failed.length, unmirroredRules: failed.slice(0, 5) };
   for (let index = 0; index < checks.elements; index++) {
     for (const name of STATES) {
       onPhase(`forcedStates element ${index} ${name}`);

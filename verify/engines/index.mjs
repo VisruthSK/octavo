@@ -30,7 +30,7 @@ export const checksOf = (checks) => {
     }
   }
   if (checks.unreadable?.length) missing.push(`${checks.unreadable.length} stylesheets could not be read, so their state rules were not forced: ${checks.unreadable.slice(0, 3).join("; ")}`);
-  if (checks.unmirrored) missing.push(`${checks.unmirrored} state rules could not be mirrored`);
+  if (checks.unmirrored) missing.push(`${checks.unmirrored} state rules could not be mirrored: ${(checks.unmirroredRules ?? []).join(" | ")}`);
   const shots = checks.screenshots;
   if (shots && shots.taken < shots.total) missing.push(`screenshot on ${shots.total - shots.taken} of ${shots.total} states`);
   for (const limit of shots?.limits ?? []) missing.push(`screenshot pixels not compared on ${limit.label}: ${limit.width}x${limit.height}, ${limit.reason ?? "pixels"} limit ${limit.limit}`);
