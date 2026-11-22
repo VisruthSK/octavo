@@ -98,8 +98,8 @@ const ownPoint = (element) =>
       for (const rect of list) {
         const left = Math.max(rect.left, 0);
         const top = Math.max(rect.top, 0);
-        const width = Math.min(rect.right, innerWidth) - left;
-        const height = Math.min(rect.bottom, innerHeight) - top;
+        const width = Math.min(rect.right, document.documentElement.clientWidth) - left;
+        const height = Math.min(rect.bottom, document.documentElement.clientHeight) - top;
         if (width <= 0 || height <= 0) continue;
         for (const down of [0.5, 0.1, 0.9, 0.3, 0.7]) {
           for (const across of [0.5, 0.1, 0.9, 0.3, 0.7]) {

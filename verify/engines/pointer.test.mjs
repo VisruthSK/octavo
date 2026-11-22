@@ -146,3 +146,21 @@ test("a state that does not apply reports what is under the pointer", async () =
     await browser.close();
   }
 });
+
+test("a target at the bottom edge of a page with a classic scrollbar is hovered inside the content area", async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.setContent('<style>html { overflow-x: scroll } body { margin: 0; height: 2000px; width: 1000px } a { position: absolute; left: 20px; top: 1976px; display: block; width: 22px; height: 24px; background: #eee } a:hover { background: #222 }</style><a href="#x">x</a>');
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const observe = ({ probe }) => {
+      const element = window[Symbol.for("octavo.interactive")][probe.index];
+      return { style: getComputedStyle(element).backgroundColor, writingMode: "horizontal-tb", states: { hover: element.matches(":hover"), focus: element.matches(":focus"), focusVisible: element.matches(":focus-visible"), active: element.matches(":active") } };
+    };
+    const { checks } = await forcedStates(page, "a", observe);
+    assert.deepEqual(checks.details.hover, []);
+    assert.deepEqual(checks.details.active, []);
+  } finally {
+    await browser.close();
+  }
+});
