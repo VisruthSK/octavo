@@ -255,7 +255,7 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       for (const font of document.fonts) {
         if (font.status !== "loaded") continue;
         const stretch = font.stretch === "normal" ? "100%" : font.stretch;
-        faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch, font.unicodeRange].join("|"), font.family);
+        faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch].join("|"), font.family);
       }
       return [...faces.values()].sort();
     })(),
@@ -418,7 +418,7 @@ const frames = async (page) => {
   ]);
 };
 
-export function trackNetwork(page, requests = []) {
+export function trackNetwork(page, requests = [], linked = false) {
   const openRequests = new Set();
   const network = { pending: 0, count: 0, last: 0, openRequests };
   page.on("request", (request) => {
@@ -427,7 +427,7 @@ export function trackNetwork(page, requests = []) {
     network.count += 1;
     network.last = Date.now();
     openRequests.add(request);
-    requests.push(request.url());
+    if (!linked || !request.url().startsWith("http://localhost/")) requests.push(request.url());
   });
   const finished = (request) => {
     if (!openRequests.delete(request)) return;
@@ -570,15 +570,11 @@ export async function hasInteractions(browser, file, root) {
 const PATIENCE = 4;
 const CAPTURE_TIMEOUT_MS = 300_000;
 const CAPTURE_TOTAL_FACTOR = 4;
-const SCREENSHOT_TIMEOUT_MS = 5_000;
 const MAX_FULL_PAGE_HEIGHT = 16384;
-const SCREENSHOT_TIMEOUT_AREA = 1280 * 720;
 const MAX_SCREENSHOT_TILE_HEIGHT = 8000;
 const MAX_SCREENSHOT_PIXELS = 20_000_000;
 const MAX_SCREENSHOT_TILES = 2048;
 const MAX_SCREENSHOT_BYTES = 128 * 1024 * 1024;
-
-export const tileTimeout = (width, height) => SCREENSHOT_TIMEOUT_MS * Math.max(1, Math.ceil((width * height) / SCREENSHOT_TIMEOUT_AREA));
 
 export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase = () => "capture", totalMs = timeoutMs * CAPTURE_TOTAL_FACTOR) {
   let timedOut = false;
@@ -608,7 +604,7 @@ export function captureDeadline(context, timeoutMs = CAPTURE_TIMEOUT_MS, phase =
 export async function loadDocument(page, file, root, entryPath) {
   const base = await realpath(root ?? dirname(file));
   const entry = root ? (entryPath ?? relative(base, resolve(file))).split(sep).map(encodeURIComponent).join("/") : "index.html";
-  await page.route("http://octavo.test/**", async (route) => {
+  await page.route("http://localhost/**", async (route) => {
     try {
       const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
       const candidate = pathname === `/${decodeURIComponent(entry)}` ? file : resolve(base, `.${pathname}`);
@@ -617,12 +613,20 @@ export async function loadDocument(page, file, root, entryPath) {
       if (rel === ".." || rel.startsWith(`..${sep}`) || resolve(base, rel) !== path) throw new Error("outside root");
       await route.fulfill({ path });
     } catch {
-      await route.fulfill({ status: 404, body: "" });
+      if (route.request().isNavigationRequest() && route.request().frame() === page.mainFrame()) await route.abort("failed");
+      else await route.fulfill({ status: 404, body: "" });
     }
   });
-  return page.goto(`http://octavo.test/${entry}`, { waitUntil: "load", timeout: 0 });
+  await page.route((url) => /^https?:$/.test(url.protocol) && url.hostname !== "localhost", (route) => route.abort("blockedbyclient"));
+  const response = await page.goto(`http://localhost/${entry}`, { waitUntil: "load", timeout: 0 });
+  if (!response || response.status() >= 400) throw new Error(`document did not load: HTTP ${response?.status() ?? "none"}`);
+  return response;
 }
 export async function settleFonts() {
+  const bare = (name) => name.trim().replace(/^["']|["']$/g, "").toLowerCase();
+  const used = new Set();
+  for (const element of document.querySelectorAll("*")) for (const name of getComputedStyle(element).fontFamily.split(",")) used.add(bare(name));
+  await Promise.all([...document.fonts].filter((face) => face.status === "unloaded" && used.has(bare(face.family))).map((face) => face.load().catch(() => {})));
   const loaded = () => [...document.fonts].filter((face) => face.status === "loaded").length;
   let previous = -1;
   for (let round = 0; round < 8; round++) {
@@ -645,7 +649,7 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
   let fullPageError = `page height exceeds ${MAX_FULL_PAGE_HEIGHT} pixels`;
   if (height <= MAX_FULL_PAGE_HEIGHT) {
     try {
-      return await page.screenshot({ fullPage: true, animations: "disabled", timeout: SCREENSHOT_TIMEOUT_MS });
+      return await page.screenshot({ fullPage: true, animations: "disabled", timeout: 0 });
     } catch (error) {
       fullPageError = error.message;
     }
@@ -676,7 +680,7 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
             fullPage: true,
             clip: { x, y, width: clipWidth, height: clipHeight },
             animations: "disabled",
-            timeout: tileTimeout(clipWidth, clipHeight),
+            timeout: 0,
           });
           bytes += png.length;
           if (bytes > MAX_SCREENSHOT_BYTES) return { kind: "limit", width, height, limit: MAX_SCREENSHOT_BYTES, reason: "tile bytes" };
@@ -734,7 +738,7 @@ export async function capture(
     const page = await context.newPage();
     const errors = [];
     const requests = [];
-    const network = trackNetwork(page, requests);
+    const network = trackNetwork(page, requests, linked);
     const { openRequests } = network;
     let missingFiles = linked ? 0 : undefined;
     page.on("pageerror", (error) => errors.push(engine.normalizeError(error.message)));
@@ -742,7 +746,7 @@ export async function capture(
       if (message.type() !== "error") return;
       errors.push(engine.normalizeError(message.text()));
     });
-    if (linked) page.on("response", (response) => { if (response.status() === 404 && response.url().startsWith("http://octavo.test/")) missingFiles += 1; });
+    if (linked) page.on("response", (response) => { if (response.status() === 404 && response.url().startsWith("http://localhost/")) missingFiles += 1; });
     const knownLongLived = new Set(longLived ?? []);
     const waits = [];
     const wait = async (name, options = {}) => {
