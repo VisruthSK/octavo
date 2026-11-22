@@ -56,3 +56,10 @@ test("a face that is really missing is still reported", async () => {
   const changed = write("short", [regular, italic]);
   assert.equal((await fontIssues(original, changed)).length > 0, true);
 });
+
+test("faces that differ only in their unicode range count once", async () => {
+  const split = (range) => ({ ...regular, unicodeRange: range });
+  const original = write("whole", [regular, bold]);
+  const changed = write("subsets", [split("U+0-FF"), split("U+100-17F"), split("U+180-24F"), bold]);
+  assert.deepEqual(await fontIssues(original, changed), []);
+});

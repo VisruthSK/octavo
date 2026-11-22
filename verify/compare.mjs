@@ -286,7 +286,7 @@ const LAZY_RENDERER_FONT = /^(?:MathJax|KaTeX)_/;
 
 const MISSING_FILE_ERROR = /^Failed to load resource: (?:the server responded with a status of 404|net::ERR_FILE_NOT_FOUND)/;
 
-const stableFonts = (fonts) => [...new Set(fonts.filter((family) => !LAZY_RENDERER_FONT.test(family)))].sort();
+const stableFonts = (fonts) => fonts.filter((family) => !LAZY_RENDERER_FONT.test(family));
 
 const FONT_FILE = /.(?:woff2?|ttf|otf|eot)(?:[?#]|$)/i;
 

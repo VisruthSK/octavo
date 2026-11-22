@@ -253,7 +253,7 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       for (const font of document.fonts) {
         if (font.status !== "loaded") continue;
         const stretch = font.stretch === "normal" ? "100%" : font.stretch;
-        faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch, font.unicodeRange].join("|"), font.family);
+        faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch].join("|"), font.family);
       }
       return [...faces.values()].sort();
     })(),
