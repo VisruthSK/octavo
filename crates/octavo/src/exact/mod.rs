@@ -528,6 +528,37 @@ fn consider(
     }
 }
 
+fn can_unquote(src: &str, v_span: &Range<usize>) -> bool {
+    if v_span.is_empty() || v_span.start == 0 || v_span.end >= src.len() {
+        return false;
+    }
+    let b = src.as_bytes();
+    let q_open = b[v_span.start - 1];
+    let q_close = b[v_span.end];
+    if (q_open != b'"' && q_open != b'\'') || q_open != q_close {
+        return false;
+    }
+    let val = &src[v_span.clone()];
+    if val.is_empty() || val.starts_with("data:") {
+        return false;
+    }
+    if val.as_bytes().iter().any(|&c| {
+        c.is_ascii_whitespace() || matches!(c, b'"' | b'\'' | b'=' | b'<' | b'>' | b'`' | b'&')
+    }) {
+        return false;
+    }
+    if val.ends_with('/') {
+        return false;
+    }
+    let next_char = b.get(v_span.end + 1).copied();
+    if let Some(next) = next_char
+        && (next == b'/' || (!next.is_ascii_whitespace() && next != b'>'))
+    {
+        return false;
+    }
+    true
+}
+
 pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
     let mut edits = Vec::new();
     let mut warnings = Vec::new();
@@ -629,6 +660,76 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
                     transform: Transform::StrippedDefaultAttr,
                     target,
                 });
+            }
+        }
+        if !tag.in_svg && tag.element != Element::Svg {
+            let open_end = tag.body.as_ref().map_or(tag.span.end, |b| b.start);
+            let open_tag = &doc.src()[tag.span.start..open_end];
+            let mut cand_attrs = Vec::new();
+            for attr in &tag.attrs {
+                if matches!(tag.element, Element::Script | Element::Style)
+                    && attr.name == AttrName::Type
+                    && ((tag.element == Element::Script
+                        && attr.value.trim().eq_ignore_ascii_case("text/javascript"))
+                        || (tag.element == Element::Style
+                            && attr.value.trim().eq_ignore_ascii_case("text/css")))
+                {
+                    continue;
+                }
+                if let Some(span) = &attr.value_span
+                    && can_unquote(doc.src(), span)
+                    && span.start > tag.span.start
+                    && span.end < open_end
+                {
+                    let rel_start = (span.start - 1) - tag.span.start;
+                    let rel_end = (span.end + 1) - tag.span.start;
+                    cand_attrs.push((rel_start, rel_end, span.clone()));
+                }
+            }
+            if !cand_attrs.is_empty() {
+                let target = Target::Resource(tag.label().to_string());
+                let mut candidate = String::with_capacity(open_tag.len());
+                let mut cur = 0;
+                for (r_start, r_end, v_span) in &cand_attrs {
+                    candidate.push_str(&open_tag[cur..*r_start]);
+                    candidate.push_str(&doc.src()[v_span.clone()]);
+                    cur = *r_end;
+                }
+                candidate.push_str(&open_tag[cur..]);
+                let proven = adopt(open_tag.to_string(), candidate, &oracle::AttrQuotes);
+                if !proven.rejected() {
+                    for (_, _, v_span) in cand_attrs {
+                        edits.push(Edit {
+                            span: v_span.start - 1..v_span.end + 1,
+                            text: doc.src()[v_span.clone()].to_string(),
+                            transform: Transform::NormalizedAttrQuotes,
+                            target: target.clone(),
+                        });
+                    }
+                } else {
+                    for (r_start, r_end, v_span) in cand_attrs {
+                        let single_cand = format!(
+                            "{}{}{}",
+                            &open_tag[..r_start],
+                            &doc.src()[v_span.clone()],
+                            &open_tag[r_end..]
+                        );
+                        let proven = adopt(open_tag.to_string(), single_cand, &oracle::AttrQuotes);
+                        if proven.rejected() {
+                            warnings.push(Warning::OracleRejected {
+                                transform: Transform::NormalizedAttrQuotes,
+                                target: target.clone(),
+                            });
+                        } else {
+                            edits.push(Edit {
+                                span: v_span.start - 1..v_span.end + 1,
+                                text: doc.src()[v_span.clone()].to_string(),
+                                transform: Transform::NormalizedAttrQuotes,
+                                target: target.clone(),
+                            });
+                        }
+                    }
+                }
             }
         }
         if tag.element == Element::Style
@@ -1108,6 +1209,35 @@ mod tests {
             let out = optimize(&html, Mode::Exact).unwrap();
             proptest::prop_assert_eq!(&out.html, "<html><style>a{color:red;}</style></html>");
             proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::CollapsedCssWhitespace));
+            proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+        }
+    }
+
+    #[test]
+    fn exact_normalizes_html_attribute_quotes() {
+        let input = r#"<html><script id="main" class="app" data-x="123">1;</script><style id="theme" media="all">a{color:red;}</style></html>"#;
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(
+            out.html,
+            "<html><script id=main class=app data-x=123>1;</script><style id=theme media=all>a{color:red;}</style></html>"
+        );
+        assert!(
+            out.applied
+                .iter()
+                .any(|s| s.transform == Transform::NormalizedAttrQuotes)
+        );
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn attr_quotes_property_test(
+            val in "[a-zA-Z0-9_-]{1,16}"
+        ) {
+            let html = format!(r#"<html><script id="{val}" class="{val}">1;</script></html>"#);
+            let out = optimize(&html, Mode::Exact).unwrap();
+            proptest::prop_assert_eq!(&out.html, &format!(r#"<html><script id={val} class={val}>1;</script></html>"#));
+            proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::NormalizedAttrQuotes));
             proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
         }
     }

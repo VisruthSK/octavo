@@ -17,6 +17,37 @@ impl super::Oracle<String> for DefaultAttr {
     }
 }
 
+#[doc = "Checks that attribute quote normalisation preserves identical tag element and attribute names and values."]
+pub struct AttrQuotes;
+
+impl super::Oracle<String> for AttrQuotes {
+    fn equivalent(&self, original: &String, candidate: &String) -> bool {
+        attr_quotes(original, candidate)
+    }
+}
+
+pub fn attr_quotes(original: &str, candidate: &str) -> bool {
+    let scan_orig = crate::html::scan(original);
+    let scan_cand = crate::html::scan(candidate);
+    let (Some(orig_tag), Some(cand_tag)) = (scan_orig.tags.first(), scan_cand.tags.first()) else {
+        return false;
+    };
+    if scan_orig.tags.len() != 1
+        || scan_cand.tags.len() != 1
+        || orig_tag.element != cand_tag.element
+    {
+        return false;
+    }
+    if orig_tag.attrs.len() != cand_tag.attrs.len() {
+        return false;
+    }
+    orig_tag
+        .attrs
+        .iter()
+        .zip(&cand_tag.attrs)
+        .all(|(a, b)| a.name == b.name && a.value == b.value)
+}
+
 pub fn default_attr(original: &str, candidate: &str) -> bool {
     let scan_orig = crate::html::scan(original);
     let scan_cand = crate::html::scan(candidate);
@@ -822,5 +853,25 @@ mod tests {
         assert!(image(&webp_a, &png));
         assert!(image(&webp_a, &webp_a));
         assert!(!image(&webp_a, &webp_b));
+    }
+
+    #[test]
+    fn attr_quotes_accepts_valid_unquoting_and_rejects_discrepancies() {
+        assert!(attr_quotes(
+            r#"<img src="foo.png" id="bar">"#,
+            r#"<img src=foo.png id=bar>"#
+        ));
+        assert!(!attr_quotes(
+            r#"<img src="foo.png">"#,
+            r#"<img src="foo.jpg">"#
+        ));
+        assert!(!attr_quotes(
+            r#"<img src="foo.png">"#,
+            r#"<link href="foo.png">"#
+        ));
+        assert!(!attr_quotes(
+            r#"<img src="foo bar">"#,
+            r#"<img src=foo bar>"#
+        ));
     }
 }
