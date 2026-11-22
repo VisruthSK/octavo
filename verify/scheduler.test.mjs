@@ -69,3 +69,24 @@ test("Slots passes wait time to onWait callback", async () => {
   await Promise.all([first, second]);
   assert.ok(waitedMs >= 15);
 });
+
+test("Slots handles exclusive tasks", async () => {
+  const slots = new Slots();
+  slots.capacity = 2;
+  const order = [];
+  let unblockFirst;
+  const firstBlocker = new Promise((resolve) => { unblockFirst = resolve; });
+  const first = slots.using(() => firstBlocker);
+  const exclusive = slots.using(async () => {
+    order.push("exclusive-start");
+    assert.equal(slots.running, 2);
+    order.push("exclusive-end");
+  }, 2);
+  const normal = slots.using(async () => {
+    order.push("normal");
+  }, 1);
+  unblockFirst();
+  await Promise.all([first, exclusive, normal]);
+  assert.deepEqual(order, ["exclusive-start", "exclusive-end", "normal"]);
+});
+

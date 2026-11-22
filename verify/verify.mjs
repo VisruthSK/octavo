@@ -17,39 +17,73 @@ export const pages = isolated ? Math.min(wanted, 4) : wanted;
 export class Slots {
   capacity = pages;
   running = 0;
+  exclusive = 0;
   priorityQueue = [];
   queue = [];
 
-  take(onWait = () => {}, priority = false) {
-    if (this.running < this.capacity) {
-      this.running++;
+  take(count = 1, onWait = () => {}, priority = false) {
+    if (typeof count === "function") {
+      priority = Boolean(onWait);
+      onWait = count;
+      count = 1;
+    }
+    const isExclusive = count >= this.capacity && this.capacity > 1;
+    if (isExclusive) this.exclusive += 1;
+    const free = this.capacity - this.running;
+    if (this.priorityQueue.length === 0 && this.queue.length === 0 && (!isExclusive ? this.exclusive === 0 && free >= count : this.running === 0)) {
+      if (isExclusive) this.exclusive -= 1;
+      this.running += count;
       onWait(0);
       return Promise.resolve();
     }
     const started = process.hrtime.bigint();
     return new Promise((wake) => {
-      const entry = {
-        run: () => {
-          this.running++;
-          onWait(Number(process.hrtime.bigint() - started) / 1e6);
-          wake();
-        },
-      };
-      if (priority) this.priorityQueue.push(entry);
+      const entry = { count, onWait, priority, isExclusive, started, wake };
+      if (priority || isExclusive) this.priorityQueue.push(entry);
       else this.queue.push(entry);
     });
   }
 
   give(count = 1) {
     this.running -= count;
-    while (this.running < this.capacity && (this.priorityQueue.length > 0 || this.queue.length > 0)) {
-      const entry = this.priorityQueue.length > 0 ? this.priorityQueue.shift() : this.queue.shift();
-      entry.run();
+    this.dispatch();
+  }
+
+  dispatch() {
+    while (true) {
+      const free = this.capacity - this.running;
+      if (free <= 0) break;
+      const nextQueue = this.priorityQueue.length > 0 ? this.priorityQueue : this.queue;
+      if (nextQueue.length === 0) break;
+      const nextEntry = nextQueue[0];
+      if (nextEntry.isExclusive) {
+        if (this.running === 0) {
+          nextQueue.shift();
+          this.exclusive -= 1;
+          this.running += nextEntry.count;
+          nextEntry.onWait(Number(process.hrtime.bigint() - nextEntry.started) / 1e6);
+          nextEntry.wake();
+          break;
+        } else {
+          break;
+        }
+      }
+      if (this.exclusive > 0) break;
+      if (nextEntry.count > free) break;
+      nextQueue.shift();
+      this.running += nextEntry.count;
+      nextEntry.onWait(Number(process.hrtime.bigint() - nextEntry.started) / 1e6);
+      nextEntry.wake();
     }
   }
 
   async using(task, count = 1, onWait = () => {}, priority = false) {
-    await this.take(onWait, priority);
+    if (typeof count === "function") {
+      priority = Boolean(onWait);
+      onWait = count;
+      count = 1;
+    }
+    await this.take(count, onWait, priority);
     try {
       return await task();
     } finally {
@@ -159,41 +193,33 @@ async function confirmed(original, file, scenario, before, after, lossy, interac
   if (before.crashed || after.crashed || !issues.length || issues.some((issue) => issue.includes("capture timed out") || issue.includes("screenshot missing"))) {
     return { issues, rounded: stats.roundedPixels };
   }
-  const pairs = [{ before, after }];
-  for (let round = 0; round < RECAPTURES; round++) {
-    if (isDeadlineReached()) return { issues: [...issues, "verification deadline reached during document comparison"], rounded: stats.roundedPixels };
-    metrics.recaptures += 1;
-    const patient = round > 0;
-    const [again, optimizedAgain] = await Promise.all([
-      slots.using(
-        () => take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, entryPath, onPhase: metrics.phase("confirmation original") }).catch(crashed),
-        1,
-        (ms) => { metrics.confirmationWait += ms; },
-        true,
-      ),
-      slots.using(
-        () => take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked, entryPath, onPhase: metrics.phase("confirmation optimized") }).catch(crashed),
-        1,
-        (ms) => { metrics.confirmationWait += ms; },
-        true,
-      ),
-    ]);
-    if (again.crashed || optimizedAgain.crashed) return { issues: compare(again, optimizedAgain, lossy), rounded: stats.roundedPixels };
-    pairs.push({ before: view(again, sweep), after: view(optimizedAgain, sweep) });
-    if (!compare(view(again, sweep), view(optimizedAgain, sweep), lossy).length) break;
-  }
-  const seen = (left, right) => new Set(compare(left, right, lossy).map(signature));
-  const across = pairs.map((pair) => seen(pair.before, pair.after));
-  const within = [];
-  for (const side of ["before", "after"]) {
-    for (let i = 0; i < pairs.length; i++) {
-      for (let j = i + 1; j < pairs.length; j++) within.push(seen(pairs[i][side], pairs[j][side]));
+  const kept = await slots.using(async () => {
+    const pairs = [{ before, after }];
+    for (let round = 0; round < RECAPTURES; round++) {
+      if (isDeadlineReached()) return [...issues, "verification deadline reached during document comparison"];
+      metrics.recaptures += 1;
+      const patient = round > 0;
+      const [again, optimizedAgain] = await Promise.all([
+        take(original, scenario, lossy, { interact, patient, root: rootFor?.(original), linked, entryPath, onPhase: metrics.phase("confirmation original") }).catch(crashed),
+        take(file, scenario, lossy, { interact, patient, root: rootFor?.(file), linked, entryPath, onPhase: metrics.phase("confirmation optimized") }).catch(crashed),
+      ]);
+      if (again.crashed || optimizedAgain.crashed) return compare(again, optimizedAgain, lossy);
+      pairs.push({ before: view(again, sweep), after: view(optimizedAgain, sweep) });
+      if (!compare(view(again, sweep), view(optimizedAgain, sweep), lossy).length) break;
     }
-  }
-  const kept = issues.filter((issue) => {
-    const key = signature(issue);
-    return across.every((set) => set.has(key)) && within.every((set) => !set.has(key));
-  });
+    const seen = (left, right) => new Set(compare(left, right, lossy).map(signature));
+    const across = pairs.map((pair) => seen(pair.before, pair.after));
+    const within = [];
+    for (const side of ["before", "after"]) {
+      for (let i = 0; i < pairs.length; i++) {
+        for (let j = i + 1; j < pairs.length; j++) within.push(seen(pairs[i][side], pairs[j][side]));
+      }
+    }
+    return issues.filter((issue) => {
+      const key = signature(issue);
+      return across.every((set) => set.has(key)) && within.every((set) => !set.has(key));
+    });
+  }, pages, (ms) => { metrics.confirmationWait += ms; });
   return { issues: kept, rounded: stats.roundedPixels };
 }
 
