@@ -449,6 +449,9 @@ test("linked mode missing file count comparisons", () => {
     ),
     [],
   );
+  const notFound = "Failed to load resource: the server responded with a status of 404 (Not Found)";
+  assert.deepEqual(compare(make([notFound, notFound], 2), make([], 2), false), []);
+  assert.deepEqual(compare(make([notFound], undefined), make([], undefined), false), [`console errors: ["${notFound}"] vs []`]);
   assert.deepEqual(compare(make(["a", "b"], 1), make(["b", "a"], 1), false), []);
   assert.deepEqual(compare(make(["a", "a"], 1), make(["a"], 1), false), ['console errors: ["a","a"] vs ["a"]']);
   assert.deepEqual(

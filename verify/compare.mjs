@@ -259,8 +259,9 @@ export function compare(before, after, lossy, stats) {
   const issues = [];
   if (!before.states.length) issues.push("original produced no states");
   const linked = before.checks?.missingFiles !== undefined || after.checks?.missingFiles !== undefined;
-  const beforeErrors = [...before.errors].sort();
-  const afterErrors = [...after.errors].sort();
+  const countedElsewhere = (error) => linked && MISSING_FILE_ERROR.test(error);
+  const beforeErrors = before.errors.filter((error) => !countedElsewhere(error)).sort();
+  const afterErrors = after.errors.filter((error) => !countedElsewhere(error)).sort();
   if (JSON.stringify(beforeErrors) !== JSON.stringify(afterErrors)) {
     issues.push(`console errors: ${JSON.stringify(beforeErrors)} vs ${JSON.stringify(afterErrors)}`);
   }
@@ -282,6 +283,8 @@ export function compare(before, after, lossy, stats) {
 }
 
 const LAZY_RENDERER_FONT = /^(?:MathJax|KaTeX)_/;
+
+const MISSING_FILE_ERROR = /^Failed to load resource: (?:the server responded with a status of 404|net::ERR_FILE_NOT_FOUND)/;
 
 const stableFonts = (fonts) => [...new Set(fonts.filter((family) => !LAZY_RENDERER_FONT.test(family)))].sort();
 
