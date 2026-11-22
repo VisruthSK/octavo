@@ -100,6 +100,8 @@ export function computeWireSizes(results, jobMs = Infinity) {
   return quality;
 }
 
+export const ignoredArchiveNoJsIssue = (issue) => !issue.startsWith("check incomplete:") && !issue.startsWith("crashed:") && !issue.includes("screenshot missing") && !issue.includes("capture timed out") && !issue.includes("verification deadline reached");
+
 export const generateReport = formatReport;
 export function formatReport(results, options = {}) {
   const {
@@ -164,6 +166,15 @@ export function formatReport(results, options = {}) {
       ``,
     );
   }
+  if (browser) {
+    lines.push("## Scenario timings (milliseconds)", "", "| Document | Level | Scenario | Slot wait | Confirmation wait | Recaptures | Capture phases |", "|---|---|---|---:|---:|---:|---|");
+    for (const entry of results) for (const item of entry.scenarios ?? []) {
+      if (!item.metrics) continue;
+      const m = item.metrics;
+      lines.push(`| ${entry.id} | ${entry.level} | ${item.scenario} | ${m.slotWait.toFixed(0)} | ${m.confirmationWait.toFixed(0)} | ${m.recaptures} | ${Object.entries(m.phases).map(([phase, ms]) => `${phase}: ${ms.toFixed(0)}`).join(", ")} |`);
+    }
+    lines.push("");
+  }
   lines.push(`| Category / level | Docs | Input KiB | Output KiB | Brotli ${brotliLabel} KiB | Gzip 9 KiB | Median ratio | p50 ms | p95 ms | Naive KiB | Brotli(original) KiB |`);
   lines.push(`|---|---|---|---|---|---|---|---|---|---|---|`);
   for (const [name, entries] of [...categories].sort(([a], [b]) => a.localeCompare(b))) {
@@ -187,7 +198,7 @@ export function formatReport(results, options = {}) {
     const limits = [
       ...(engine.placeholderStyle ? [] : [`${engine.label}: computed style for ::placeholder is unavailable; screenshot pixel comparison remains active.`]),
       ...browserChecks.screenshotLimits.map((entry) =>
-        `${entry.id} (${entry.scenario}, ${entry.side}, ${entry.label}): page too large for screenshots limit ${entry.limit} pixels at ${entry.height}px tall (${entry.width}px wide).`,
+        `${entry.id} (${entry.scenario}, ${entry.side}, ${entry.label}): screenshot incomplete at ${entry.width}x${entry.height}: ${entry.reason ?? "pixels"} limit ${entry.limit}.`,
       ),
     ];
     lines.push(``, `## Limits`, limits.length ? "" : "None.", ...limits.map((limit) => `- ${limit}`));
@@ -470,6 +481,7 @@ export async function runCorpus() {
         for (const [at, plan] of plans.entries()) {
           const entry = entries.find((candidate) => candidate.level === plan.level && candidate.output === plan.path);
           const report = measured.reports[at];
+          entry.scenarios = report.map(({ scenario, metrics }) => ({ scenario, metrics }));
           for (const { scenario, checks, optimizedChecks } of report) {
             if (!checks) continue;
             browserChecks.scenarios.add(scenario);
@@ -497,7 +509,7 @@ export async function runCorpus() {
                 true,
                 async () => report.every(({ scenario, issues }) =>
                   plan.level === "archive" && scenario === "no-js"
-                    ? !issues.some((issue) => issue.startsWith("check incomplete:") || issue.includes("screenshot missing"))
+                    ? issues.every(ignoredArchiveNoJsIssue)
                     : !issues.length,
                 ),
               );
@@ -509,7 +521,7 @@ export async function runCorpus() {
           const issues = [];
           for (const { scenario, issues: found } of report) {
             for (const issue of found) {
-              if (entry.level === "archive" && scenario === "no-js" && !issue.startsWith("check incomplete:") && !issue.includes("screenshot missing")) continue;
+              if (entry.level === "archive" && scenario === "no-js" && ignoredArchiveNoJsIssue(issue)) continue;
               issues.push(`${engineTag}${scenario}: ${issue}`);
             }
           }
@@ -580,7 +592,9 @@ export async function runCorpus() {
   writeFileSync(join(outDirectory, "report.json"), `${JSON.stringify(results.map(({ input, output, ...rest }) => rest), null, 2)}\n`);
   console.log(report);
   const failures = results.filter((entry) => entry.problems.length);
-  process.exit(failures.length ? 1 : 0);
+  const verifiedNothing = browser && selected.length > 0 && browserCache.hits + browserCache.misses === 0;
+  if (verifiedNothing) console.error(`No browser comparison ran for ${selected.length} selected documents.`);
+  process.exit(failures.length || verifiedNothing ? 1 : 0);
 }
 
 if (process.argv[1]?.endsWith("corpus.mjs")) {
