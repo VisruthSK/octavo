@@ -1,0 +1,16 @@
+name: Licenses probe
+on:
+  pull_request:
+    paths: [".github/workflows/licenses-probe.yml"]
+jobs:
+  probe:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: command -v cargo-about > /dev/null || cargo install cargo-about --locked --features cli
+        shell: bash
+      - run: cargo about generate about.hbs -o THIRD-PARTY-LICENSES.txt
+      - run: wc -c THIRD-PARTY-LICENSES.txt
