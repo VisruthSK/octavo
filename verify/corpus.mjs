@@ -363,7 +363,7 @@ export async function runCorpus() {
       const source = readFileSync(input, "utf8");
       const produced = result.code === 0 ? readFileSync(output, "utf8") : "";
       const excluded = Boolean(row.source) && result.stderr.includes(rejections["not-self-contained"]);
-      const problems = excluded ? [] : check({ level }, row.expect, result, produced, source);
+      const problems = excluded || self ? [] : check({ level }, row.expect, result, produced, source);
       return {
         id: row.id,
         category: row.category,
@@ -380,7 +380,7 @@ export async function runCorpus() {
         },
         problems,
         excluded: excluded ? result.stderr.trim().split("\n").at(-1).slice(0, 200) : null,
-        browser: row.browser && result.code === 0 && produced !== source,
+        browser: row.browser && result.code === 0 && (self || produced !== source),
         input,
         output,
       };
