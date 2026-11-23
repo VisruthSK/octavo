@@ -11,6 +11,7 @@ on:
       - ".github/workflows/corpus.yml"
       - ".github/workflows/release.yml"
       - ".github/build-setup.yml"
+      - "dist-workspace.toml"
   pull_request:
     paths: *paths
   workflow_call:
