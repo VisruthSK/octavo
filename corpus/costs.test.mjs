@@ -11,9 +11,9 @@ test("readCosts reads committed costs table", () => {
   assert.equal(table["quarto-cli-crossrefs-all"].chromium, 356);
   assert.equal(table["quarto-cli-crossrefs-all"].firefox, 1080);
   assert.equal(table["quarto-cli-crossrefs-all"].webkit, 1224);
-  assert.equal(table["twenty-thousand-paragraphs"].chromium, 904);
-  assert.equal(table["twenty-thousand-paragraphs"].firefox, 552);
-  assert.equal(table["twenty-thousand-paragraphs"].webkit, 432);
+  assert.equal(table["two-thousand-paragraphs"].chromium, 90);
+  assert.equal(table["two-thousand-paragraphs"].firefox, 55);
+  assert.equal(table["two-thousand-paragraphs"].webkit, 43);
 });
 
 test("costOf uses costs table and documented fallbacks", () => {
