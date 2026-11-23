@@ -218,7 +218,7 @@ export function formatReport(results, options = {}) {
       `## Browser checks`,
       ``,
       `Engine ${engineNoticeText} compared the scenarios ${[...browserChecks.scenarios].join(", ")}.`,
-      `Forced hover, focus, focus-visible and active states were checked with real pointer and keyboard events in scenarios with scripts. Hidden and unreachable targets are recorded in the compared state.`,
+      `Hover, focus, focus-visible and active states were forced on the first interactive elements in scenarios with scripts, by the engine, with the rules for those states mirrored where the engine cannot force them.`,
       `Checked ${totals.elements} elements: hover applied to ${totals.hover}, focus to ${totals.focus}, focus visible to ${totals.focusVisible}, active to ${totals.active}.`,
       ``,
       `Incomplete checks: ${browserChecks.degraded.length ? browserChecks.degraded.length : "none"}.`,
