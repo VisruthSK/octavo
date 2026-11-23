@@ -9,6 +9,8 @@ on:
       - "verify/**"
       - "Cargo.lock"
       - ".github/workflows/corpus.yml"
+      - ".github/workflows/release.yml"
+      - ".github/build-setup.yml"
   pull_request:
     paths: *paths
   workflow_call:
