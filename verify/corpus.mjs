@@ -251,8 +251,9 @@ export async function runCorpus() {
   const jobs = Number(flag("jobs", Math.max(1, Math.floor(cores / 2))));
   const threads = Math.max(1, Math.floor(cores / jobs));
   const browser = process.argv.includes("--browser");
-  const verdictCache = !process.argv.includes("--no-verdict-cache");
-  const captureCache = !process.argv.includes("--no-capture-cache");
+  const self = process.argv.includes("--self");
+  const verdictCache = !self && !process.argv.includes("--no-verdict-cache");
+  const captureCache = !self && !process.argv.includes("--no-capture-cache");
   const upstream = !process.argv.includes("--no-upstream");
   const octavoArgs = flag("octavo-args", "").split(/\s+/).filter(Boolean);
   const outDirectory = resolve(flag("out", join(root, "out", "corpus")));
@@ -263,6 +264,10 @@ export async function runCorpus() {
   const binary = join(scratch, basename(built));
   copyFileSync(built, binary);
 
+  const copied = (input, output) => {
+    copyFileSync(input, output);
+    return { code: 0, stdout: "", stderr: "", ms: 0 };
+  };
   const run = (args) =>
     new Promise((done) => {
       const started = process.hrtime.bigint();
@@ -354,7 +359,7 @@ export async function runCorpus() {
           output,
         };
       }
-      const result = await run([input, output, "--level", level, "--jobs", String(threads), ...octavoArgs]);
+      const result = self ? copied(input, output) : await run([input, output, "--level", level, "--jobs", String(threads), ...octavoArgs]);
       const source = readFileSync(input, "utf8");
       const produced = result.code === 0 ? readFileSync(output, "utf8") : "";
       const excluded = Boolean(row.source) && result.stderr.includes(rejections["not-self-contained"]);
