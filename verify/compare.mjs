@@ -82,20 +82,46 @@ const canonical = (declaration) => {
   return result;
 };
 
-const canonicalSetCache = boundMap(new Map());
-const getCanonicalSet = (candidate) => {
-  let set = canonicalSetCache.get(candidate);
-  if (!set) {
-    set = new Set(candidate.split(";").map(canonical));
-    canonicalSetCache.set(candidate, set);
+export const USED_SIZE_ROUNDING = 1e-4;
+const USED_SIZE = /^((?:::?[a-z-]+)?(?:width|height|inline-size|block-size)):(-?\d*\.?\d+)px$/;
+
+const usedSize = (declaration) => {
+  const match = declaration.match(USED_SIZE);
+  return match ? [match[1], Number(match[2])] : null;
+};
+
+const candidateCache = boundMap(new Map());
+const getCandidateData = (candidate) => {
+  let data = candidateCache.get(candidate);
+  if (!data) {
+    const declarations = candidate.split(";");
+    const present = new Set(declarations.map(canonical));
+    const sizes = new Map();
+    for (const declaration of declarations) {
+      const size = usedSize(declaration);
+      if (size) {
+        let list = sizes.get(size[0]);
+        if (!list) {
+          list = [];
+          sizes.set(size[0], list);
+        }
+        list.push(size[1]);
+      }
+    }
+    data = { present, sizes };
+    candidateCache.set(candidate, data);
   }
-  return set;
+  return data;
 };
 
 export const missingFrom = (reference, candidate = "") => {
   if (reference === candidate) return [];
-  const present = getCanonicalSet(candidate);
-  return reference.split(";").filter((declaration) => !present.has(canonical(declaration)));
+  const { present, sizes } = getCandidateData(candidate);
+  return reference.split(";").filter((declaration) => {
+    if (present.has(canonical(declaration))) return false;
+    const size = usedSize(declaration);
+    return !size || !(sizes.get(size[0]) ?? []).some((value) => Math.abs(value - size[1]) < USED_SIZE_ROUNDING);
+  });
 };
 
 const sameStyleCache = boundMap(new Map());
@@ -261,7 +287,9 @@ function compareState(a, b, lossy, stats) {
   if (a.accessibility !== b.accessibility) issues.push("accessibility tree differs");
   for (const [i, [name, expected]] of (a.forced ?? []).entries()) {
     const actual = b.forced?.[i]?.[1] ?? "";
-    if (!sameStyle(expected, actual)) issues.push(`forced ${name}: ${missingFrom(expected, actual).slice(0, 3).join(" | ")}`);
+    if (!sameStyle(expected, actual)) {
+      issues.push(`forced ${name}: ${missingFrom(expected, actual).slice(0, 3).join(" | ")} vs ${missingFrom(actual, expected).slice(0, 3).join(" | ")}`);
+    }
   }
   if (a.dom !== b.dom) {
     const at = firstDifference(a.dom, b.dom);

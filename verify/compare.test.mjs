@@ -2,7 +2,7 @@ import { captureScreenshot } from "./capture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PNG } from "pngjs";
-import { boundMap, compare, differences, missingFrom, sameStyle } from "./compare.mjs";
+import { boundMap, compare, differences, missingFrom, sameStyle, USED_SIZE_ROUNDING } from "./compare.mjs";
 import { canonicalCssValue, canonicalFontFamily, canonicalStyle, CSS_SIGNIFICANT_DIGITS } from "./styles.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
 import { launch, incompleteChecks, engine } from "./engines/index.mjs";
@@ -126,8 +126,18 @@ test("CSS property numbers compare at six significant digits without changing un
   assert.deepEqual(missingFrom("width:33.3333%", "width:33.3334%"), ["width:33.3333%"]);
   assert.deepEqual(missingFrom("width:100px", "width:100.02px"), ["width:100px"]);
   assert.deepEqual(missingFrom("width:12.3456789px", "width:12.3457px"), []);
-  assert.deepEqual(missingFrom("width:0.0001px", "width:0.0002px"), ["width:0.0001px"]);
+  assert.deepEqual(missingFrom("width:0.0001px", "width:0.0003px"), ["width:0.0001px"]);
   assert.deepEqual(missingFrom("width:12.3456789px", "width:12.3457em"), ["width:12.3456789px"]);
+});
+
+test("used sizes may differ by the optimizer number rounding but nothing else", () => {
+  assert.equal(USED_SIZE_ROUNDING, 1e-4);
+  assert.deepEqual(missingFrom("height:5.000001px", "height:5.00001px"), []);
+  assert.deepEqual(missingFrom("::beforewidth:10px", "::beforewidth:10.00005px"), []);
+  assert.deepEqual(missingFrom("height:5px", "height:5.0002px"), ["height:5px"]);
+  assert.deepEqual(missingFrom("height:5px", "width:5px"), ["height:5px"]);
+  assert.deepEqual(missingFrom("height:5px", "height:5em"), ["height:5px"]);
+  assert.deepEqual(missingFrom("margin-top:5px", "margin-top:5.00005px"), ["margin-top:5px"]);
 });
 
 test("numeric text and font names are not rounded", () => {

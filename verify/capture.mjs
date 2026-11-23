@@ -63,6 +63,13 @@ function seedRandom() {
 
 const TIMERS = Symbol.for("octavo.timers");
 
+export const finishTransitions = (page) =>
+  page
+    .evaluate(() => {
+      for (const animation of document.getAnimations()) if (animation instanceof CSSTransition) animation.finish();
+    })
+    .catch(() => {});
+
 export function trackTimers() {
   const from = 50;
   const to = 6000;
@@ -250,8 +257,15 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
     fonts: (() => {
       const weights = { normal: "400", bold: "700" };
       const faces = new Map();
+      const bare = (name) => name.trim().replace(/^["']|["']$/g, "").toLowerCase();
+      const used = new Set();
+      for (const element of document.querySelectorAll("*")) {
+        for (const pseudo of [null, "::before", "::after"]) {
+          for (const name of getComputedStyle(element, pseudo).fontFamily.split(",")) used.add(bare(name));
+        }
+      }
       for (const font of document.fonts) {
-        if (font.status !== "loaded") continue;
+        if (font.status !== "loaded" || !used.has(bare(font.family))) continue;
         const stretch = font.stretch === "normal" ? "100%" : font.stretch;
         faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch].join("|"), font.family);
       }
@@ -615,7 +629,11 @@ export async function loadDocument(page, file, root, entryPath) {
       else await route.fulfill({ status: 404, body: "" });
     }
   });
-  await page.route((url) => /^https?:$/.test(url.protocol) && url.hostname !== "localhost", (route) => route.abort("blockedbyclient"));
+  page.blockedUrls = new Set();
+  await page.route((url) => /^https?:$/.test(url.protocol) && url.hostname !== "localhost", (route) => {
+    page.blockedUrls.add(route.request().url());
+    return route.abort("blockedbyclient");
+  });
   const response = await page.goto(`http://localhost/${entry}`, { waitUntil: "load", timeout: 0 });
   if (!response || response.status() >= 400) throw new Error(`document did not load: HTTP ${response?.status() ?? "none"}`);
   return response;
@@ -623,7 +641,11 @@ export async function loadDocument(page, file, root, entryPath) {
 export async function settleFonts() {
   const bare = (name) => name.trim().replace(/^["']|["']$/g, "").toLowerCase();
   const used = new Set();
-  for (const element of document.querySelectorAll("*")) for (const name of getComputedStyle(element).fontFamily.split(",")) used.add(bare(name));
+  for (const element of document.querySelectorAll("*")) {
+    for (const pseudo of [null, "::before", "::after"]) {
+      for (const name of getComputedStyle(element, pseudo).fontFamily.split(",")) used.add(bare(name));
+    }
+  }
   await Promise.all([...document.fonts].filter((face) => face.status === "unloaded" && used.has(bare(face.family))).map((face) => face.load().catch(() => {})));
   const loaded = () => [...document.fonts].filter((face) => face.status === "loaded").length;
   let previous = -1;
@@ -838,6 +860,7 @@ export async function capture(
     if (scripted && scenario.name === "desktop-light") {
       setPhase("resize viewport");
       await page.setViewportSize({ width: 900, height: 700 });
+      await finishTransitions(page);
       await wait("after resize");
       await record("resize");
       await page.setViewportSize(scenario.viewport);
@@ -876,7 +899,9 @@ export async function capture(
           }
         }
         await page.keyboard.press("Escape").catch(() => {});
+        await finishTransitions(page);
         await wait("after behaviour sweep");
+        await finishTransitions(page);
         await record("behaviour");
       }
     }
