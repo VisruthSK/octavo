@@ -4,7 +4,7 @@ on:
     paths: [".github/workflows/licenses-probe.yml"]
 jobs:
   probe:
-    runs-on: macos-13
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
