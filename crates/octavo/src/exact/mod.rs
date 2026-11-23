@@ -914,6 +914,7 @@ pub fn adopt<T>(original: T, candidate: T, oracle: &impl Oracle<T>) -> Proven<T>
 
 #[cfg(test)]
 mod tests {
+    use super::{adopt, oracle};
     use crate::{Mode, Transform, optimize};
     use base64::{Engine, engine::general_purpose::STANDARD};
     use image::ImageEncoder;
@@ -1371,6 +1372,92 @@ mod tests {
                 .iter()
                 .any(|s| s.transform == Transform::MinifiedScript)
         );
+    }
+
+    #[test]
+    fn exact_attr_quotes_is_byte_deterministic() {
+        let input = r#"<html><script id="hello" class="world">1;</script></html>"#;
+        let out1 = optimize(input, Mode::Exact).unwrap();
+        let out2 = optimize(&out1.html, Mode::Exact).unwrap();
+        assert_eq!(
+            out1.html,
+            r#"<html><script id=hello class=world>1;</script></html>"#
+        );
+        assert_eq!(out1.html, out2.html);
+        assert!(out2.applied.is_empty());
+    }
+
+    #[test]
+    fn exact_attr_quotes_rejects_unsafe_values() {
+        let input = r#"<html><div class="a b" title="foo=bar" data-x="a>b" data-y="a<b" data-z="a`b" href="data:text/html,abc"></div></html>"#;
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, input);
+        assert!(
+            !out.applied
+                .iter()
+                .any(|s| s.transform == Transform::NormalizedAttrQuotes)
+        );
+    }
+
+    #[test]
+    fn attr_quotes_oracle_rejection_keeps_original() {
+        let original = r#"<img src="foo.png">"#.to_string();
+        let candidate = r#"<img src="bar.png">"#.to_string();
+        let proven = adopt(original.clone(), candidate, &oracle::AttrQuotes);
+        assert!(proven.rejected());
+        assert_eq!(proven.into_inner(), original);
+    }
+
+    #[test]
+    fn exact_js_token_stream_is_byte_deterministic() {
+        let input = "<html><script>\nlet a = 10;\nconst b = 20;\nfunction sum(x, y) { return x + y; }\n</script></html>";
+        let out1 = optimize(input, Mode::Exact).unwrap();
+        let out2 = optimize(&out1.html, Mode::Exact).unwrap();
+        assert_eq!(
+            out1.html,
+            "<html><script>let a=10;const b=20;function sum(x,y){return x+y;}</script></html>"
+        );
+        assert_eq!(out1.html, out2.html);
+        assert!(out2.applied.is_empty());
+    }
+
+    #[test]
+    fn exact_js_preserves_asi_newlines() {
+        let input = "<html><script>\nfunction f() {\n    return\n    1;\n}\n</script></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, input);
+        assert!(
+            !out.applied
+                .iter()
+                .any(|s| s.transform == Transform::MinifiedScript)
+        );
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    #[test]
+    fn exact_js_preserves_strings_and_regexes() {
+        let input =
+            "<html><script>const s = \"// not a comment\"; const r = /test/g;</script></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert!(out.html.contains("\"// not a comment\""));
+        assert!(out.html.contains("/test/g"));
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    #[test]
+    fn exact_js_rejects_closing_script_tag_in_candidate() {
+        let input = "<html><script>const x = '</script>';</script></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, input);
+    }
+
+    #[test]
+    fn js_token_stream_oracle_rejection_keeps_original() {
+        let original = "const x = 1;".to_string();
+        let candidate = "const x = 2;".to_string();
+        let proven = adopt(original.clone(), candidate, &oracle::JsTokenStream);
+        assert!(proven.rejected());
+        assert_eq!(proven.into_inner(), original);
     }
 
     proptest::proptest! {
