@@ -69,11 +69,22 @@ const APPLY = ({ selector, index, name, on }) => {
   return true;
 };
 
+export const withStateRules = (page, hrefs) =>
+  page.evaluate(async ({ hrefs, names }) => {
+    const pattern = new RegExp(`:(?:${names.join("|")})(?![\\w-])`);
+    const kept = [];
+    for (const href of hrefs) {
+      const text = href.startsWith("data:") ? await fetch(href).then((response) => response.text()).catch(() => null) : null;
+      if (text === null || pattern.test(text)) kept.push(href);
+    }
+    return kept;
+  }, { hrefs, names: STATES });
+
 export async function forcedStates(page, selector, observe, onPhase = () => {}) {
   onPhase("forcedStates mirror rules");
   const found = await page.evaluate(MIRROR, STATES);
   const { mirrored, failed } = found;
-  const unreadable = found.unreadable.filter((href) => !page.blockedUrls?.has(href));
+  const unreadable = await withStateRules(page, found.unreadable.filter((href) => !page.blockedUrls?.has(href)));
   const count = await page.evaluate((selector) => {
     const found = document.querySelectorAll(selector);
     window[Symbol.for("octavo.interactive")] = found;

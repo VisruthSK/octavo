@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { launch, incompleteChecks } from "./index.mjs";
-import { forcedStates } from "./states.mjs";
+import { forcedStates, withStateRules } from "./states.mjs";
 
 const directory = mkdtempSync(join(tmpdir(), "octavo-states-"));
 const selector = "a[href], button, input, select, summary, [role=tab], [tabindex]";
@@ -166,4 +166,13 @@ test("a stylesheet whose request the verifier blocked has no rules to force and 
   } finally {
     await browser.close();
   }
+});
+
+test("an unreadable data stylesheet is only reported when it contains state rules", async () => {
+  const url = page("data-sheets", "", "<a href=\"#x\">x</a>");
+  await run(url, async (tab) => {
+    const plain = "data:text/css,.imported%7Bmargin-left%3A1px%7D";
+    const stateful = "data:text/css,a%3Ahover%7Bcolor%3Ared%7D";
+    assert.deepEqual(await withStateRules(tab, [plain, stateful, "https://cdn.test/a.css"]), [stateful, "https://cdn.test/a.css"]);
+  });
 });
