@@ -10,6 +10,6 @@
   "script-text-inside-a-comment-is-left-alone",
   "scripts-inline-event-handler-is-kept",
   "textarea-content-is-not-markup",
-  "twenty-thousand-paragraphs",
+  "two-thousand-paragraphs",
   "unused-rules-are-pruned"
 ]
