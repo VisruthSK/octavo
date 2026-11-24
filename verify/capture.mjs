@@ -34,6 +34,19 @@ export const scenarios = scenariosFor("serve");
 const INTERACTIVE = "a[href], button, input, select, summary, [role=tab], [tabindex]";
 const NO_MOTION = "*,*::before,*::after{transition:none!important;animation:none!important}";
 
+const popoverRoots = "[data-tippy-root]";
+
+export async function hoverPopovers(page) {
+  const targets = (await page.$$(".footnote-ref, a[role=doc-biblioref], a.quarto-xref")).slice(0, 3);
+  for (const target of targets) {
+    await page.mouse.move(0, 0);
+    await page.waitForFunction((selector) => !document.querySelector(selector), popoverRoots, { timeout: 2000 }).catch(() => {});
+    await target.hover({ timeout: 2000 }).catch(() => {});
+  }
+  if (targets.length > 0) await page.waitForFunction((selector) => document.querySelector(selector), popoverRoots, { timeout: 2000 }).catch(() => {});
+  return targets.length > 0;
+}
+
 const interactions = [
   (page) => page.evaluate(() => window.quartoToggleColorScheme?.()),
   async (page) => {
@@ -42,11 +55,7 @@ const interactions = [
   async (page) => {
     for (const el of (await page.$$("[data-bs-toggle=collapse], summary")).slice(0, 6)) await el.click({ timeout: 2000 }).catch(() => {});
   },
-  async (page) => {
-    const targets = (await page.$$(".footnote-ref, a[role=doc-biblioref], a.quarto-xref")).slice(0, 3);
-    for (const el of targets) await el.hover({ timeout: 2000 }).catch(() => {});
-    return targets.length > 0;
-  },
+  hoverPopovers,
   (page) => page.keyboard.press("ArrowRight"),
   (page) => page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)),
 ];
