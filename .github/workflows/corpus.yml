@@ -185,6 +185,7 @@ jobs:
         browser: ${{ fromJSON(inputs.engine_browser && inputs.engine_browser != 'all' && format('["{0}"]', inputs.engine_browser) || '["chromium","firefox","webkit"]') }}
         shard: ${{ fromJSON(inputs.engine_shard && inputs.engine_shard != 'all' && format('[{0}]', inputs.engine_shard) || needs.plan.outputs.engine_shards) }}
     env:
+      HOME: /root
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
       OCTAVO_BROWSER: ${{ matrix.browser }}
@@ -275,6 +276,7 @@ jobs:
       matrix:
         browser: [firefox, webkit]
     env:
+      HOME: /root
       OCTAVO_BROWSER: ${{ matrix.browser }}
       OCTAVO_PAGES: 2
     steps:
@@ -303,6 +305,7 @@ jobs:
       matrix:
         shard: ${{ fromJSON(needs.plan.outputs.engine_shards) }}
     env:
+      HOME: /root
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
       OCTAVO_PAGES: 4
