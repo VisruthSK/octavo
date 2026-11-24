@@ -1000,7 +1000,7 @@ enum Script {
     Uri(String),
 }
 
-fn closes_script(text: &str) -> bool {
+pub(crate) fn closes_script(text: &str) -> bool {
     text.as_bytes()
         .windows("</script".len())
         .any(|window| window.eq_ignore_ascii_case(b"</script"))
