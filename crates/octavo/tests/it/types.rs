@@ -1,6 +1,7 @@
 use crate::common::page;
 use octavo::{
-    ImageEncoding, ImageFormat, Library, Mode, Options, Quality, Target, Transform, Warning,
+    Effort, EvidenceClass, ImageEncoding, ImageFormat, Library, Mode, Options, Packaging, Quality,
+    Rule, Target, Transform, Warning,
 };
 use std::num::{NonZeroU32, NonZeroUsize};
 
@@ -115,4 +116,129 @@ fn defaults_are_lossless_and_subset_text_fonts() {
     assert!(options.images.is_none());
     assert!(options.subset_text_fonts);
     assert!(!options.strip_licenses);
+}
+
+#[test]
+fn each_packaging_has_a_name_and_parses_back() {
+    for (packaging, name) in [
+        (Packaging::Plain, "plain"),
+        (Packaging::Scripts, "scripts"),
+        (Packaging::Packed, "packed"),
+    ] {
+        assert_eq!(packaging.to_string(), name);
+        assert_eq!(name.parse::<Packaging>(), Ok(packaging));
+    }
+    assert!("other".parse::<Packaging>().is_err());
+}
+
+#[test]
+fn each_effort_has_a_name_and_parses_back() {
+    for (effort, name) in [
+        (Effort::Fast, "fast"),
+        (Effort::Balanced, "balanced"),
+        (Effort::Maximum, "maximum"),
+    ] {
+        assert_eq!(effort.to_string(), name);
+        assert_eq!(name.parse::<Effort>(), Ok(effort));
+    }
+    assert!("extreme".parse::<Effort>().is_err());
+}
+
+#[test]
+fn each_evidence_class_has_a_name_and_parses_back() {
+    for (class, name) in [
+        (EvidenceClass::Exact, "exact"),
+        (EvidenceClass::Generic, "generic"),
+        (EvidenceClass::Quarto1, "quarto1"),
+    ] {
+        assert_eq!(class.to_string(), name);
+        assert_eq!(name.parse::<EvidenceClass>(), Ok(class));
+    }
+    assert!("speculative".parse::<EvidenceClass>().is_err());
+}
+
+#[test]
+fn mode_converts_to_and_from_packaging() {
+    assert_eq!(Mode::Serve.packaging(), Packaging::Plain);
+    assert_eq!(Mode::Portable.packaging(), Packaging::Scripts);
+    assert_eq!(Mode::Archive.packaging(), Packaging::Packed);
+    assert_eq!(Mode::from(Packaging::Plain), Mode::Serve);
+    assert_eq!(Mode::from(Packaging::Scripts), Mode::Portable);
+    assert_eq!(Mode::from(Packaging::Packed), Mode::Archive);
+}
+
+#[test]
+fn each_rule_has_a_name_and_class() {
+    for (rule, name, transform, class) in [
+        (
+            Rule::QuartoDeadLibrary,
+            "quarto-dead-library",
+            Transform::DeadLibrary,
+            EvidenceClass::Quarto1,
+        ),
+        (
+            Rule::ScriptMinified,
+            "script-minified",
+            Transform::MinifiedScript,
+            EvidenceClass::Generic,
+        ),
+        (
+            Rule::StylesheetPruned,
+            "stylesheet-pruned",
+            Transform::PrunedStylesheet,
+            EvidenceClass::Generic,
+        ),
+        (
+            Rule::PngRecompressed,
+            "png-recompressed",
+            Transform::RecompressedPng,
+            EvidenceClass::Generic,
+        ),
+        (
+            Rule::ImageReencoded,
+            "image-reencoded",
+            Transform::ReencodedImage,
+            EvidenceClass::Generic,
+        ),
+        (
+            Rule::FontKeptWhole,
+            "font-kept-whole",
+            Transform::FontKeptWhole,
+            EvidenceClass::Generic,
+        ),
+        (
+            Rule::PackResources,
+            "pack-resources",
+            Transform::Packed,
+            EvidenceClass::Generic,
+        ),
+    ] {
+        assert_eq!(rule.to_string(), name);
+        assert_eq!(rule.transform(), transform);
+        assert_eq!(rule.evidence_class(), class);
+        assert_eq!(Rule::from(transform), rule);
+    }
+}
+
+#[test]
+fn applied_edits_carry_rule_and_evidence() {
+    let src = page(
+        "<style>.a{color:red}.b{color:blue}</style>",
+        "<p class=a>hi",
+    );
+    let out = octavo::optimize(&src, Mode::Serve).expect("supported");
+    for step in &out.applied {
+        assert_eq!(step.rule.transform(), step.transform);
+        assert_eq!(step.rule.evidence_class(), step.evidence);
+    }
+}
+
+#[test]
+fn simplified_packages_across_independent_packaging() {
+    let src = page("<style>.a{color:red}</style>", "<p class=a>hi");
+    let simplified = octavo::simplify(&src, Options::default()).expect("supported");
+    let plain = simplified.package(Packaging::Plain);
+    let packed = simplified.package(Packaging::Packed);
+    assert_eq!(plain.html, simplified.pack(Mode::Serve).html);
+    assert_eq!(packed.html, simplified.pack(Mode::Archive).html);
 }

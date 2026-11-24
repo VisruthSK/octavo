@@ -1,5 +1,5 @@
 use crate::{
-    Licenses, Target, Transform, data,
+    Licenses, Rule, Target, Transform, data,
     doc::{Doc, Edit},
     embed,
     html::{AttrName, Element, Tag},
@@ -90,6 +90,18 @@ pub(crate) fn minify(code: &str, kind: ScriptKind, licenses: Licenses) -> Option
     )
 }
 
+pub(crate) fn minify_file(code: &str, module: bool, licenses: Licenses) -> Option<String> {
+    if looks_minified(code) {
+        return None;
+    }
+    let kind = if module {
+        ScriptKind::Module
+    } else {
+        ScriptKind::Classic
+    };
+    minify(code, kind, licenses).filter(|text| text.len() < code.len())
+}
+
 fn rewrite(doc: &Doc, tag: &Tag, licenses: Licenses) -> Option<Edit> {
     let (kind, label) = match ScriptKind::of(tag) {
         ScriptKind::Classic => (ScriptKind::Classic, "script"),
@@ -120,6 +132,7 @@ fn rewrite(doc: &Doc, tag: &Tag, licenses: Licenses) -> Option<Edit> {
             text: format!("{open}{text}</script>"),
             transform: Transform::MinifiedScript,
             target,
+            rule: Rule::ScriptMinified,
         }
     } else {
         Edit {
@@ -127,6 +140,7 @@ fn rewrite(doc: &Doc, tag: &Tag, licenses: Licenses) -> Option<Edit> {
             text,
             transform: Transform::MinifiedScript,
             target,
+            rule: Rule::ScriptMinified,
         }
     })
 }

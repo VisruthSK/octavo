@@ -1,5 +1,5 @@
 use crate::{
-    Library, Target, Transform,
+    Library, Rule, Target, Transform,
     doc::{Doc, Edit},
     html::{AttrName, Element, Tag},
     words::Words,
@@ -119,6 +119,7 @@ pub(crate) fn stage(doc: &Doc, markup: &Words) -> Vec<Edit> {
             },
             transform: Transform::DeadLibrary,
             target: Target::Library(lib.global),
+            rule: Rule::QuartoDeadLibrary,
         })
         .collect()
 }
