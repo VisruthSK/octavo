@@ -264,10 +264,10 @@
     "firefox": 42,
     "webkit": 44
   },
-  "twenty-thousand-paragraphs": {
-    "chromium": 904,
-    "firefox": 552,
-    "webkit": 432
+  "two-thousand-paragraphs": {
+    "chromium": 90,
+    "firefox": 55,
+    "webkit": 43
   },
   "unused-rules-are-pruned": {
     "chromium": 26,
