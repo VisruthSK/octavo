@@ -36,36 +36,20 @@ impl super::Oracle<String> for JsTokenStream {
 }
 
 pub fn js_token_stream(original: &str, candidate: &str) -> bool {
-    let check = |source_type: oxc::span::SourceType| {
-        let alloc_orig = oxc::allocator::Allocator::default();
-        let alloc_cand = oxc::allocator::Allocator::default();
-        let ret_orig = oxc::parser::Parser::new(&alloc_orig, original, source_type)
-            .with_config(oxc::parser::config::TokensParserConfig)
-            .parse();
-        let ret_cand = oxc::parser::Parser::new(&alloc_cand, candidate, source_type)
-            .with_config(oxc::parser::config::TokensParserConfig)
-            .parse();
-        if ret_orig.fatal_error
-            || ret_cand.fatal_error
-            || !ret_orig.diagnostics.is_empty()
-            || !ret_cand.diagnostics.is_empty()
-        {
-            return false;
-        }
-        if ret_orig.tokens.len() != ret_cand.tokens.len() {
-            return false;
-        }
-        use oxc::span::ContentEq;
-        if !ret_orig.program.content_eq(&ret_cand.program) {
-            return false;
-        }
-        ret_orig.tokens.iter().zip(&ret_cand.tokens).all(|(a, b)| {
-            a.kind() == b.kind()
-                && original.get(a.start() as usize..a.end() as usize)
-                    == candidate.get(b.start() as usize..b.end() as usize)
-        })
+    use oxc::span::ContentEq;
+    let parse_equal = |source_type: oxc::span::SourceType| {
+        let first = oxc::allocator::Allocator::default();
+        let second = oxc::allocator::Allocator::default();
+        let original = oxc::parser::Parser::new(&first, original, source_type).parse();
+        let candidate = oxc::parser::Parser::new(&second, candidate, source_type).parse();
+        !original.fatal_error
+            && !candidate.fatal_error
+            && original.diagnostics.is_empty()
+            && candidate.diagnostics.is_empty()
+            && original.program.content_eq(&candidate.program)
     };
-    check(oxc::span::SourceType::default().with_script(true)) || check(oxc::span::SourceType::mjs())
+    parse_equal(oxc::span::SourceType::default().with_script(true))
+        || parse_equal(oxc::span::SourceType::mjs())
 }
 
 pub fn attr_quotes(original: &str, candidate: &str) -> bool {
@@ -155,12 +139,6 @@ impl super::Oracle<Vec<u8>> for Font {
 #[doc = "Compares CSS token streams conservatively."]
 pub struct Css;
 
-pub const LENGTH_UNITS: [&str; 31] = [
-    "px", "em", "rem", "ex", "ch", "vw", "vh", "vi", "vb", "vmin", "vmax", "cm", "mm", "in", "pt",
-    "pc", "q", "cqw", "cqh", "cqi", "cqb", "cqmin", "cqmax", "lh", "rlh", "svw", "svh", "lvw",
-    "lvh", "dvw", "dvh",
-];
-
 impl super::Oracle<String> for Css {
     fn equivalent(&self, original: &String, candidate: &String) -> bool {
         css(original, candidate)
@@ -207,13 +185,7 @@ fn number_key(raw: &str, integer: bool) -> Option<String> {
     let scale = exponent
         .checked_sub(fraction)?
         .checked_add((digits.trim_start_matches('0').len() - trimmed.len()) as i64)?;
-    let unit = &raw[at..];
-    let unit_key =
-        if trimmed.is_empty() && LENGTH_UNITS.iter().any(|u| unit.eq_ignore_ascii_case(u)) {
-            ""
-        } else {
-            unit
-        };
+    let unit_key = &raw[at..];
     Some(format!(
         "number:{sign}:{trimmed}:{scale}:{integer}:{unit_key}"
     ))
