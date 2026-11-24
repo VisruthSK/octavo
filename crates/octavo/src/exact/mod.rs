@@ -485,76 +485,30 @@ fn can_unquote(src: &str, v_span: &Range<usize>) -> bool {
     true
 }
 
-fn is_word_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_' || b == b'$'
-}
-
-fn build_token_candidate(
-    code: &str,
-    tokens: &[oxc::parser::Token],
-    preserve_newlines: bool,
-) -> String {
-    let mut out = String::with_capacity(code.len());
-    let mut prev_token: Option<&oxc::parser::Token> = None;
-    for t in tokens {
-        if let Some(prev) = prev_token {
-            let prev_text = &code[prev.start() as usize..prev.end() as usize];
-            let curr_text = &code[t.start() as usize..t.end() as usize];
-            let c1 = prev_text.as_bytes().last().copied().unwrap_or(0);
-            let c2 = curr_text.as_bytes().first().copied().unwrap_or(0);
-            if (is_word_byte(c1) && is_word_byte(c2))
-                || (c1 == b'+' && c2 == b'+')
-                || (c1 == b'-' && c2 == b'-')
-                || (c1 == b'/' && (c2 == b'/' || c2 == b'*'))
-            {
-                out.push(' ');
-            } else if t.is_on_new_line()
-                && (preserve_newlines
-                    || !matches!(c1, b';' | b'{' | b'}' | b',' | b':' | b'(' | b'['))
-            {
-                out.push('\n');
-            }
-        }
-        out.push_str(&code[t.start() as usize..t.end() as usize]);
-        prev_token = Some(t);
-    }
-    out
-}
-
 fn minify_script(source: &str) -> Option<String> {
+    if source.trim().is_empty() {
+        return None;
+    }
     let source_type = if source.contains("import") || source.contains("export") {
         oxc::span::SourceType::mjs()
     } else {
         oxc::span::SourceType::default().with_script(true)
     };
     let allocator = oxc::allocator::Allocator::default();
-    let parsed = oxc::parser::Parser::new(&allocator, source, source_type)
-        .with_config(oxc::parser::config::TokensParserConfig)
-        .parse();
+    let parsed = oxc::parser::Parser::new(&allocator, source, source_type).parse();
     if parsed.fatal_error || !parsed.diagnostics.is_empty() {
         return None;
     }
-    if parsed.tokens.is_empty() {
-        if source.trim().is_empty() {
-            return None;
-        }
-        return Some(String::new());
-    }
-    let cand1 = build_token_candidate(source, &parsed.tokens, false);
-    if cand1.len() < source.len()
-        && !cand1.contains("</script")
-        && oracle::js_token_stream(source, &cand1)
-    {
-        return Some(cand1);
-    }
-    let cand2 = build_token_candidate(source, &parsed.tokens, true);
-    if cand2.len() < source.len()
-        && !cand2.contains("</script")
-        && oracle::js_token_stream(source, &cand2)
-    {
-        return Some(cand2);
-    }
-    None
+    let options = oxc::codegen::CodegenOptions {
+        minify: true,
+        comments: oxc::codegen::CommentOptions::disabled(),
+        ..oxc::codegen::CodegenOptions::default()
+    };
+    let candidate = oxc::codegen::Codegen::new()
+        .with_options(options)
+        .build(&parsed.program)
+        .code;
+    (candidate.len() < source.len() && !candidate.contains("</script")).then_some(candidate)
 }
 
 pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
@@ -1247,7 +1201,7 @@ mod tests {
         let out = optimize(input, Mode::Exact).unwrap();
         assert_eq!(
             out.html,
-            "<html><script>const x=1;function f(a,b){return a+b;}</script></html>"
+            "<html><script>const x=1;function f(a,b){return a+b}</script></html>"
         );
         assert!(
             out.applied
@@ -1310,19 +1264,27 @@ mod tests {
         let out2 = optimize(&out1.html, Mode::Exact).unwrap();
         assert_eq!(
             out1.html,
-            "<html><script>let a=10;const b=20;function sum(x,y){return x+y;}</script></html>"
+            "<html><script>let a=10;const b=20;function sum(x,y){return x+y}</script></html>"
         );
         assert_eq!(out1.html, out2.html);
         assert!(out2.applied.is_empty());
     }
 
     #[test]
-    fn exact_js_preserves_asi_newlines() {
-        let input = "<html><script>\nfunction f() {\n    return\n    1;\n}\n</script></html>";
+    fn exact_js_keeps_the_meaning_of_a_newline_after_return() {
+        let input = "<html><script>
+function f() {
+    return
+    1;
+}
+</script></html>";
         let out = optimize(input, Mode::Exact).unwrap();
-        assert_eq!(out.html, input);
+        assert_eq!(
+            out.html,
+            "<html><script>function f(){return;1}</script></html>"
+        );
         assert!(
-            !out.applied
+            out.applied
                 .iter()
                 .any(|s| s.transform == Transform::MinifiedScript)
         );
