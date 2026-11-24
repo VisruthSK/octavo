@@ -1,0 +1,25 @@
+name: Install a Playwright browser
+inputs:
+  browser:
+    required: true
+runs:
+  using: composite
+  steps:
+    - run: |
+        mkdir -p "$HOME/apt-archives/partial"
+        printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' 'APT::Keep-Downloaded-Packages "true";' "Dir::Cache::archives \"$HOME/apt-archives/\";" | sudo tee /etc/apt/apt.conf.d/80-network >/dev/null
+      shell: bash
+    - uses: actions/cache@v6
+      with:
+        path: |
+          ~/apt-archives
+          ~/.cache/ms-playwright
+        key: browser-${{ inputs.browser }}-${{ runner.os }}-${{ hashFiles('verify/package-lock.json') }}
+    - run: |
+        for attempt in 1 2 3 4; do
+          npx playwright-core install --with-deps ${{ inputs.browser }} && exit 0
+          sleep $((attempt * 20))
+        done
+        exit 1
+      shell: bash
+      working-directory: verify
