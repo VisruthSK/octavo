@@ -1,6 +1,7 @@
 use crate::{
-    Licenses, Target, Transform, data, embed,
+    Licenses, Target, Transform, data,
     doc::{Doc, Edit},
+    embed,
     html::{AttrName, Element, Tag},
 };
 use oxc::{
