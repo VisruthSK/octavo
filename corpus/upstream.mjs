@@ -186,7 +186,7 @@ const pinnedPath = join(import.meta.dirname, "hardest.json");
 export const selectionPath = join(import.meta.dirname, "selection.json");
 export const manifestPath = join(import.meta.dirname, "manifest.json");
 
-export function selectedCount(tier = "smoke") {
+export function selectedCount(tier = "subset") {
   const manifest = readJson(manifestPath).filter((entry) => tier === "full" || entry.tier === tier);
   const upstream = readJson(selectionPath).filter((entry) => tier === "full" || entry.tier === tier);
   return manifest.length + upstream.length;
@@ -222,8 +222,8 @@ export async function chooseUpstream({ jobs = 4 } = {}) {
       });
     });
     pooled.sort((a, b) => a.id.localeCompare(b.id));
-    const smoke = new Set(selectStratified(pooled, source.smoke, pinned).map((pick) => pick.id));
-    for (const entry of pooled) selected.push({ ...entry, tier: smoke.has(entry.id) ? "smoke" : "full" });
+    const subset = new Set(selectStratified(pooled, source.subset, pinned).map((pick) => pick.id));
+    for (const entry of pooled) selected.push({ ...entry, tier: subset.has(entry.id) ? "subset" : "full" });
     candidatesSeen += eligible.length;
   }
   selected.sort((a, b) => a.id.localeCompare(b.id));

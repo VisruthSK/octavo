@@ -58,7 +58,7 @@
   {
     "id": "assets-corrupt-png",
     "category": "images",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -116,7 +116,7 @@
   {
     "id": "assets-font-named-by-a-script-is-kept",
     "category": "fonts",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -160,7 +160,7 @@
   {
     "id": "assets-gif",
     "category": "images",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -231,7 +231,7 @@
   {
     "id": "assets-inline-svg-with-a-script",
     "category": "images",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -315,7 +315,7 @@
   {
     "id": "assets-opaque-png-is-recompressed-as-png",
     "category": "images",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -343,7 +343,7 @@
   {
     "id": "assets-percent-encoded-png",
     "category": "images",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -430,7 +430,7 @@
   {
     "id": "assets-png-one-pixel",
     "category": "images",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -660,7 +660,7 @@
   {
     "id": "assets-unused-font-face-is-dropped",
     "category": "fonts",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -702,7 +702,7 @@
   {
     "id": "assets-woff2-with-corrupt-data",
     "category": "fonts",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -716,7 +716,7 @@
   {
     "id": "css-class-added-by-classlist-add",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -733,7 +733,7 @@
   {
     "id": "css-class-built-by-concatenation",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -784,7 +784,7 @@
   {
     "id": "css-class-reachable-only-from-markup",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -835,7 +835,7 @@
   {
     "id": "css-custom-property-used-only-by-a-script-survives",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -902,7 +902,7 @@
   {
     "id": "css-empty-media-block-disappears",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -1099,7 +1099,7 @@
   {
     "id": "css-invalid-stylesheet-is-left-untouched",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -1187,7 +1187,7 @@
   {
     "id": "css-media-block-survives-when-a-rule-survives",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -1204,7 +1204,7 @@
   {
     "id": "css-modern-selectors-and-at-rules-survive",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -1361,7 +1361,7 @@
   {
     "id": "css-rule-with-an-attribute-selector-is-kept",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -1558,7 +1558,7 @@
   {
     "id": "fonts-fira-sans-tabular-numbers",
     "category": "fonts",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -1652,7 +1652,7 @@
   {
     "id": "libs-bootstrap-css-framework",
     "category": "libraries",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -1689,7 +1689,7 @@
   {
     "id": "libs-bulma-framework",
     "category": "libraries",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -1799,7 +1799,7 @@
   {
     "id": "libs-d3-chart",
     "category": "libraries",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -1947,7 +1947,7 @@
   {
     "id": "libs-jquery",
     "category": "libraries",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -1983,7 +1983,7 @@
   {
     "id": "libs-license-banners-all-kept",
     "category": "libraries",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -2061,7 +2061,7 @@
   {
     "id": "libs-moment",
     "category": "libraries",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -2117,7 +2117,7 @@
   {
     "id": "libs-revealjs-deck-like",
     "category": "libraries",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -2165,7 +2165,7 @@
   {
     "id": "libs-svg-sprite-icons",
     "category": "libraries",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -2345,7 +2345,7 @@
   {
     "id": "linked-stylesheet-is-rejected",
     "category": "validation",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "rejects",
@@ -2357,7 +2357,7 @@
   {
     "id": "nothing-to-gain",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "keeps"
@@ -2470,7 +2470,7 @@
   {
     "id": "parsing-comment-with-every-kind-of-tag",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -2505,7 +2505,7 @@
   {
     "id": "parsing-crlf-line-endings",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -2632,7 +2632,7 @@
   {
     "id": "parsing-fragment-without-html-is-rejected",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "rejects",
@@ -2756,7 +2756,7 @@
   {
     "id": "parsing-script-text-that-looks-like-markup",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -2859,7 +2859,7 @@
   {
     "id": "parsing-style-text-that-looks-like-markup",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -2929,7 +2929,7 @@
   {
     "id": "parsing-textarea-content-is-not-markup",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -2980,7 +2980,7 @@
   {
     "id": "parsing-two-html-elements",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -3032,7 +3032,7 @@
   {
     "id": "parsing-unterminated-script-at-end-of-file",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -3119,7 +3119,7 @@
   {
     "id": "plain-text-is-rejected",
     "category": "validation",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "rejects",
@@ -3269,7 +3269,7 @@
   {
     "id": "quarto-code-copy-button-keeps-clipboard",
     "category": "quarto",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -3389,7 +3389,7 @@
   {
     "id": "quarto-dashboard-valueboxes",
     "category": "quarto",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -3511,7 +3511,7 @@
   {
     "id": "quarto-footnotes-keep-tippy",
     "category": "quarto",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -3776,7 +3776,7 @@
   {
     "id": "quarto-mermaid-diagram",
     "category": "quarto",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -3815,7 +3815,7 @@
   {
     "id": "quarto-multiple-stylesheets-pruned",
     "category": "quarto",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -3834,7 +3834,7 @@
   {
     "id": "quarto-no-features-dead-libraries",
     "category": "quarto",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -3895,7 +3895,7 @@
   {
     "id": "quarto-plain-article",
     "category": "quarto",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -3967,7 +3967,7 @@
   {
     "id": "quarto-revealjs-simple-deck",
     "category": "quarto",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -3988,7 +3988,7 @@
   {
     "id": "quarto-script-already-minified",
     "category": "quarto",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -4022,7 +4022,7 @@
   {
     "id": "quarto-search-index-embedded",
     "category": "quarto",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "optimizes",
@@ -4215,7 +4215,7 @@
   {
     "id": "runtime-built-class-names-survive",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -4406,7 +4406,7 @@
   {
     "id": "scale-one-mib-pure-markup",
     "category": "scale",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": false,
     "expect": {
       "outcome": "keeps"
@@ -4664,7 +4664,7 @@
   {
     "id": "script-text-inside-a-comment-is-left-alone",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -4894,7 +4894,7 @@
   {
     "id": "scripts-inline-event-handler-is-kept",
     "category": "script-tags",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -4908,7 +4908,7 @@
   {
     "id": "scripts-json-data-block-is-left-alone",
     "category": "modules",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -4965,7 +4965,7 @@
   {
     "id": "scripts-license-banner-is-kept",
     "category": "script-tags",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -4996,7 +4996,7 @@
   {
     "id": "scripts-module-script-is-minified",
     "category": "modules",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -5025,7 +5025,7 @@
   {
     "id": "scripts-object-accessors-are-kept",
     "category": "javascript",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -5055,7 +5055,7 @@
   {
     "id": "scripts-order-dependence-between-scripts",
     "category": "script-tags",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -5128,7 +5128,7 @@
   {
     "id": "scripts-regex-literal-keeps-its-pattern",
     "category": "javascript",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -5254,7 +5254,7 @@
   {
     "id": "textarea-content-is-not-markup",
     "category": "parsing",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",
@@ -5268,7 +5268,7 @@
   {
     "id": "two-thousand-paragraphs",
     "category": "scale",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes"
@@ -5279,7 +5279,7 @@
   {
     "id": "unused-rules-are-pruned",
     "category": "css",
-    "tier": "smoke",
+    "tier": "subset",
     "browser": true,
     "expect": {
       "outcome": "optimizes",

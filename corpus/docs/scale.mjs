@@ -118,7 +118,7 @@ export default [
   {
     id: "scale-one-mib-pure-markup",
     category: "scale",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "keeps" },
     build: () =>
       page(

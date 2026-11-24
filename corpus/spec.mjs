@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const tiers = ["smoke", "full"];
+export const tiers = ["subset", "full"];
 export const outcomes = ["optimizes", "keeps", "accepts", "rejects"];
 export const rejections = {
   "not-html": "this is not an HTML document",
