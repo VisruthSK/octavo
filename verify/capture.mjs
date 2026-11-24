@@ -137,7 +137,7 @@ async function fingerprints({ lossy, linked }) {
 
 function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true, scrollbarPseudo }) {
   const describe = (element, pseudo, baseStyle) => {
-    const style = pseudo === null && baseStyle ? baseStyle : getComputedStyle(element, pseudo);
+    const style = baseStyle ?? getComputedStyle(element, pseudo);
     if ((pseudo === "::before" || pseudo === "::after") && style.content === "none") return "";
     const noImage = style.backgroundImage === "none";
     const legacyBox = style.display.includes("box");
@@ -248,15 +248,14 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       ...(isRoot || isSample ? ["::selection"] : []),
       ...(hasScroll ? [scrollbarPseudo] : []),
     ];
-    const value = pseudos.map((pseudo) => {
-      if (pseudo === "::before" || pseudo === "::after") {
-        const style = getComputedStyle(el, pseudo);
-        if (style.content === "none") return "";
-        for (const name of style.fontFamily.split(",")) usedFonts.add(bare(name));
+    const value = pseudos
+      .map((pseudo) => {
+        const style = pseudo === null ? base : getComputedStyle(el, pseudo);
+        if ((pseudo === "::before" || pseudo === "::after") && style.content === "none") return "";
+        if (pseudo === "::before" || pseudo === "::after") for (const name of style.fontFamily.split(",")) usedFonts.add(bare(name));
         return describe(el, pseudo, style);
-      }
-      return describe(el, pseudo, base);
-    }).join("");
+      })
+      .join("");
     if (!styleIndexes.has(value)) {
       styleIndexes.set(value, styleValues.length);
       styleValues.push(value);
@@ -653,38 +652,21 @@ export async function loadDocument(page, file, root, entryPath) {
   return response;
 }
 export async function settleFonts() {
-  const unloaded = [...document.fonts].filter((face) => face.status === "unloaded");
-  if (!unloaded.length) return;
   const bare = (name) => name.trim().replace(/^["']|["']$/g, "").toLowerCase();
+  const unloaded = [...document.fonts].filter((face) => face.status === "unloaded");
   const needed = new Set(unloaded.map((face) => bare(face.family)));
   const used = new Set();
-  for (const element of document.querySelectorAll("*:not(script):not(style):not(link):not(noscript)")) {
-    for (const name of getComputedStyle(element).fontFamily.split(",")) {
-      const family = bare(name);
-      if (needed.has(family)) {
-        used.add(family);
-        needed.delete(family);
-        if (!needed.size) break;
-      }
-    }
-    if (!needed.size) break;
-  }
-  if (needed.size) {
-    for (const element of document.querySelectorAll("*:not(script):not(style):not(link):not(noscript)")) {
-      for (const pseudo of ["::before", "::after"]) {
-        const style = getComputedStyle(element, pseudo);
-        if (style.content === "none") continue;
-        for (const name of style.fontFamily.split(",")) {
-          const family = bare(name);
-          if (needed.has(family)) {
-            used.add(family);
-            needed.delete(family);
-            if (!needed.size) break;
-          }
+  scan: for (const element of needed.size ? document.querySelectorAll("*") : []) {
+    for (const pseudo of [null, "::before", "::after"]) {
+      const style = getComputedStyle(element, pseudo);
+      if (pseudo && style.content === "none") continue;
+      for (const name of style.fontFamily.split(",")) {
+        const family = bare(name);
+        if (needed.delete(family)) {
+          used.add(family);
+          if (!needed.size) break scan;
         }
-        if (!needed.size) break;
       }
-      if (!needed.size) break;
     }
   }
   await Promise.all(unloaded.filter((face) => used.has(bare(face.family))).map((face) => face.load().catch(() => {})));
