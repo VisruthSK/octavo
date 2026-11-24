@@ -328,14 +328,14 @@ export default [
   {
     id: "assets-png-one-pixel",
     category: "images",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => pageWith(`<img alt="pixel" src="${dataUri("image/png", png({ width: 1, height: 1 }))}">`),
   },
   {
     id: "assets-opaque-png-is-recompressed-as-png",
     category: "images",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => pageWith(`<img alt="gradient" src="${dataUri("image/png", png({ width: 160, height: 120 }))}">`),
   },
@@ -452,7 +452,7 @@ export default [
   {
     id: "assets-percent-encoded-png",
     category: "images",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["data:image/"], removes: ["%89PNG"] },
     build: () =>
       pageWith(
@@ -517,7 +517,7 @@ export default [
   {
     id: "assets-corrupt-png",
     category: "images",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["data:image/"] },
     build: () => {
       const bytes = png({ width: 16, height: 16 });
@@ -602,7 +602,7 @@ export default [
   {
     id: "assets-gif",
     category: "images",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["data:image/gif;base64,"] },
     build: () =>
       pageWith(`<img alt="gif" src="${dataUri("image/gif", gif(24, 16))}">`),
@@ -636,7 +636,7 @@ export default [
   {
     id: "assets-inline-svg-with-a-script",
     category: "images",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["window.assetsSvg = 1"] },
     build: () =>
       pageWith(
@@ -738,7 +738,7 @@ export default [
   {
     id: "assets-woff2-with-corrupt-data",
     category: "fonts",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["data:font/woff2;base64,"] },
     build: () => {
       const uri = dataUri("font/woff2", font("wOF2"));
@@ -764,7 +764,7 @@ export default [
   {
     id: "assets-unused-font-face-is-dropped",
     category: "fonts",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", removes: ["GhostFamily"] },
     build: () => {
       const uri = dataUri("font/ttf", font("\u0000\u0001\u0000\u0000"));
@@ -777,7 +777,7 @@ export default [
   {
     id: "assets-font-named-by-a-script-is-kept",
     category: "fonts",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["@font-face", "data:font/ttf;base64,"] },
     build: () => {
       const uri = dataUri("font/ttf", font("\u0000\u0001\u0000\u0000"));
