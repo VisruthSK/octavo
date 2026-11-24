@@ -922,10 +922,15 @@ export async function capture(
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
       const popovers = await page
-        .evaluate(() => [...document.querySelectorAll("[data-tippy-root]")].map((root) => {
-          const { left, right } = root.getBoundingClientRect();
-          return `${Math.round(left)}-${Math.round(right)}${root.hasAttribute("data-popper-placement") ? "" : " unplaced"}`;
-        }))
+        .evaluate(() => {
+          const width = document.documentElement.clientWidth;
+          const wide = [...document.querySelectorAll("body *")]
+            .map((element) => ({ element, right: Math.round(element.getBoundingClientRect().right) }))
+            .filter(({ right }) => right > width + 1)
+            .slice(0, 4)
+            .map(({ element, right }) => `${element.tagName.toLowerCase()}.${String(element.className).slice(0, 40)}@${right}`);
+          return [`scrollWidth ${document.documentElement.scrollWidth} of ${width}`, ...wide];
+        })
         .catch(() => []);
       states.push({ label, ...observation, screenshot, popovers, ...(screenshotError ? { screenshotError } : {}), ...extra });
     };
