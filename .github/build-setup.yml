@@ -4,6 +4,6 @@
     tool: cargo-about
 - name: Ensure cargo-about is available
   shell: bash
-  run: command -v cargo-about > /dev/null || cargo install cargo-about --locked
+  run: command -v cargo-about > /dev/null || cargo install cargo-about --locked --features cli
 - name: Generate third-party licenses
   run: cargo about generate about.hbs -o THIRD-PARTY-LICENSES.txt
