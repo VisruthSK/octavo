@@ -299,6 +299,7 @@ fn stylesheet(
     span: Range<usize>,
     target: Target,
     options: &Options,
+    remove_rules: bool,
     edits: &mut Vec<Edit>,
     warnings: &mut Vec<Warning>,
 ) {
@@ -328,6 +329,16 @@ fn stylesheet(
     }
     for (range, text) in &found.values {
         changes.push((range.clone(), text, Transform::ShortenedCssValues));
+    }
+    if remove_rules && let Some(removals) = oracle::removable_rules(source) {
+        changes.retain(|(range, ..)| {
+            !removals
+                .iter()
+                .any(|removed| removed.start <= range.start && range.end <= removed.end)
+        });
+        for range in removals {
+            changes.push((range, "", Transform::RemovedCssRules));
+        }
     }
     if changes.is_empty() {
         return;
@@ -571,6 +582,7 @@ fn minify_script(source: &str) -> Option<String> {
 pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
     let mut edits = Vec::new();
     let mut warnings = Vec::new();
+    let scripted = doc.tags().iter().any(|tag| tag.element == Element::Script);
     for tag in doc.tags() {
         for attr in &tag.attrs {
             if matches!(&attr.name, AttrName::Other(name) if name == "style")
@@ -582,6 +594,7 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
                     span.clone(),
                     Target::Resource(tag.label().to_string()),
                     options,
+                    false,
                     &mut edits,
                     &mut warnings,
                 );
@@ -780,6 +793,7 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
                 body.clone(),
                 Target::Resource(tag.label().to_string()),
                 options,
+                !scripted,
                 &mut edits,
                 &mut warnings,
             );
@@ -1411,5 +1425,23 @@ function f() {
                 .any(|s| s.transform == Transform::ShortenedCssValues)
         );
         assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
+    }
+
+    #[test]
+    fn exact_removes_empty_and_repeated_rules_only_without_scripts() {
+        let input = "<html><style>a{color:red}b{}@media print{}a{color:red}c{top:0}</style></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(out.html, "<html><style>a{color:red}c{top:0}</style></html>");
+        assert!(
+            out.applied
+                .iter()
+                .any(|s| s.transform == Transform::RemovedCssRules)
+        );
+        let scripted = format!(
+            "<html><script>1;</script>{}</html>",
+            &input[6..input.len() - 7]
+        );
+        let kept = optimize(&scripted, Mode::Exact).unwrap();
+        assert!(kept.html.contains("b{}"));
     }
 }

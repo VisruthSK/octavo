@@ -458,7 +458,7 @@ fn normalize_css_tokens(tokens: &[String]) -> Vec<String> {
     result
 }
 
-fn reduce_css_rules(source: &str) -> Option<(String, usize)> {
+pub(crate) fn removable_rules(source: &str) -> Option<Vec<std::ops::Range<usize>>> {
     let mut input = ParserInput::new(source);
     let mut parser = Parser::new(&mut input);
     let mut start: Option<usize> = None;
@@ -525,6 +525,11 @@ fn reduce_css_rules(source: &str) -> Option<(String, usize)> {
             }
         }
     }
+    Some(removals)
+}
+
+fn reduce_css_rules(source: &str) -> Option<(String, usize)> {
+    let removals = removable_rules(source)?;
     let count = removals.len();
     let mut output = String::with_capacity(source.len());
     let mut from = 0;

@@ -457,6 +457,7 @@ pub enum Transform {
     StrippedDefaultAttr,
     CollapsedCssWhitespace,
     ShortenedCssValues,
+    RemovedCssRules,
     NormalizedAttrQuotes,
     /// Resources were compressed into one blob.
     Packed,
@@ -478,6 +479,7 @@ impl fmt::Display for Transform {
             Transform::StrippedDefaultAttr => "default-attr-stripped",
             Transform::CollapsedCssWhitespace => "css-whitespace-collapsed",
             Transform::ShortenedCssValues => "css-values-shortened",
+            Transform::RemovedCssRules => "css-rules-removed",
             Transform::NormalizedAttrQuotes => "attr-quotes-normalized",
             Transform::Packed => "packed",
         })
