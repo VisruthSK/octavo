@@ -35,18 +35,65 @@ impl super::Oracle<String> for JsTokenStream {
     }
 }
 
+struct PlainStrings<'a> {
+    ast: oxc::ast::builder::AstBuilder<'a>,
+}
+
+impl<'a> oxc::ast_visit::VisitMut<'a> for PlainStrings<'a> {
+    fn visit_object_property(&mut self, property: &mut oxc::ast::ast::ObjectProperty<'a>) {
+        property.shorthand = false;
+        oxc::ast_visit::walk_mut::walk_object_property(self, property);
+    }
+
+    fn visit_expression(&mut self, expression: &mut oxc::ast::ast::Expression<'a>) {
+        oxc::ast_visit::walk_mut::walk_expression(self, expression);
+        if let oxc::ast::ast::Expression::TemplateLiteral(template) = expression
+            && template.expressions.is_empty()
+            && let [quasi] = template.quasis.as_slice()
+            && let Some(cooked) = quasi.value.cooked
+        {
+            *expression = oxc::ast::ast::Expression::new_string_literal(
+                template.span,
+                cooked,
+                None,
+                &self.ast,
+            );
+        }
+    }
+}
+
 pub fn js_token_stream(original: &str, candidate: &str) -> bool {
+    use oxc::ast_visit::VisitMut;
     use oxc::span::ContentEq;
     let parse_equal = |source_type: oxc::span::SourceType| {
         let first = oxc::allocator::Allocator::default();
         let second = oxc::allocator::Allocator::default();
-        let original = oxc::parser::Parser::new(&first, original, source_type).parse();
-        let candidate = oxc::parser::Parser::new(&second, candidate, source_type).parse();
-        !original.fatal_error
-            && !candidate.fatal_error
-            && original.diagnostics.is_empty()
-            && candidate.diagnostics.is_empty()
-            && original.program.content_eq(&candidate.program)
+        let options = oxc::parser::ParseOptions {
+            preserve_parens: false,
+            ..Default::default()
+        };
+        let mut original = oxc::parser::Parser::new(&first, original, source_type)
+            .with_options(options)
+            .parse();
+        let mut candidate = oxc::parser::Parser::new(&second, candidate, source_type)
+            .with_options(options)
+            .parse();
+        if original.fatal_error
+            || candidate.fatal_error
+            || !original.diagnostics.is_empty()
+            || !candidate.diagnostics.is_empty()
+        {
+            return false;
+        }
+        PlainStrings {
+            ast: oxc::ast::builder::AstBuilder::new(&first),
+        }
+        .visit_program(&mut original.program);
+        PlainStrings {
+            ast: oxc::ast::builder::AstBuilder::new(&second),
+        }
+        .visit_program(&mut candidate.program);
+        original.program.content_eq(&candidate.program)
     };
     parse_equal(oxc::span::SourceType::default().with_script(true))
         || parse_equal(oxc::span::SourceType::mjs())

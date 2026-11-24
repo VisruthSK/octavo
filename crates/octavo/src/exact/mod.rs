@@ -1367,8 +1367,13 @@ function f() {
         let input =
             "<html><script>const s = \"// not a comment\"; const r = /test/g;</script></html>";
         let out = optimize(input, Mode::Exact).unwrap();
-        assert!(out.html.contains("\"// not a comment\""));
+        assert!(out.html.contains("`// not a comment`"));
         assert!(out.html.contains("/test/g"));
+        assert!(
+            out.applied
+                .iter()
+                .any(|s| s.transform == Transform::MinifiedScript)
+        );
         assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
     }
 
@@ -1443,5 +1448,35 @@ function f() {
         );
         let kept = optimize(&scripted, Mode::Exact).unwrap();
         assert!(kept.html.contains("b{}"));
+    }
+    #[test]
+    fn exact_minifies_scripts_that_use_parentheses() {
+        let input = "<html><script>
+(function () {
+  var total = (1 + 2) * 3;
+  return (total);
+})();
+</script></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert!(
+            out.applied
+                .iter()
+                .any(|s| s.transform == Transform::MinifiedScript)
+        );
+        assert!(out.html.len() < input.len());
+    }
+    #[test]
+    fn exact_minifies_scripts_with_strings_and_shorthand_properties() {
+        let input = "<html><script>
+var s = \"</div>\";
+var o = { noop: noop, s: s };
+</script></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+        assert!(
+            out.applied
+                .iter()
+                .any(|s| s.transform == Transform::MinifiedScript)
+        );
     }
 }

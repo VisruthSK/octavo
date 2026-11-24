@@ -703,6 +703,18 @@ const documentSize = (page) =>
     height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
   }));
 
+const renderWholePage = (page) =>
+  page
+    .evaluate(async () => {
+      const step = Math.max(window.innerHeight, 1);
+      for (let top = 0; top < document.documentElement.scrollHeight; top += step) {
+        window.scrollTo({ left: 0, top, behavior: "instant" });
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }
+      window.scrollTo({ left: 0, top: 0, behavior: "instant" });
+    })
+    .catch(() => {});
+
 const layoutSize = async (page) => {
   try {
     const session = await page.context().newCDPSession(page);
@@ -718,7 +730,12 @@ const layoutSize = async (page) => {
 };
 
 export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
-  const pageSize = (await layoutSize(page)) ?? (await documentSize(page));
+  const measure = async () => (await layoutSize(page)) ?? (await documentSize(page));
+  let pageSize = await measure();
+  if (Math.max(viewport.height, pageSize.height) > MAX_FULL_PAGE_HEIGHT) {
+    await renderWholePage(page);
+    pageSize = await measure();
+  }
   const width = Math.max(viewport.width, pageSize.width);
   const height = Math.max(viewport.height, pageSize.height);
   let fullPageError = `page height exceeds ${MAX_FULL_PAGE_HEIGHT} pixels`;
@@ -738,8 +755,11 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
   const originalScroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
   const tiles = [];
   let bytes = 0;
+  let captured = 0;
   try {
     for (const y of positions(height, tileHeight)) {
+      const available = Math.max(viewport.height, (await measure()).height);
+      if (y >= available) break;
       for (const x of positions(width, tileWidth)) {
         const started = performance.now();
         let evaluated;
@@ -750,7 +770,7 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
           }, [x, y, javaScriptEnabled]);
           evaluated = performance.now();
           const clipWidth = Math.min(tileWidth, width - x);
-          const clipHeight = Math.min(tileHeight, height - y);
+          const clipHeight = Math.min(tileHeight, available - y);
           const png = await page.screenshot({
             fullPage: true,
             clip: { x, y, width: clipWidth, height: clipHeight },
@@ -760,6 +780,7 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
           bytes += png.length;
           if (bytes > MAX_SCREENSHOT_BYTES) return { kind: "limit", width, height, limit: MAX_SCREENSHOT_BYTES, reason: "tile bytes" };
           tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
+          captured = Math.max(captured, y + clipHeight);
         } finally {
           const ended = performance.now();
           onTile({ x, y, evaluateMs: (evaluated ?? ended) - started, screenshotMs: evaluated ? ended - evaluated : 0 });
@@ -771,7 +792,7 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
   } finally {
     await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), originalScroll);
   }
-  return { kind: "tiles", width, height, tiles };
+  return { kind: "tiles", width, height: captured, tiles };
 }
 
 export async function capture(
