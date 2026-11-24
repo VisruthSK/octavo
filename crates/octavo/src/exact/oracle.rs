@@ -403,6 +403,28 @@ fn color_key(token: &str) -> Option<String> {
     Some(format!("color:{color}"))
 }
 
+fn ends_declaration(rest: &[String]) -> bool {
+    let mut depth = 0usize;
+    for token in rest {
+        match token.as_str() {
+            "CurlyBracketBlock" if depth == 0 => return false,
+            "Semicolon" if depth == 0 => return true,
+            "end:}" if depth == 0 => return true,
+            "end:)" | "end:]" | "end:}" => depth = depth.saturating_sub(1),
+            token
+                if token.starts_with("Function(")
+                    || token == "ParenthesisBlock"
+                    || token == "SquareBracketBlock"
+                    || token == "CurlyBracketBlock" =>
+            {
+                depth += 1
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 fn normalize_css_tokens(tokens: &[String]) -> Vec<String> {
     let mut result = Vec::new();
     for (i, token) in tokens.iter().enumerate() {
@@ -425,20 +447,7 @@ fn normalize_css_tokens(tokens: &[String]) -> Vec<String> {
         {
             continue;
         }
-        let before: Vec<&str> = tokens[..i]
-            .iter()
-            .rev()
-            .map(String::as_str)
-            .filter(|t| *t != "space")
-            .take(3)
-            .collect();
-        let after = tokens[i + 1..]
-            .iter()
-            .map(String::as_str)
-            .find(|t| *t != "space");
-        if matches!(before.as_slice(), ["Colon", property, "CurlyBracketBlock" | "Semicolon"]
-            if matches!(*property, "Ident(\"color\")" | "Ident(\"background-color\")" | "Ident(\"border-color\")" | "Ident(\"outline-color\")" | "Ident(\"fill\")" | "Ident(\"stroke\")"))
-            && matches!(after, Some("Semicolon" | "end:}"))
+        if ends_declaration(&tokens[i + 1..])
             && let Some(color) = color_key(token)
         {
             result.push(color);

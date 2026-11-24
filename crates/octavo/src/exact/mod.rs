@@ -139,16 +139,57 @@ fn font_hint(source: &str, offset: usize) -> Option<(Range<usize>, String)> {
         .ok()?
 }
 
+#[derive(Default)]
+struct CssEdits {
+    comments: Vec<Range<usize>>,
+    spaces: Vec<(Range<usize>, &'static str)>,
+    values: Vec<(Range<usize>, String)>,
+}
+
+fn shorter_number(text: &str) -> Option<String> {
+    let digits_at = text.find(|c: char| c.is_ascii_digit() || c == '.')?;
+    let (sign, rest) = text.split_at(digits_at);
+    let end = rest
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(rest.len());
+    let (number, unit) = rest.split_at(end);
+    if unit.starts_with(['e', 'E'])
+        && unit[1..].starts_with(|c: char| c.is_ascii_digit() || c == '+' || c == '-')
+    {
+        return None;
+    }
+    let (whole, fraction) = number.split_once('.')?;
+    let trimmed = fraction.trim_end_matches('0');
+    if trimmed.is_empty() {
+        return None;
+    }
+    let whole = if whole == "0" { "" } else { whole };
+    let shorter = format!("{sign}{whole}.{trimmed}{unit}");
+    (shorter.len() < text.len()).then_some(shorter)
+}
+
+fn shorter_hex(digits: &str) -> Option<String> {
+    let bytes = digits.as_bytes();
+    let pairs = matches!(bytes.len(), 6 | 8)
+        && bytes.iter().all(u8::is_ascii_hexdigit)
+        && bytes.chunks(2).all(|pair| pair[0] == pair[1]);
+    pairs.then(|| {
+        let short: String = bytes.iter().step_by(2).map(|&b| b as char).collect();
+        format!("#{short}")
+    })
+}
+
 fn css_rewrites<'i>(
     parser: &mut Parser<'i, '_>,
     strip_licenses: bool,
-    comments: &mut Vec<Range<usize>>,
-    ws: &mut Vec<(Range<usize>, &'static str)>,
+    edits: &mut CssEdits,
+    statement: &mut Vec<(Range<usize>, String)>,
 ) -> Result<(), ParseError<'i, ()>> {
     let mut prev_token: Option<String> = None;
     let mut pending_ws: Option<(Range<usize>, usize)> = None;
     loop {
-        let start = parser.position().byte_index();
+        let begin = parser.position();
+        let start = begin.byte_index();
         let Ok(token) = parser.next_including_whitespace_and_comments().cloned() else {
             break;
         };
@@ -162,7 +203,7 @@ fn css_rewrites<'i>(
                         || text.contains("@license")
                         || text.contains("@preserve"))
                 {
-                    comments.push(start..parser.position().byte_index());
+                    edits.comments.push(start..parser.position().byte_index());
                 }
             }
             Token::WhiteSpace(slice) => {
@@ -181,12 +222,27 @@ fn css_rewrites<'i>(
                         Token::CurlyBracketBlock | Token::Semicolon | Token::Comma
                     );
                     if is_prev_structural || is_next_structural {
-                        ws.push((ws_range, ""));
+                        edits.spaces.push((ws_range, ""));
                     } else if len > 1 {
-                        ws.push((ws_range, " "));
+                        edits.spaces.push((ws_range, " "));
                     }
                 }
+                let end = parser.position().byte_index();
                 match &token {
+                    Token::Number { .. } | Token::Dimension { .. } | Token::Percentage { .. } => {
+                        if let Some(shorter) =
+                            shorter_number(parser.slice(begin..parser.position()))
+                        {
+                            edits.values.push((start..end, shorter));
+                        }
+                        prev_token = Some("Other".to_string());
+                    }
+                    Token::Hash(digits) | Token::IDHash(digits) => {
+                        if let Some(shorter) = shorter_hex(digits) {
+                            statement.push((start..end, shorter));
+                        }
+                        prev_token = Some("Other".to_string());
+                    }
                     Token::CurlyBracketBlock
                     | Token::Function(_)
                     | Token::ParenthesisBlock
@@ -196,16 +252,27 @@ fn css_rewrites<'i>(
                             Token::SquareBracketBlock => ']',
                             _ => ')',
                         };
-                        let start = parser.position();
-                        parser.parse_nested_block(|inner| {
-                            css_rewrites(inner, strip_licenses, comments, ws)
-                        })?;
-                        if !parser.slice_from(start).ends_with(close) {
+                        let inside = parser.position();
+                        if close == '}' {
+                            statement.clear();
+                            parser.parse_nested_block(|inner| {
+                                let mut own = Vec::new();
+                                css_rewrites(inner, strip_licenses, edits, &mut own)?;
+                                edits.values.append(&mut own);
+                                Ok(())
+                            })?;
+                        } else {
+                            parser.parse_nested_block(|inner| {
+                                css_rewrites(inner, strip_licenses, edits, statement)
+                            })?;
+                        }
+                        if !parser.slice_from(inside).ends_with(close) {
                             return Err(parser.new_custom_error(()));
                         }
                         prev_token = Some(if close == '}' { "end:}" } else { "end:)" }.to_string());
                     }
                     Token::Semicolon => {
+                        edits.values.append(statement);
                         prev_token = Some("Semicolon".to_string());
                     }
                     Token::Comma => {
@@ -222,7 +289,7 @@ fn css_rewrites<'i>(
         }
     }
     if let Some((ws_range, _)) = pending_ws.take() {
-        ws.push((ws_range, ""));
+        edits.spaces.push((ws_range, ""));
     }
     Ok(())
 }
@@ -241,55 +308,54 @@ fn stylesheet(
     }
     let mut input = ParserInput::new(source);
     let mut parser = Parser::new(&mut input);
-    let mut comments = Vec::new();
-    let mut ws = Vec::new();
-    if css_rewrites(&mut parser, options.strip_licenses, &mut comments, &mut ws).is_err() {
+    let mut found = CssEdits::default();
+    if css_rewrites(
+        &mut parser,
+        options.strip_licenses,
+        &mut found,
+        &mut Vec::new(),
+    )
+    .is_err()
+    {
         return;
     }
-    if comments.is_empty() && ws.is_empty() {
+    let mut changes: Vec<(Range<usize>, &str, Transform)> = Vec::new();
+    for range in &found.comments {
+        changes.push((range.clone(), "", Transform::MinifiedStylesheet));
+    }
+    for (range, text) in &found.spaces {
+        changes.push((range.clone(), text, Transform::CollapsedCssWhitespace));
+    }
+    for (range, text) in &found.values {
+        changes.push((range.clone(), text, Transform::ShortenedCssValues));
+    }
+    if changes.is_empty() {
         return;
     }
-    let mut edits_to_apply = Vec::new();
-    for r in &comments {
-        edits_to_apply.push((r.clone(), ""));
-    }
-    for (r, text) in &ws {
-        edits_to_apply.push((r.clone(), *text));
-    }
-    edits_to_apply.sort_by_key(|(r, _)| r.start);
+    changes.sort_by_key(|(range, ..)| range.start);
     let mut candidate = String::with_capacity(source.len());
-    let mut cur = 0;
-    for (r, repl) in &edits_to_apply {
-        if r.start < cur {
+    let mut cursor = 0;
+    for (range, text, _) in &changes {
+        if range.start < cursor {
             return;
         }
-        candidate.push_str(&source[cur..r.start]);
-        candidate.push_str(repl);
-        cur = r.end;
+        candidate.push_str(&source[cursor..range.start]);
+        candidate.push_str(text);
+        cursor = range.end;
     }
-    candidate.push_str(&source[cur..]);
-    let proven = adopt(source.to_string(), candidate, &oracle::Css);
-    if proven.rejected() {
+    candidate.push_str(&source[cursor..]);
+    if adopt(source.to_string(), candidate, &oracle::Css).rejected() {
         warnings.push(Warning::OracleRejected {
             transform: Transform::MinifiedStylesheet,
             target,
         });
         return;
     }
-    let _ = proven.into_inner();
-    for r in comments {
+    for (range, text, transform) in changes {
         edits.push(Edit {
-            span: span.start + r.start..span.start + r.end,
-            text: String::new(),
-            transform: Transform::MinifiedStylesheet,
-            target: target.clone(),
-        });
-    }
-    for (r, repl) in ws {
-        edits.push(Edit {
-            span: span.start + r.start..span.start + r.end,
-            text: repl.to_string(),
-            transform: Transform::CollapsedCssWhitespace,
+            span: span.start + range.start..span.start + range.end,
+            text: text.to_string(),
+            transform,
             target: target.clone(),
         });
     }
@@ -1329,5 +1395,21 @@ function f() {
         let output = optimize(html, Mode::Exact).unwrap();
         assert_eq!(output.html, html);
         assert!(output.applied.is_empty());
+    }
+
+    #[test]
+    fn exact_shortens_css_numbers_and_hex_in_values_only() {
+        let input = "<html><style>#aabbcc{margin:0.50em 1.0px;color:#aabbcc;background:#11223344}a:is(#ddeeff){top:+0.5px;width:1e3px}@font-face{unicode-range:U+0025-00FF}</style></html>";
+        let out = optimize(input, Mode::Exact).unwrap();
+        assert_eq!(
+            out.html,
+            "<html><style>#aabbcc{margin:.5em 1.0px;color:#abc;background:#1234}a:is(#ddeeff){top:+.5px;width:1e3px}@font-face{unicode-range:U+0025-00FF}</style></html>"
+        );
+        assert!(
+            out.applied
+                .iter()
+                .any(|s| s.transform == Transform::ShortenedCssValues)
+        );
+        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
     }
 }

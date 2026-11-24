@@ -70,6 +70,7 @@ fn exact_corpus_and_byte_price() {
         Transform::MinifiedScript,
         Transform::StrippedDefaultAttr,
         Transform::CollapsedCssWhitespace,
+        Transform::ShortenedCssValues,
         Transform::NormalizedAttrQuotes,
     ];
     let mut counts: BTreeMap<Transform, Counts> = transforms
