@@ -2,7 +2,7 @@ import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import { engine } from "./engines/index.mjs";
 import { scrollbarPseudo } from "./engines/pseudos.mjs";
-import { canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
+import { boundMap, canonicalCssValue, canonicalFontFamily, canonicalStyle } from "./styles.mjs";
 import { validStyles } from "./style-storage.mjs";
 
 const SCREENSHOT_TOLERANCE = { lossy: 0.02 };
@@ -56,7 +56,10 @@ function canonicalGradient(body) {
 const unquotedFamilies = (declaration) =>
   declaration.replace(/font-family:(.*)$/, (_, value) => `font-family:${value.split(",").map(canonicalFontFamily).join(", ")}`);
 
+const canonicalCache = boundMap(new Map());
 const canonical = (declaration) => {
+  let cached = canonicalCache.get(declaration);
+  if (cached !== undefined) return cached;
   let text = unquotedFamilies(declaration);
   const marker = "linear-gradient(";
   const start = text.indexOf(marker);
@@ -70,12 +73,14 @@ const canonical = (declaration) => {
   }
   const pseudo = ["::before", "::after", "::marker", "::placeholder", "::selection", scrollbarPseudo].find((prefix) => text.startsWith(prefix)) ?? "";
   const colon = text.indexOf(":", pseudo ? 2 : 0);
-  if (colon < 0 || text.slice(pseudo.length, colon) === "font-family") return text;
-  return `${text.slice(0, colon + 1)}${canonicalCssValue(text.slice(colon + 1))}`;
+  if (colon < 0 || text.slice(pseudo.length, colon) === "font-family") {
+    canonicalCache.set(declaration, text);
+    return text;
+  }
+  const result = `${text.slice(0, colon + 1)}${canonicalCssValue(text.slice(colon + 1))}`;
+  canonicalCache.set(declaration, result);
+  return result;
 };
-
-export const sameStyle = (left, right = "") =>
-  left === right || (missingFrom(left, right).length === 0 && missingFrom(right, left).length === 0);
 
 export const USED_SIZE_ROUNDING = 1e-4;
 const USED_SIZE = /^((?:::?[a-z-]+)?(?:width|height|inline-size|block-size)):(-?\d*\.?\d+)px$/;
@@ -85,14 +90,33 @@ const usedSize = (declaration) => {
   return match ? [match[1], Number(match[2])] : null;
 };
 
-export const missingFrom = (reference, candidate = "") => {
-  const declarations = candidate.split(";");
-  const present = new Set(declarations.map(canonical));
-  const sizes = new Map();
-  for (const declaration of declarations) {
-    const size = usedSize(declaration);
-    if (size) sizes.set(size[0], [...(sizes.get(size[0]) ?? []), size[1]]);
+const candidateCache = boundMap(new Map());
+const getCandidateData = (candidate) => {
+  let data = candidateCache.get(candidate);
+  if (!data) {
+    const declarations = candidate.split(";");
+    const present = new Set(declarations.map(canonical));
+    const sizes = new Map();
+    for (const declaration of declarations) {
+      const size = usedSize(declaration);
+      if (size) {
+        let list = sizes.get(size[0]);
+        if (!list) {
+          list = [];
+          sizes.set(size[0], list);
+        }
+        list.push(size[1]);
+      }
+    }
+    data = { present, sizes };
+    candidateCache.set(candidate, data);
   }
+  return data;
+};
+
+export const missingFrom = (reference, candidate = "") => {
+  if (reference === candidate) return [];
+  const { present, sizes } = getCandidateData(candidate);
   return reference.split(";").filter((declaration) => {
     if (present.has(canonical(declaration))) return false;
     const size = usedSize(declaration);
@@ -100,8 +124,24 @@ export const missingFrom = (reference, candidate = "") => {
   });
 };
 
+const sameStyleCache = boundMap(new Map());
+export const sameStyle = (left, right = "") => {
+  if (left === right) return true;
+  const key = left < right ? `${left}\0${right}` : `${right}\0${left}`;
+  let cached = sameStyleCache.get(key);
+  if (cached !== undefined) return cached;
+  const result = missingFrom(left, right).length === 0 && missingFrom(right, left).length === 0;
+  sameStyleCache.set(key, result);
+  return result;
+};
+
 export function differences(left, right, tolerance = engine.pixel) {
-  if (Buffer.from(left.data.buffer, left.data.byteOffset, left.data.byteLength).equals(Buffer.from(right.data.buffer, right.data.byteOffset, right.data.byteLength))) {
+  if (left === right || left.data === right.data) {
+    return { count: 0, rounded: 0, different: 0, max: 0, box: [Infinity, Infinity, -1, -1], anyBox: [Infinity, Infinity, -1, -1], where: "" };
+  }
+  const leftBuf = Buffer.isBuffer(left.data) ? left.data : Buffer.from(left.data.buffer, left.data.byteOffset, left.data.byteLength);
+  const rightBuf = Buffer.isBuffer(right.data) ? right.data : Buffer.from(right.data.buffer, right.data.byteOffset, right.data.byteLength);
+  if (leftBuf.equals(rightBuf)) {
     return { count: 0, rounded: 0, different: 0, max: 0, box: [Infinity, Infinity, -1, -1], anyBox: [Infinity, Infinity, -1, -1], where: "" };
   }
   const rounding = tolerance.channel;
@@ -112,22 +152,40 @@ export function differences(left, right, tolerance = engine.pixel) {
   let different = 0;
   let max = 0;
   const faint = [];
-  let [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Infinity, Infinity, -1, -1];
-  let [minX, minY, maxX, maxY] = [Infinity, Infinity, -1, -1];
+  let anyMinX = Infinity, anyMinY = Infinity, anyMaxX = -1, anyMaxY = -1;
+  let minX = Infinity, minY = Infinity, maxX = -1, maxY = -1;
   let first = "";
-  for (let y = 0; y < left.height; y++) {
-    for (let x = 0; x < left.width; x++) {
-      const at = (y * left.width + x) * 4;
-      const worst = Math.max(
-        Math.abs(left.data[at] - right.data[at]),
-        Math.abs(left.data[at + 1] - right.data[at + 1]),
-        Math.abs(left.data[at + 2] - right.data[at + 2]),
-        Math.abs(left.data[at + 3] - right.data[at + 3]),
-      );
+  const leftData = left.data;
+  const rightData = right.data;
+  const width = left.width;
+  const height = left.height;
+  const canUse32 = left.data.byteOffset % 4 === 0 && right.data.byteOffset % 4 === 0;
+  const left32 = canUse32 ? new Uint32Array(left.data.buffer, left.data.byteOffset, width * height) : null;
+  const right32 = canUse32 ? new Uint32Array(right.data.buffer, right.data.byteOffset, width * height) : null;
+  let at = 0;
+  let pixelIndex = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++, at += 4, pixelIndex++) {
+      if (canUse32 ? left32[pixelIndex] === right32[pixelIndex] : (
+        leftData[at] === rightData[at] &&
+        leftData[at + 1] === rightData[at + 1] &&
+        leftData[at + 2] === rightData[at + 2] &&
+        leftData[at + 3] === rightData[at + 3]
+      )) {
+        continue;
+      }
+      const d0 = Math.abs(leftData[at] - rightData[at]);
+      const d1 = Math.abs(leftData[at + 1] - rightData[at + 1]);
+      const d2 = Math.abs(leftData[at + 2] - rightData[at + 2]);
+      const d3 = Math.abs(leftData[at + 3] - rightData[at + 3]);
+      const worst = Math.max(d0, d1, d2, d3);
       if (worst > 0) {
         different += 1;
-        max = Math.max(max, worst);
-        [anyMinX, anyMinY, anyMaxX, anyMaxY] = [Math.min(anyMinX, x), Math.min(anyMinY, y), Math.max(anyMaxX, x), Math.max(anyMaxY, y)];
+        if (worst > max) max = worst;
+        if (x < anyMinX) anyMinX = x;
+        if (y < anyMinY) anyMinY = y;
+        if (x > anyMaxX) anyMaxX = x;
+        if (y > anyMaxY) anyMaxY = y;
       }
       if (worst <= rounding) {
         if (worst > 0) rounded += 1;
@@ -138,16 +196,22 @@ export function differences(left, right, tolerance = engine.pixel) {
         continue;
       }
       count += 1;
-      first ||= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
-      [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
+      if (!first) first = `(${x},${y}) rgba(${leftData[at]},${leftData[at + 1]},${leftData[at + 2]},${leftData[at + 3]}) vs rgba(${rightData[at]},${rightData[at + 1]},${rightData[at + 2]},${rightData[at + 3]})`;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
     }
   }
   const spread = count > 0 || faint.length > budget;
   if (!spread) rounded += faint.length;
   else for (const [x, y, at] of faint) {
     count += 1;
-    first ||= `(${x},${y}) rgba(${left.data.subarray(at, at + 4).join(",")}) vs rgba(${right.data.subarray(at, at + 4).join(",")})`;
-    [minX, minY, maxX, maxY] = [Math.min(minX, x), Math.min(minY, y), Math.max(maxX, x), Math.max(maxY, y)];
+    if (!first) first = `(${x},${y}) rgba(${leftData[at]},${leftData[at + 1]},${leftData[at + 2]},${leftData[at + 3]}) vs rgba(${rightData[at]},${rightData[at + 1]},${rightData[at + 2]},${rightData[at + 3]})`;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
   }
   return { count, rounded, different, max, box: [minX, minY, maxX, maxY], anyBox: [anyMinX, anyMinY, anyMaxX, anyMaxY], where: count ? `, within x ${minX}-${maxX} y ${minY}-${maxY}, first ${first}` : "" };
 }
@@ -163,7 +227,7 @@ const getPng = (buf) => {
 };
 
 function compareImageBytes(a, b, lossy, stats, cache = true) {
-  if (a.equals(b)) return [];
+  if (a === b || a.equals(b)) return [];
   const left = cache ? getPng(a) : PNG.sync.read(a);
   const right = cache ? getPng(b) : PNG.sync.read(b);
   if (left.width !== right.width || left.height !== right.height) {
@@ -182,6 +246,7 @@ const screenshotLimit = (screenshot) => screenshot?.kind === "limit";
 const limitDescription = (screenshot) => `${screenshot.width}x${screenshot.height}, ${screenshot.reason ?? "pixels"} limit ${screenshot.limit}`;
 
 function compareScreenshots(a, b, lossy, stats) {
+  if (a === b) return [];
   if (screenshotLimit(a) || screenshotLimit(b)) {
     if (!screenshotLimit(a) || !screenshotLimit(b)) {
       const limited = screenshotLimit(a) ? "original" : "optimized";
@@ -196,6 +261,7 @@ function compareScreenshots(a, b, lossy, stats) {
   if (a.kind !== "tiles" || b.kind !== "tiles") return ["screenshot tile coverage differs"];
   if (a.width !== b.width || a.height !== b.height) return [`screenshot size ${a.width}x${a.height} vs ${b.width}x${b.height}`];
   if (a.tiles.length !== b.tiles.length) return [`screenshot tile count ${a.tiles.length} vs ${b.tiles.length}`];
+  if (a.tiles === b.tiles) return [];
   const issues = [];
   for (const [index, left] of a.tiles.entries()) {
     const right = b.tiles[index];
@@ -203,12 +269,14 @@ function compareScreenshots(a, b, lossy, stats) {
       issues.push(`screenshot tile ${index} region differs: ${left.x},${left.y} ${left.width}x${left.height} vs ${right.x},${right.y} ${right.width}x${right.height}`);
       continue;
     }
+    if (left.png === right.png || left.png.equals(right.png)) continue;
     issues.push(...compareImageBytes(left.png, right.png, lossy, stats, false).map((issue) => `tile at ${left.x},${left.y}: ${issue}`));
   }
   return issues;
 }
 
 function compareState(a, b, lossy, stats) {
+  if (a === b) return [];
   if (!validStyles(a) || !validStyles(b)) throw new Error("invalid computed style storage");
   const issues = [];
   if (a.unchanged || b.unchanged) {
@@ -239,9 +307,16 @@ function compareState(a, b, lossy, stats) {
   if (a.scroll.join() !== b.scroll.join()) issues.push(`scroll size ${a.scroll} vs ${b.scroll}`);
   if (a.labels.length !== b.labels.length) issues.push(`element count ${a.labels.length} vs ${b.labels.length}`);
   const tolerance = lossy ? 1 : 0.01;
-  const moved = a.rects.flatMap((rect, i) =>
-    rect.every((n, k) => Math.abs(n - (b.rects[i]?.[k] ?? Infinity)) <= tolerance) ? [] : [i],
-  );
+  const moved = [];
+  if (a.rects !== b.rects) {
+    for (let i = 0; i < a.rects.length; i++) {
+      const rect = a.rects[i];
+      const target = b.rects[i];
+      if (!target || !rect.every((n, k) => Math.abs(n - (target[k] ?? Infinity)) <= tolerance)) {
+        moved.push(i);
+      }
+    }
+  }
   if (moved.length) {
     const [first] = moved;
     issues.push(`${moved.length} elements laid out differently, e.g. ${a.labels[first]}: [${a.rects[first]}] vs [${b.rects[first]}]`);
@@ -250,12 +325,16 @@ function compareState(a, b, lossy, stats) {
   const afterStyles = b.styles ?? [];
   const styleAt = (state, styles, index) => index >= styles.length ? "" : state.styleValues === undefined ? styles[index] : state.styleValues[styles[index]];
   if (beforeStyles.length !== afterStyles.length) issues.push(`style count ${beforeStyles.length} vs ${afterStyles.length}`);
-  const differing = Array.from({ length: Math.max(beforeStyles.length, afterStyles.length) }, (_, i) => i).filter((i) => {
+  const maxStyleLen = Math.max(beforeStyles.length, afterStyles.length);
+  const differing = [];
+  for (let i = 0; i < maxStyleLen; i++) {
     const before = styleAt(a, beforeStyles, i);
     const after = styleAt(b, afterStyles, i);
-    if (before === after && a.writingModes?.[i] === b.writingModes?.[i]) return false;
-    return !sameStyle(canonicalStyle(before, a.writingModes?.[i]), canonicalStyle(after, b.writingModes?.[i]));
-  });
+    if (before === after && a.writingModes?.[i] === b.writingModes?.[i]) continue;
+    if (!sameStyle(canonicalStyle(before, a.writingModes?.[i]), canonicalStyle(after, b.writingModes?.[i]))) {
+      differing.push(i);
+    }
+  }
   if (differing.length) {
     const [first] = differing;
     const before = styleAt(a, beforeStyles, first);
@@ -275,6 +354,7 @@ function compareState(a, b, lossy, stats) {
 }
 
 export function compare(before, after, lossy, stats) {
+  if (before === after) return [];
   if (before.crashed || after.crashed) return [`crashed: original=${before.crashed ?? "no"} optimized=${after.crashed ?? "no"}`];
   const issues = [];
   if (!before.states.length) issues.push("original produced no states");
@@ -313,3 +393,5 @@ const FONT_FILE = /.(?:woff2?|ttf|otf|eot)(?:[?#]|$)/i;
 const significantRequests = (requests) => [...new Set(requests.filter((url) => !FONT_FILE.test(url)))].sort();
 
 export const signature = (issue) => issue.replace(/[0-9.]+/g, "#").replace(/\[[^\]]*\]/g, "[]").slice(0, 60);
+
+export { boundMap };
