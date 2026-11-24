@@ -93,3 +93,11 @@ test("a declared face used only by a pseudo-element is loaded before the fonts a
   const changed = write("pseudo-eager", [regular, icons], head);
   assert.deepEqual(await fontIssues(original, changed), []);
 });
+
+test("a declared face on a pseudo-element with content none is left alone", async () => {
+  const head = "<style>p::before{content:none;font-family:Ghost}</style>";
+  const ghost = { ...regular, family: "Ghost", status: "unloaded" };
+  const original = write("pseudo-none", [regular, ghost], head);
+  const changed = write("pseudo-none-clean", [regular], head);
+  assert.deepEqual(await fontIssues(original, changed), []);
+});
