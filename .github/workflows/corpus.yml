@@ -222,7 +222,14 @@ jobs:
           restore-keys: |
             verdicts-${{ matrix.browser }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 58 || 320 }}" --octavo-args "${{ inputs.octavo_args }}" ${{ inputs.self && '--self' || '' }}
+      - name: Run verification
+        env:
+          INPUT_FILTER: ${{ inputs.filter || '.' }}
+          INPUT_OCTAVO_ARGS: ${{ inputs.octavo_args }}
+          INPUT_SELF: ${{ inputs.self && '--self' || '' }}
+          DEADLINE_MINUTES: ${{ needs.plan.outputs.tier == 'smoke' && 58 || 320 }}
+        run: |
+          node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "$INPUT_FILTER" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "$DEADLINE_MINUTES" --octavo-args "$INPUT_OCTAVO_ARGS" $INPUT_SELF
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 65 || 335 }}
       - uses: actions/cache/save@v6
         if: always()
@@ -232,14 +239,18 @@ jobs:
           key: verdicts-${{ matrix.browser }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-${{ github.sha }}
       - name: Diagnose one document
         if: always() && inputs.diagnose != '' && (inputs.diagnose_browser == '' || inputs.diagnose_browser == matrix.browser)
+        env:
+          DIAGNOSE_ID: ${{ inputs.diagnose }}
+          DIAGNOSE_LEVEL: ${{ inputs.diagnose_level }}
+          DIAGNOSE_SCENARIO: ${{ inputs.diagnose_scenario }}
         run: |
-          original="corpus/.cache/rendered/${{ inputs.diagnose }}.html"
-          [ -f "$original" ] || original="corpus/.cache/docs/${{ inputs.diagnose }}.html"
-          optimized="out/engines-${{ matrix.browser }}-${{ matrix.shard }}/${{ inputs.diagnose }}.${{ inputs.diagnose_level }}.html"
+          original="corpus/.cache/rendered/${DIAGNOSE_ID}.html"
+          [ -f "$original" ] || original="corpus/.cache/docs/${DIAGNOSE_ID}.html"
+          optimized="out/engines-${{ matrix.browser }}-${{ matrix.shard }}/${DIAGNOSE_ID}.${DIAGNOSE_LEVEL}.html"
           if [ -f "$original" ] && [ -f "$optimized" ]; then
-            node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" out/diagnose/whole
-            target/release/octavo "$original" out/subset.html --level "${{ inputs.diagnose_level }}" --no-cache
-            node verify/screenshots.mjs "$PWD/$original" "$PWD/out/subset.html" "${{ inputs.diagnose_scenario }}" out/diagnose/subset
+            node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "$DIAGNOSE_SCENARIO" out/diagnose/whole
+            target/release/octavo "$original" out/subset.html --level "$DIAGNOSE_LEVEL" --no-cache
+            node verify/screenshots.mjs "$PWD/$original" "$PWD/out/subset.html" "$DIAGNOSE_SCENARIO" out/diagnose/subset
           fi
       - uses: actions/upload-artifact@v7
         if: always() && inputs.diagnose != '' && (inputs.diagnose_browser == '' || inputs.diagnose_browser == matrix.browser)
