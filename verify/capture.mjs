@@ -907,6 +907,9 @@ export async function capture(
     const record = async (label, extra = {}) => {
       setPhase(`screenshot ${label}`);
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
+      const before = await page
+        .evaluate(() => `before ${document.documentElement.scrollWidth} of ${document.documentElement.clientWidth}, ${document.querySelectorAll("[data-tippy-root] [data-state=visible]").length} visible`)
+        .catch(() => "before ?");
       let screenshotError;
       const screenshot = await captureScreenshot(page, scenario.viewport, (tile) => {
         deadline.touch();
@@ -929,9 +932,10 @@ export async function capture(
             .filter(({ right }) => right > width + 1)
             .slice(0, 4)
             .map(({ element, right }) => `${element.tagName.toLowerCase()}.${String(element.className).slice(0, 40)}@${right}`);
-          return [`scrollWidth ${document.documentElement.scrollWidth} of ${width}`, ...wide];
+          return [`after ${document.documentElement.scrollWidth} of ${width}`, ...wide];
         })
         .catch(() => []);
+      popovers.unshift(before, `screenshot ${screenshot?.width ?? screenshot?.kind}`);
       states.push({ label, ...observation, screenshot, popovers, ...(screenshotError ? { screenshotError } : {}), ...extra });
     };
     await record("load", { digest: previousDigest });
