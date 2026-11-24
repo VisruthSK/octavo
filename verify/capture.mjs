@@ -736,7 +736,8 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
     }
   } catch (error) {
     const cdp = await page.context().newCDPSession(page).then((session) => session.send("Page.getLayoutMetrics")).catch(() => null);
-    throw new Error(`full-page screenshot: ${fullPageError}; tiled screenshot: ${error.message.replace(/s+/g, " ")} DIAG ${JSON.stringify({ width, height, tileWidth, tileHeight, cssContentSize: cdp?.cssContentSize, tiles: tiles.length })}`);
+    const message = error.message.replace(/\s+/g, " ");
+    throw new Error(`full-page screenshot: ${fullPageError}; tiled screenshot: ${message} DIAG ${JSON.stringify({ width, height, tileWidth, tileHeight, cssContentSize: cdp?.cssContentSize, tiles: tiles.length })}`);
   } finally {
     await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), originalScroll);
   }
