@@ -915,9 +915,6 @@ export async function capture(
     const record = async (label, extra = {}) => {
       setPhase(`screenshot ${label}`);
       if (scenario.media) await page.emulateMedia({ media: scenario.media });
-      const before = await page
-        .evaluate(() => `before ${document.documentElement.scrollWidth} of ${document.documentElement.clientWidth}, ${document.querySelectorAll("[data-tippy-root] [data-state=visible]").length} visible`)
-        .catch(() => "before ?");
       let screenshotError;
       const screenshot = await captureScreenshot(page, scenario.viewport, (tile) => {
         deadline.touch();
@@ -932,19 +929,7 @@ export async function capture(
       if (scripted) await page.evaluate(settleFonts).catch(() => {});
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
-      const popovers = await page
-        .evaluate(() => {
-          const width = document.documentElement.clientWidth;
-          const wide = [...document.querySelectorAll("body *")]
-            .map((element) => ({ element, right: Math.round(element.getBoundingClientRect().right) }))
-            .filter(({ right }) => right > width + 1)
-            .slice(0, 4)
-            .map(({ element, right }) => `${element.tagName.toLowerCase()}.${String(element.className).slice(0, 40)}@${right}`);
-          return [`after ${document.documentElement.scrollWidth} of ${width}`, ...wide];
-        })
-        .catch(() => []);
-      popovers.unshift(before, `screenshot ${screenshot?.width ?? screenshot?.kind}`);
-      states.push({ label, ...observation, screenshot, popovers, ...(screenshotError ? { screenshotError } : {}), ...extra });
+      states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
     };
     await record("load", { digest: previousDigest });
     setPhase("forcedStates element count");
