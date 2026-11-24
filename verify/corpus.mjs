@@ -442,16 +442,7 @@ export async function runCorpus() {
     }, 60_000);
     heartbeat.unref?.();
     const cache = { hits: 0, misses: 0 };
-    await Promise.all(documents.map(async (entries) => {
-      if (deadlineReached()) {
-        cache.misses += entries.length;
-        for (const entry of entries) {
-          entry.problems.push(`browser comparison not started because the ${deadlineMinutes}-minute verification deadline was reached`);
-          doneLevels += 1;
-          console.log(formatProgress(doneLevels, totalLevels, entry.id, entry.level, 0, false));
-        }
-        return;
-      }
+    await pool(documents, pages, async (entries) => {
       const original = entries[0].input;
       const originalBytes = readFileSync(original);
       const plans = [];
@@ -555,7 +546,14 @@ export async function runCorpus() {
       } finally {
         inFlight.delete(docId);
       }
-    }));
+    }, (entries) => {
+      cache.misses += entries.length;
+      for (const entry of entries) {
+        entry.problems.push(`browser comparison not started because the ${deadlineMinutes}-minute verification deadline was reached`);
+        doneLevels += 1;
+        console.log(formatProgress(doneLevels, totalLevels, entry.id, entry.level, 0, false));
+      }
+    });
     clearInterval(heartbeat);
     await closeBrowser();
     browserName = identity;
