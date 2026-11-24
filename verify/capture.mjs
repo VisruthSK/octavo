@@ -44,8 +44,9 @@ const popoverAtRest = (selector) => {
     state.frames = 0;
     return false;
   }
+  const positioned = !root.querySelector(".tippy-box") || root.hasAttribute("data-popper-placement");
   const rect = JSON.stringify(root.getBoundingClientRect());
-  state.frames = rect === state.rect && root.getAnimations({ subtree: true }).length === 0 ? state.frames + 1 : 0;
+  state.frames = positioned && rect === state.rect && root.getAnimations({ subtree: true }).length === 0 ? state.frames + 1 : 0;
   state.rect = rect;
   return state.frames >= 3;
 };

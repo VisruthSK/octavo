@@ -51,18 +51,21 @@ test(`${engine.name} a popover that is still moving is waited for until it rests
   const browser = await engine.launch();
   try {
     const tab = await browser.newPage();
-    await tab.setContent(`<style>a{display:inline-block;width:80px;height:30px}div{position:absolute;top:60px;left:0;width:439px;height:20px}</style>
+    await tab.setContent(`<style>a{display:inline-block;width:80px;height:30px}div[data-tippy-root]{position:absolute;top:60px;left:0;width:439px;height:20px}</style>
 <a class="quarto-xref" href="#a">a</a>
 <script>
 document.querySelector("a").addEventListener("mouseenter", () => {
   const root = document.body.appendChild(document.createElement("div"));
   root.setAttribute("data-tippy-root", "");
+  root.appendChild(document.createElement("div")).className = "tippy-box";
+  root.style.left = "300px";
   let frames = 0;
-  const move = () => {
-    root.style.left = Math.max(0, 300 - frames * 100) + "px";
-    if (frames++ < 6) requestAnimationFrame(move);
+  const place = () => {
+    if (frames++ < 8) return requestAnimationFrame(place);
+    root.style.left = "0px";
+    root.setAttribute("data-popper-placement", "bottom");
   };
-  requestAnimationFrame(move);
+  requestAnimationFrame(place);
 });
 </script>`);
     await hoverPopovers(tab);
