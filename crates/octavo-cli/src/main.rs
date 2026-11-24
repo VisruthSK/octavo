@@ -299,6 +299,18 @@ fn command() -> clap::Command {
         })
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FetchPolicy {
+    Fetch,
+    Offline,
+}
+
+impl FetchPolicy {
+    fn is_enabled(self) -> bool {
+        self == FetchPolicy::Fetch
+    }
+}
+
 fn main() -> ExitCode {
     let cli = match Cli::from_arg_matches(&command().get_matches()) {
         Ok(cli) => cli,
@@ -371,10 +383,22 @@ fn main() -> ExitCode {
     } else {
         Compression::Balanced
     };
-    let result = if audit_only {
-        audit(&input, level, options, &resource_path, !no_fetch)
+    let fetch_policy = if no_fetch {
+        FetchPolicy::Offline
     } else {
-        run(&input, &output, level, options, &resource_path, !no_fetch)
+        FetchPolicy::Fetch
+    };
+    let result = if audit_only {
+        audit(&input, level, options, &resource_path, fetch_policy)
+    } else {
+        run(
+            &input,
+            &output,
+            level,
+            options,
+            &resource_path,
+            fetch_policy,
+        )
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -419,7 +443,7 @@ fn audit(
     level: Mode,
     mut options: Options,
     resource_paths: &[PathBuf],
-    fetch: bool,
+    fetch: FetchPolicy,
 ) -> Result<(), String> {
     let (src, _) = prepare(input, read(input)?, resource_paths, fetch);
     options.exact = level == Mode::Exact;
@@ -484,7 +508,7 @@ fn run(
     level: Mode,
     mut options: Options,
     resource_paths: &[PathBuf],
-    fetch: bool,
+    fetch: FetchPolicy,
 ) -> Result<(), String> {
     let started = Instant::now();
     let original = read(input)?;
@@ -541,7 +565,7 @@ fn prepare(
     input: &Path,
     original: String,
     resource_paths: &[PathBuf],
-    fetch: bool,
+    fetch: FetchPolicy,
 ) -> (String, Option<Linked>) {
     let mut resources = FsResources::new(input, resource_paths, fetch);
     let embedded = embed_resources(&original, &mut resources);
@@ -577,12 +601,12 @@ struct FsResources {
 }
 
 impl FsResources {
-    fn new(input: &Path, extra: &[PathBuf], fetch: bool) -> FsResources {
+    fn new(input: &Path, extra: &[PathBuf], fetch: FetchPolicy) -> FsResources {
         let page_dir = fs::canonicalize(input)
             .ok()
             .and_then(|path| path.parent().map(Path::to_path_buf))
             .unwrap_or_else(|| PathBuf::from("."));
-        let agent = fetch.then(|| {
+        let agent = fetch.is_enabled().then(|| {
             ureq::Agent::config_builder()
                 .timeout_global(Some(Duration::from_secs(30)))
                 .user_agent(USER_AGENT)

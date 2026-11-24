@@ -137,7 +137,7 @@ export function select(pool, count) {
   return chosen.map((at) => pool[at].id);
 }
 
-export function selectSmoke(pool, count, pinned = []) {
+export function selectSubset(pool, count, pinned = []) {
   const pinnedIds = new Set(pinned);
   const fixed = pool.filter((entry) => pinnedIds.has(entry.id)).sort(byId).slice(0, count);
   const open = pool.filter((entry) => !pinnedIds.has(entry.id));
@@ -159,7 +159,7 @@ export function selectSmoke(pool, count, pinned = []) {
 
 export function selectStratified(pool, quotas, pinned = []) {
   return Object.entries(quotas).flatMap(([format, count]) =>
-    selectSmoke(
+    selectSubset(
       pool.filter((entry) => entry.format === format),
       count,
       pinned,

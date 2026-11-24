@@ -13,7 +13,7 @@ const documents = (name, family) => [
   {
     id: `fonts-${name}-tabular-numbers`,
     category: "fonts",
-    tier: name === "fira-sans" ? "smoke" : "full",
+    tier: name === "fira-sans" ? "subset" : "full",
     expect: { outcome: "optimizes", retains: ["Ledger of numbers"] },
     build: () =>
       page(

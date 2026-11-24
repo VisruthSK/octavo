@@ -42,7 +42,7 @@ export function buildCosts(source = root) {
         currentEngine = "webkit";
       } else if (line.includes("out/engines-firefox") || line.includes("Firefox checks") || line.includes("browser: Firefox") || line.includes("OCTAVO_BROWSER: firefox") || (!defaultEngine && line.includes("firefox"))) {
         currentEngine = "firefox";
-      } else if (line.includes("out/engines-chromium") || line.includes("Chromium checks") || line.includes("browser: Chromium") || line.includes("OCTAVO_BROWSER: chromium") || (!defaultEngine && (line.includes("Corpus (smoke, shard") || line.includes("chromium")))) {
+      } else if (line.includes("out/engines-chromium") || line.includes("Chromium checks") || line.includes("browser: Chromium") || line.includes("OCTAVO_BROWSER: chromium") || (!defaultEngine && (line.includes("Corpus (subset, shard") || line.includes("chromium")))) {
         currentEngine = "chromium";
       }
       const match = line.match(progressRegex);

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { COST_CAP, cappedCost, costOf, hardnessOf, hardnessPerCost } from "./hardness.mjs";
-import { featuresOf, select, selectSmoke, selectStratified } from "./select.mjs";
+import { featuresOf, select, selectSubset, selectStratified } from "./select.mjs";
 import { loadSpecs } from "./specs.mjs";
 
 const entry = (id, group, bytes, extra = {}) => ({
@@ -103,7 +103,7 @@ test("the hardest documents take the hardness share first", () => {
   const ranked = [...pool].sort(
     (a, b) => hardnessPerCost(b.features) - hardnessPerCost(a.features) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
-  assert.deepEqual(selectSmoke(pool, 5).slice(0, 3), ranked.slice(0, 3).map((item) => item.id));
+  assert.deepEqual(selectSubset(pool, 5).slice(0, 3), ranked.slice(0, 3).map((item) => item.id));
 });
 
 test("pinned documents are always selected, whatever their hardness", () => {
@@ -111,8 +111,8 @@ test("pinned documents are always selected, whatever their hardness", () => {
     entry("pinned", "g1", 1000),
     ...Array.from({ length: 10 }, (_, at) => entry(`busy-${at}`, `g${at % 3}`, 1000, { scripts: at + 1 })),
   ];
-  assert.ok(selectSmoke(pool, 3, ["pinned"]).includes("pinned"));
-  assert.deepEqual(selectSmoke(pool, 3, ["pinned"]), selectSmoke([...pool].reverse(), 3, ["pinned"]));
+  assert.ok(selectSubset(pool, 3, ["pinned"]).includes("pinned"));
+  assert.deepEqual(selectSubset(pool, 3, ["pinned"]), selectSubset([...pool].reverse(), 3, ["pinned"]));
 });
 
 test("each format gets exactly its quota, in selection order", () => {
@@ -150,7 +150,7 @@ test("the cost cap stops a giant document from buying more slots", () => {
   assert.ok(hardnessPerCost(small.features) > hardnessPerCost(giant.features));
 });
 
-test("every pinned document is in the corpus and in the smoke tier", async () => {
+test("every pinned document is in the corpus and in the subset tier", async () => {
   const pinned = JSON.parse(readFileSync(join(import.meta.dirname, "hardest.json"), "utf8"));
   const specs = await loadSpecs();
   const selection = JSON.parse(readFileSync(join(import.meta.dirname, "selection.json"), "utf8"));
@@ -160,7 +160,7 @@ test("every pinned document is in the corpus and in the smoke tier", async () =>
   ]);
   for (const id of pinned) {
     assert.ok(tiers.has(id), `${id} is not a corpus document`);
-    assert.equal(tiers.get(id), "smoke", `${id} is not in the smoke tier`);
+    assert.equal(tiers.get(id), "subset", `${id} is not in the subset tier`);
   }
 });
 
@@ -168,7 +168,7 @@ test("pinned documents survive a real selection", () => {
   const pinned = JSON.parse(readFileSync(join(import.meta.dirname, "hardest.json"), "utf8"));
   const selection = JSON.parse(readFileSync(join(import.meta.dirname, "selection.json"), "utf8"));
   const [source] = JSON.parse(readFileSync(join(import.meta.dirname, "sources.json"), "utf8"));
-  const picks = selectStratified(selection, source.smoke, pinned);
+  const picks = selectStratified(selection, source.subset, pinned);
   for (const id of pinned.filter((item) => selection.some((entry) => entry.id === item))) {
     assert.ok(picks.some((pick) => pick.id === id), `${id} was not selected`);
   }

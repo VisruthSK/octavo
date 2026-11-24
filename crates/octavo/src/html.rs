@@ -300,8 +300,12 @@ pub(crate) fn scan(src: &str) -> Scan {
         }
         let element = Element::parse(written);
         let raw = RawText::parse(written);
-        let (attrs, tag_end, self_closing) =
-            parse_attrs(src, name_start + name_len, element.is_some());
+        let collect = if element.is_some() {
+            AttrCollection::Collect
+        } else {
+            AttrCollection::Skip
+        };
+        let (attrs, tag_end, self_closing) = parse_attrs(src, name_start + name_len, collect);
         if element.is_none() && raw.is_none() {
             i = tag_end;
             continue;
@@ -373,7 +377,13 @@ fn find_close(src: &str, from: usize, name: &str) -> usize {
         .unwrap_or(src.len())
 }
 
-fn parse_attrs(src: &str, mut i: usize, collect: bool) -> (Vec<Attribute>, usize, bool) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AttrCollection {
+    Collect,
+    Skip,
+}
+
+fn parse_attrs(src: &str, mut i: usize, collect: AttrCollection) -> (Vec<Attribute>, usize, bool) {
     let b = src.as_bytes();
     let mut attrs = Vec::new();
     let mut self_closing = false;
@@ -422,7 +432,7 @@ fn parse_attrs(src: &str, mut i: usize, collect: bool) -> (Vec<Attribute>, usize
                         value_span = Some(s..i);
                     }
                 }
-                if collect {
+                if collect == AttrCollection::Collect {
                     attrs.push(Attribute {
                         name: AttrName::parse(name),
                         value: value.to_string(),

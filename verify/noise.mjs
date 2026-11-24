@@ -17,7 +17,7 @@ const outDirectory = resolve(flag("out", join(root, "out", "noise")));
 const wanted = scenarios.filter((scenario) => scenario.pixels || scenario.name === "mobile");
 
 const rows = readManifest()
-  .filter((row) => row.tier === "smoke" && row.browser)
+  .filter((row) => row.tier === "subset" && row.browser)
   .sort((a, b) => b.bytes - a.bytes)
   .slice(0, limit);
 

@@ -267,7 +267,7 @@ export default [
   {
     id: "quarto-plain-article",
     category: "quarto",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -316,7 +316,7 @@ export default [
   {
     id: "quarto-no-features-dead-libraries",
     category: "quarto",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -332,7 +332,7 @@ export default [
   {
     id: "quarto-footnotes-keep-tippy",
     category: "quarto",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -396,7 +396,7 @@ export default [
   {
     id: "quarto-code-copy-button-keeps-clipboard",
     category: "quarto",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -492,7 +492,7 @@ export default [
   {
     id: "quarto-search-index-embedded",
     category: "quarto",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -561,7 +561,7 @@ export default [
   {
     id: "quarto-mermaid-diagram",
     category: "quarto",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -580,7 +580,7 @@ export default [
   {
     id: "quarto-revealjs-simple-deck",
     category: "quarto",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -633,7 +633,7 @@ export default [
   {
     id: "quarto-dashboard-valueboxes",
     category: "quarto",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -959,7 +959,7 @@ export default [
   {
     id: "quarto-multiple-stylesheets-pruned",
     category: "quarto",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -1016,7 +1016,7 @@ export default [
   {
     id: "quarto-script-already-minified",
     category: "quarto",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",

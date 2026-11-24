@@ -144,7 +144,7 @@ export default [
   {
     id: "libs-jquery",
     category: "libraries",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: ["jQuery v3.7.1", ".jquery-keep{"],
@@ -174,7 +174,7 @@ export default [
   {
     id: "libs-d3-chart",
     category: "libraries",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: ["d3 v7.9.0", ".axis{", ".scale{"],
@@ -219,7 +219,7 @@ export default [
   {
     id: "libs-moment",
     category: "libraries",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: ["Moment.js v2.30.1", ".moment-keep{"],
@@ -309,7 +309,7 @@ export default [
   {
     id: "libs-bootstrap-css-framework",
     category: "libraries",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -396,7 +396,7 @@ export default [
   {
     id: "libs-bulma-framework",
     category: "libraries",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: [".button{", ".column{"],
@@ -502,7 +502,7 @@ export default [
   {
     id: "libs-svg-sprite-icons",
     category: "libraries",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -604,7 +604,7 @@ export default [
   {
     id: "libs-revealjs-deck-like",
     category: "libraries",
-    tier: "smoke",
+    tier: "subset",
     browser: false,
     expect: {
       outcome: "optimizes",
@@ -695,7 +695,7 @@ export default [
   {
     id: "libs-license-banners-all-kept",
     category: "libraries",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: [

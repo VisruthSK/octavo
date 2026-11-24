@@ -13,16 +13,16 @@ Nothing large is committed. Fixtures are small modules that build their text det
 
 ## Tiers
 
-Every document belongs to a tier. `smoke` is a small sample that covers every category and format. `full` is the rest.
+Every document belongs to a tier. `subset` is a small sample that covers every category and format. `full` is the rest.
 
 | Tier | Hand-written | Quarto | Runs |
 |---|---|---|---|
-| `smoke` | 59 | 12 | On every push and pull request |
+| `subset` | 59 | 12 | On every push and pull request |
 | `full` | 259 | 453 | Before every release tag, split across 24 shards in CI |
 
-`smoke` is chosen for difficulty first and diversity second. `hardest.json` pins the documents that must always be in the smoke tier because they exposed bugs, including the hand-written seed fixtures that assert the corpus's earliest known failures. A test fails if a pinned id is missing from `selection.json` or is not in the smoke tier.
+`subset` is chosen for difficulty first and diversity second. `hardest.json` pins the documents that must always be in the subset tier because they exposed bugs, including the hand-written seed fixtures that assert the corpus's earliest known failures. A test fails if a pinned id is missing from `selection.json` or is not in the subset tier.
 
-For the rest, `selectSmoke` scores every document for hardness and fills about 60 percent of each format quota with the highest hardness per estimated cost. Cost is document size plus 64 bytes per element plus twice the script size, capped at 4,000,000 so one huge page cannot take a whole shard. The remaining slots use the existing farthest-point diversity pick, so every format stratum and group still has a chance. Ties break on the document id, which makes the result independent of input order.
+For the rest, `selectSubset` scores every document for hardness and fills about 60 percent of each format quota with the highest hardness per estimated cost. Cost is document size plus 64 bytes per element plus twice the script size, capped at 4,000,000 so one huge page cannot take a whole shard. The remaining slots use the existing farthest-point diversity pick, so every format stratum and group still has a chance. Ties break on the document id, which makes the result independent of input order.
 
 The hardness score is one table named `HARDNESS_WEIGHTS` in `hardness.mjs`. Each row is a measure read from `featuresOf` and a reference value at which the measure counts fully: interactive elements, scripts and their size, inline event handlers, images and their size, data URLs, fonts and font faces, inline SVG, animations and keyframes, media queries, custom properties, nesting depth, widget runtimes such as reveal.js, document size and CSS rules. The score is the weighted sum, with every measure saturating at its reference.
 
@@ -52,7 +52,7 @@ A document is an object:
 {
   id: "unused-rules-are-pruned",
   category: "css",
-  tier: "smoke",
+  tier: "subset",
   expect: { outcome: "optimizes", retains: [".shown{"], removes: [".gone0{"] },
   build: () => page(`<style>...</style>`, "<p class=shown>kept</p>"),
 }
@@ -82,7 +82,7 @@ When the runner disagrees with an expectation, the expectation stays and the dis
 `sources.json` pins a Quarto release by URL and SHA-256. `selection.json` lists every document in it that renders to self-contained HTML without R, Python or Julia and without project files, with its format (`html`, `slides` or `dashboard`) and tier. Because the list is committed, every run renders the same documents, and a document that fails to render is an error.
 
 ```sh
-node corpus/upstream.mjs [--tier smoke|full] [--jobs N] [--shard K/N]
+node corpus/upstream.mjs [--tier subset|full] [--jobs N] [--shard K/N]
 node corpus/upstream.mjs --select
 ```
 
@@ -102,14 +102,14 @@ node verify/bench.mjs archive corpus/html/train corpus/html/test
 cargo build --release
 node corpus/build.mjs            # regenerate manifest.json and .cache
 node corpus/build.mjs --check    # fail if manifest.json is out of date
-node verify/corpus.mjs --tier smoke --browser
+node verify/corpus.mjs --tier subset --browser
 node verify/corpus.mjs --tier full --browser --filter '^css-'
 ```
 
 | Flag | Meaning |
 |---|---|
-| `--tier smoke\|full` | Which tier to run. The default is `smoke` |
-| `--levels serve,portable,archive` | Which levels to run. The default is `serve,archive` for `smoke` and all three for `full` |
+| `--tier subset\|full` | Which tier to run. The default is `subset` |
+| `--levels serve,portable,archive` | Which levels to run. The default is `serve,archive` for `subset` and all three for `full` |
 | `--browser` | Compare each optimized page with the original in the engine named by `OCTAVO_BROWSER` |
 | `--filter <regex>` | Run only documents whose id matches |
 | `--jobs <n>` | Documents processed at once |
