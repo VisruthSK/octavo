@@ -131,9 +131,11 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - uses: quarto-dev/quarto-actions/setup@v2
-        with:
-          version: 1.11.9
+      - run: |
+          curl -fsSL --retry 5 -o quarto.tar.gz https://github.com/quarto-dev/quarto-cli/releases/download/v1.11.9/quarto-1.11.9-linux-amd64.tar.gz
+          mkdir -p /opt/quarto
+          tar -xzf quarto.tar.gz -C /opt/quarto --strip-components=1
+          echo /opt/quarto/bin >> "$GITHUB_PATH"
       - run: node corpus/upstream.mjs --select --jobs 3
       - uses: actions/upload-artifact@v7
         with:
@@ -173,6 +175,9 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.55.0-noble
+      options: --init --ipc=host
     timeout-minutes: ${{ needs.plan.outputs.tier == 'subset' && 75 || 345 }}
     strategy:
       fail-fast: false
@@ -180,6 +185,7 @@ jobs:
         browser: ${{ fromJSON(inputs.engine_browser && inputs.engine_browser != 'all' && format('["{0}"]', inputs.engine_browser) || '["chromium","firefox","webkit"]') }}
         shard: ${{ fromJSON(inputs.engine_shard && inputs.engine_shard != 'all' && format('[{0}]', inputs.engine_shard) || needs.plan.outputs.engine_shards) }}
     env:
+      HOME: /root
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
       OCTAVO_BROWSER: ${{ matrix.browser }}
@@ -199,18 +205,12 @@ jobs:
       - run: chmod +x target/release/octavo
       - run: npm ci
         working-directory: verify
-      - run: |
-          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-network >/dev/null
-          for attempt in 1 2 3 4; do
-            npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
-            sleep $((attempt * 20))
-          done
-          exit 1
-        working-directory: verify
       - run: node corpus/build.mjs --check
-      - uses: quarto-dev/quarto-actions/setup@v2
-        with:
-          version: 1.11.9
+      - run: |
+          curl -fsSL --retry 5 -o quarto.tar.gz https://github.com/quarto-dev/quarto-cli/releases/download/v1.11.9/quarto-1.11.9-linux-amd64.tar.gz
+          mkdir -p /opt/quarto
+          tar -xzf quarto.tar.gz -C /opt/quarto --strip-components=1
+          echo /opt/quarto/bin >> "$GITHUB_PATH"
       - uses: actions/cache@v6
         with:
           path: corpus/.cache
@@ -267,12 +267,16 @@ jobs:
     needs: plan
     if: needs.plan.outputs.tier != 'select' && (github.event_name != 'workflow_dispatch' || (inputs.filter == '.' && inputs.engine_browser == 'all' && inputs.engine_shard == 'all'))
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.55.0-noble
+      options: --init --ipc=host
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         browser: [firefox, webkit]
     env:
+      HOME: /root
       OCTAVO_BROWSER: ${{ matrix.browser }}
       OCTAVO_PAGES: 2
     steps:
@@ -284,14 +288,6 @@ jobs:
           node-version: 22
       - run: npm ci
         working-directory: verify
-      - run: |
-          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-network >/dev/null
-          for attempt in 1 2 3 4; do
-            npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
-            sleep $((attempt * 20))
-          done
-          exit 1
-        working-directory: verify
       - run: node --test verifier.test.mjs capture-cache.test.mjs
         working-directory: verify
 
@@ -300,12 +296,16 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select' && (!inputs.engine_browser || inputs.engine_browser == 'all') && (!inputs.engine_shard || inputs.engine_shard == 'all')
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.55.0-noble
+      options: --init --ipc=host
     timeout-minutes: ${{ needs.plan.outputs.tier == 'subset' && 45 || 300 }}
     strategy:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.plan.outputs.engine_shards) }}
     env:
+      HOME: /root
       TIER: ${{ needs.plan.outputs.tier }}
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
       OCTAVO_PAGES: 4
@@ -323,18 +323,12 @@ jobs:
       - run: chmod +x target/release/octavo
       - run: npm ci
         working-directory: verify
-      - run: |
-          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-network >/dev/null
-          for attempt in 1 2 3 4; do
-            npx playwright-core install --with-deps chromium && exit 0
-            sleep $((attempt * 20))
-          done
-          exit 1
-        working-directory: verify
       - run: node corpus/build.mjs --check
-      - uses: quarto-dev/quarto-actions/setup@v2
-        with:
-          version: 1.11.9
+      - run: |
+          curl -fsSL --retry 5 -o quarto.tar.gz https://github.com/quarto-dev/quarto-cli/releases/download/v1.11.9/quarto-1.11.9-linux-amd64.tar.gz
+          mkdir -p /opt/quarto
+          tar -xzf quarto.tar.gz -C /opt/quarto --strip-components=1
+          echo /opt/quarto/bin >> "$GITHUB_PATH"
       - uses: actions/cache@v6
         with:
           path: corpus/.cache
