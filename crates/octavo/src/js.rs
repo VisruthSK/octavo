@@ -1,5 +1,5 @@
 use crate::{
-    Licenses, Target, Transform, data,
+    Licenses, Rule, Target, Transform, data,
     doc::{Doc, Edit},
     embed,
     html::{AttrName, Element, Tag},
@@ -132,6 +132,7 @@ fn rewrite(doc: &Doc, tag: &Tag, licenses: Licenses) -> Option<Edit> {
             text: format!("{open}{text}</script>"),
             transform: Transform::MinifiedScript,
             target,
+            rule: Rule::ScriptMinified,
         }
     } else {
         Edit {
@@ -139,6 +140,7 @@ fn rewrite(doc: &Doc, tag: &Tag, licenses: Licenses) -> Option<Edit> {
             text,
             transform: Transform::MinifiedScript,
             target,
+            rule: Rule::ScriptMinified,
         }
     })
 }

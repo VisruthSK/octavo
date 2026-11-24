@@ -124,6 +124,242 @@ impl FromStr for Mode {
     }
 }
 
+impl Mode {
+    #[must_use]
+    pub fn packaging(self) -> Packaging {
+        match self {
+            Mode::Exact | Mode::Serve => Packaging::Plain,
+            Mode::Portable => Packaging::Scripts,
+            Mode::Archive => Packaging::Packed,
+        }
+    }
+}
+
+impl From<Packaging> for Mode {
+    fn from(packaging: Packaging) -> Self {
+        match packaging {
+            Packaging::Plain => Mode::Serve,
+            Packaging::Scripts => Mode::Portable,
+            Packaging::Packed => Mode::Archive,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Packaging {
+    #[default]
+    Plain,
+    Scripts,
+    Packed,
+}
+
+impl fmt::Display for Packaging {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            Packaging::Plain => "plain",
+            Packaging::Scripts => "scripts",
+            Packaging::Packed => "packed",
+        })
+    }
+}
+
+impl FromStr for Packaging {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "plain" => Ok(Packaging::Plain),
+            "scripts" => Ok(Packaging::Scripts),
+            "packed" => Ok(Packaging::Packed),
+            other => Err(format!(
+                "unknown packaging '{other}', expected one of: plain, scripts, packed"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Effort {
+    Fast,
+    #[default]
+    Balanced,
+    Maximum,
+}
+
+impl fmt::Display for Effort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            Effort::Fast => "fast",
+            Effort::Balanced => "balanced",
+            Effort::Maximum => "maximum",
+        })
+    }
+}
+
+impl FromStr for Effort {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "fast" => Ok(Effort::Fast),
+            "balanced" => Ok(Effort::Balanced),
+            "maximum" => Ok(Effort::Maximum),
+            other => Err(format!(
+                "unknown effort '{other}', expected one of: fast, balanced, maximum"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum EvidenceClass {
+    Exact,
+    #[default]
+    Generic,
+    Quarto1,
+}
+
+impl fmt::Display for EvidenceClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            EvidenceClass::Exact => "exact",
+            EvidenceClass::Generic => "generic",
+            EvidenceClass::Quarto1 => "quarto1",
+        })
+    }
+}
+
+impl FromStr for EvidenceClass {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "exact" => Ok(EvidenceClass::Exact),
+            "generic" => Ok(EvidenceClass::Generic),
+            "quarto1" => Ok(EvidenceClass::Quarto1),
+            other => Err(format!(
+                "unknown evidence class '{other}', expected one of: exact, generic, quarto1"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Rule {
+    QuartoDeadLibrary,
+    ScriptMinified,
+    StylesheetPruned,
+    PngRecompressed,
+    ImageReencoded,
+    FontKeptWhole,
+    PackResources,
+    StylesheetMinified,
+    DataUrlNormalized,
+    FontReencoded,
+    WebpConverted,
+    DefaultAttrStripped,
+    CssWhitespaceCollapsed,
+    CssValuesShortened,
+    CssRulesRemoved,
+    AttrQuotesNormalized,
+}
+
+impl Rule {
+    #[must_use]
+    pub fn transform(self) -> Transform {
+        match self {
+            Rule::QuartoDeadLibrary => Transform::DeadLibrary,
+            Rule::ScriptMinified => Transform::MinifiedScript,
+            Rule::StylesheetPruned => Transform::PrunedStylesheet,
+            Rule::PngRecompressed => Transform::RecompressedPng,
+            Rule::ImageReencoded => Transform::ReencodedImage,
+            Rule::FontKeptWhole => Transform::FontKeptWhole,
+            Rule::PackResources => Transform::Packed,
+            Rule::StylesheetMinified => Transform::MinifiedStylesheet,
+            Rule::DataUrlNormalized => Transform::NormalizedDataUrl,
+            Rule::FontReencoded => Transform::ReencodedFont,
+            Rule::WebpConverted => Transform::ConvertedWebp,
+            Rule::DefaultAttrStripped => Transform::StrippedDefaultAttr,
+            Rule::CssWhitespaceCollapsed => Transform::CollapsedCssWhitespace,
+            Rule::CssValuesShortened => Transform::ShortenedCssValues,
+            Rule::CssRulesRemoved => Transform::RemovedCssRules,
+            Rule::AttrQuotesNormalized => Transform::NormalizedAttrQuotes,
+        }
+    }
+
+    #[must_use]
+    pub fn evidence_class(self) -> EvidenceClass {
+        match self {
+            Rule::QuartoDeadLibrary => EvidenceClass::Quarto1,
+            Rule::ScriptMinified
+            | Rule::StylesheetPruned
+            | Rule::PngRecompressed
+            | Rule::ImageReencoded
+            | Rule::FontKeptWhole
+            | Rule::PackResources => EvidenceClass::Generic,
+            Rule::StylesheetMinified
+            | Rule::DataUrlNormalized
+            | Rule::FontReencoded
+            | Rule::WebpConverted
+            | Rule::DefaultAttrStripped
+            | Rule::CssWhitespaceCollapsed
+            | Rule::CssValuesShortened
+            | Rule::CssRulesRemoved
+            | Rule::AttrQuotesNormalized => EvidenceClass::Exact,
+        }
+    }
+}
+
+impl From<Transform> for Rule {
+    fn from(transform: Transform) -> Self {
+        match transform {
+            Transform::DeadLibrary => Rule::QuartoDeadLibrary,
+            Transform::MinifiedScript => Rule::ScriptMinified,
+            Transform::PrunedStylesheet => Rule::StylesheetPruned,
+            Transform::RecompressedPng => Rule::PngRecompressed,
+            Transform::ReencodedImage => Rule::ImageReencoded,
+            Transform::FontKeptWhole => Rule::FontKeptWhole,
+            Transform::Packed => Rule::PackResources,
+            Transform::MinifiedStylesheet => Rule::StylesheetMinified,
+            Transform::NormalizedDataUrl => Rule::DataUrlNormalized,
+            Transform::ReencodedFont => Rule::FontReencoded,
+            Transform::ConvertedWebp => Rule::WebpConverted,
+            Transform::StrippedDefaultAttr => Rule::DefaultAttrStripped,
+            Transform::CollapsedCssWhitespace => Rule::CssWhitespaceCollapsed,
+            Transform::ShortenedCssValues => Rule::CssValuesShortened,
+            Transform::RemovedCssRules => Rule::CssRulesRemoved,
+            Transform::NormalizedAttrQuotes => Rule::AttrQuotesNormalized,
+        }
+    }
+}
+
+impl fmt::Display for Rule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(match self {
+            Rule::QuartoDeadLibrary => "quarto-dead-library",
+            Rule::ScriptMinified => "script-minified",
+            Rule::StylesheetPruned => "stylesheet-pruned",
+            Rule::PngRecompressed => "png-recompressed",
+            Rule::ImageReencoded => "image-reencoded",
+            Rule::FontKeptWhole => "font-kept-whole",
+            Rule::PackResources => "pack-resources",
+            Rule::StylesheetMinified => "stylesheet-minified",
+            Rule::DataUrlNormalized => "data-url-normalized",
+            Rule::FontReencoded => "font-reencoded",
+            Rule::WebpConverted => "webp-converted",
+            Rule::DefaultAttrStripped => "default-attr-stripped",
+            Rule::CssWhitespaceCollapsed => "css-whitespace-collapsed",
+            Rule::CssValuesShortened => "css-values-shortened",
+            Rule::CssRulesRemoved => "css-rules-removed",
+            Rule::AttrQuotesNormalized => "attr-quotes-normalized",
+        })
+    }
+}
+
 /// Settings for [`simplify`].
 ///
 /// The default keeps images lossless, subsets text fonts to the characters
@@ -187,6 +423,9 @@ pub struct Options {
     /// How hard the compressors for fonts, PNG images and the packed blob
     /// work. It is independent of the [`Mode`].
     pub compression: Compression,
+    pub packaging: Packaging,
+    pub effort: Effort,
+    pub evidence: EvidenceClass,
     /// Restrict optimization to the transforms that are provably
     /// semantics-preserving by construction, described in
     /// `docs/design/exact-level.md`: canonical base64 payloads, lossless PNG
@@ -215,6 +454,9 @@ impl Default for Options {
             image_memory: None,
             cache_directory: None,
             compression: Compression::default(),
+            packaging: Packaging::default(),
+            effort: Effort::default(),
+            evidence: EvidenceClass::Quarto1,
             exact: false,
         }
     }
@@ -591,6 +833,8 @@ pub struct Applied {
     pub before: usize,
     /// Size after, in bytes.
     pub after: usize,
+    pub rule: Rule,
+    pub evidence: EvidenceClass,
 }
 
 /// One edit the engine rejected because another edit claimed the same bytes.
@@ -607,6 +851,8 @@ pub struct Skipped {
     pub target: Target,
     /// The transformation whose edit kept the contested bytes.
     pub winner: Transform,
+    pub rule: Rule,
+    pub evidence: EvidenceClass,
 }
 
 /// Something worth knowing about a document that does not stop optimization.
@@ -855,6 +1101,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             target: edit.target.clone(),
             before: edit.span.len(),
             after: edit.text.len(),
+            rule: edit.rule,
+            evidence: edit.rule.evidence_class(),
         })
         .collect();
     applied.extend(kept_whole.into_iter().map(|(family, bytes)| Applied {
@@ -862,6 +1110,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
         target: Target::Resource(family),
         before: bytes,
         after: bytes,
+        rule: Rule::FontKeptWhole,
+        evidence: EvidenceClass::Generic,
     }));
     let skipped: Vec<Skipped> = edits
         .skipped()
@@ -870,6 +1120,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             transform: edit.transform,
             target: edit.target.clone(),
             winner: edit.winner,
+            rule: edit.rule,
+            evidence: edit.rule.evidence_class(),
         })
         .collect();
     let html = edits.apply(src);
@@ -987,6 +1239,8 @@ impl Simplified {
             target: Target::Resources(packed.blobs),
             before: self.scanned.html().len(),
             after: packed.html.len(),
+            rule: Rule::PackResources,
+            evidence: EvidenceClass::Generic,
         });
         Output {
             html: packed.html,
@@ -1034,6 +1288,21 @@ impl Simplified {
             let candidate = self.pack(step);
             accept(step, &candidate).then_some((step, candidate))
         })
+    }
+
+    #[must_use]
+    pub fn package(&self, packaging: Packaging) -> Output {
+        self.pack(Mode::from(packaging))
+    }
+
+    pub fn package_checked(
+        &self,
+        packaging: Packaging,
+        mut accept: impl FnMut(Packaging, &Output) -> bool,
+    ) -> Option<(Packaging, Output)> {
+        let mode = Mode::from(packaging);
+        self.pack_checked(mode, |m, out| accept(m.packaging(), out))
+            .map(|(m, out)| (m.packaging(), out))
     }
 }
 

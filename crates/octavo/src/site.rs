@@ -1,5 +1,5 @@
 use crate::{
-    Licenses, Options, Target, Transform,
+    Licenses, Options, Rule, Target, Transform,
     css::{self, WidthRule},
     doc::{Doc, Edit, Edits},
     fonts,
@@ -518,6 +518,7 @@ pub fn plan_directory(input: &Path, options: &Options) -> Result<SitePlan, SiteE
                         span: tag.span.clone(),
                         text: open,
                         transform: Transform::ReencodedImage,
+                        rule: Rule::from(Transform::ReencodedImage),
                         target: Target::Resource(tag.label().to_string()),
                     });
                 }

@@ -5,7 +5,7 @@ pub mod oracle;
 mod corpus;
 
 use crate::{
-    Options, Target, Transform, Warning, data,
+    Options, Rule, Target, Transform, Warning, data,
     doc::{Doc, Edit},
     fonts,
     html::{AttrName, Element},
@@ -367,6 +367,7 @@ fn stylesheet(
             span: span.start + range.start..span.start + range.end,
             text: text.to_string(),
             transform,
+            rule: Rule::from(transform),
             target: target.clone(),
         });
     }
@@ -432,6 +433,7 @@ fn consider(
                 span,
                 text,
                 transform,
+                rule: Rule::from(transform),
                 target,
             });
             return;
@@ -494,6 +496,7 @@ fn consider(
                     span,
                     text,
                     transform: Transform::ReencodedFont,
+                    rule: Rule::from(Transform::ReencodedFont),
                     target,
                 });
             }
@@ -517,6 +520,7 @@ fn consider(
             span,
             text: proven.into_inner(),
             transform: Transform::NormalizedDataUrl,
+            rule: Rule::from(Transform::NormalizedDataUrl),
             target,
         });
     }
@@ -680,6 +684,7 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
                     span: edit_span,
                     text: String::new(),
                     transform: Transform::StrippedDefaultAttr,
+                    rule: Rule::from(Transform::StrippedDefaultAttr),
                     target,
                 });
             }
@@ -725,6 +730,7 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
                             span: v_span.start - 1..v_span.end + 1,
                             text: doc.src()[v_span.clone()].to_string(),
                             transform: Transform::NormalizedAttrQuotes,
+                            rule: Rule::from(Transform::NormalizedAttrQuotes),
                             target: target.clone(),
                         });
                     }
@@ -747,6 +753,7 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
                                 span: v_span.start - 1..v_span.end + 1,
                                 text: doc.src()[v_span.clone()].to_string(),
                                 transform: Transform::NormalizedAttrQuotes,
+                                rule: Rule::from(Transform::NormalizedAttrQuotes),
                                 target: target.clone(),
                             });
                         }
@@ -779,6 +786,7 @@ pub(crate) fn stage(doc: &Doc, options: &Options) -> (Vec<Edit>, Vec<Warning>) {
                             span: body.clone(),
                             text: proven.into_inner(),
                             transform: Transform::MinifiedScript,
+                            rule: Rule::from(Transform::MinifiedScript),
                             target,
                         });
                     }
