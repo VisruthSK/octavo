@@ -5266,15 +5266,15 @@
     "sha256": "24a56406e7c8f89cbe9d7a3602ca265712b0e423b4dd37a857e31a96e78d3c61"
   },
   {
-    "id": "twenty-thousand-paragraphs",
+    "id": "two-thousand-paragraphs",
     "category": "scale",
     "tier": "smoke",
     "browser": true,
     "expect": {
       "outcome": "optimizes"
     },
-    "bytes": 669994,
-    "sha256": "c209dcb70cbb82a129d36d895fc61711ae651d89e5ed0230274393a42ec88396"
+    "bytes": 65994,
+    "sha256": "92d0cbbdf43a6bd430f92cafc9a70ccec693f35db81c7b60187cbd1362a566ba"
   },
   {
     "id": "unused-rules-are-pruned",

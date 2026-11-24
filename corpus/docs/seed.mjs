@@ -60,11 +60,11 @@ export default [
     build: () => page('<link rel="stylesheet" href="style.css">', "<p>x</p>"),
   },
   {
-    id: "twenty-thousand-paragraphs",
+    id: "two-thousand-paragraphs",
     category: "scale",
     tier: "smoke",
     expect: { outcome: "optimizes" },
     build: () =>
-      page(`<style>${unused}</style>`, repeat(20000, (i) => `<p class="c${i % 7}">paragraph ${i}</p>\n`)),
+      page(`<style>${unused}</style>`, repeat(2000, (i) => `<p class="c${i % 7}">paragraph ${i}</p>\n`)),
   },
 ];

@@ -18,16 +18,16 @@ const face = (family, weight, style) => ({
   status: "loaded",
 });
 
-const page = (faces) => `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title></head><body><p style="font-family: Sans">text</p><script>
+const page = (faces, head = "") => `<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title>${head}</head><body><p style="font-family: Sans">text</p><script>
 const faces = ${JSON.stringify(faces)};
 faces.forEach((face) => { face.load = () => { face.status = "loaded"; return Promise.resolve(face); }; });
 const list = Object.assign(faces.slice(), { status: "loaded", ready: Promise.resolve() });
 Object.defineProperty(document, "fonts", { get: () => list, configurable: true });
 </script></body></html>`;
 
-const write = (name, faces) => {
+const write = (name, faces, head) => {
   const file = join(directory, `${name}.html`);
-  writeFileSync(file, page(faces));
+  writeFileSync(file, page(faces, head));
   return file;
 };
 
@@ -76,5 +76,20 @@ test("a declared face of a font nothing uses is left alone", async () => {
   const ghost = { ...regular, family: "Ghost", status: "unloaded" };
   const original = write("ghost", [regular, ghost]);
   const changed = write("dropped", [regular]);
+  assert.deepEqual(await fontIssues(original, changed), []);
+});
+
+test("a face that loaded for a family nothing uses in the final state is not compared", async () => {
+  const transient = { ...regular, family: "Transient" };
+  const original = write("transient", [regular, transient]);
+  const changed = write("settled", [regular]);
+  assert.deepEqual(await fontIssues(original, changed), []);
+});
+
+test("a declared face used only by a pseudo-element is loaded before the fonts are read", async () => {
+  const head = "<style>p::before{content:\"x\";font-family:Icons}</style>";
+  const icons = { ...regular, family: "Icons" };
+  const original = write("pseudo-lazy", [regular, { ...icons, status: "unloaded" }], head);
+  const changed = write("pseudo-eager", [regular, icons], head);
   assert.deepEqual(await fontIssues(original, changed), []);
 });
