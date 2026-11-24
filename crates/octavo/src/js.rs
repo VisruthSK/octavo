@@ -1,6 +1,7 @@
 use crate::{
     Licenses, Target, Transform, data,
     doc::{Doc, Edit},
+    embed,
     html::{AttrName, Element, Tag},
 };
 use oxc::{
@@ -108,8 +109,8 @@ fn rewrite(doc: &Doc, tag: &Tag, licenses: Licenses) -> Option<Edit> {
         return None;
     }
     let mut text = minify(&code, kind, licenses)?;
-    if text.contains("</script") {
-        text = text.replace("</script", r"<\/script");
+    if embed::closes_script(&text) {
+        text = escape_script_close(&text);
     }
     let target = Target::Resource(tag.attr(AttrName::Id).unwrap_or(label).to_string());
     Some(if source.is_some() {
@@ -146,4 +147,43 @@ fn self_contained(code: &str) -> bool {
     !code
         .split(|c: char| !c.is_alphanumeric())
         .any(|word| word == "import" || word == "export")
+}
+
+fn escape_script_close(text: &str) -> String {
+    let needle = b"</script";
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len() + 8);
+    let mut last = 0;
+    let mut i = 0;
+    while i + needle.len() <= bytes.len() {
+        if bytes[i..i + needle.len()].eq_ignore_ascii_case(needle) {
+            out.push_str(&text[last..i]);
+            out.push_str(r"<\/");
+            out.push_str(&text[i + 2..i + needle.len()]);
+            i += needle.len();
+            last = i;
+        } else {
+            i += 1;
+        }
+    }
+    out.push_str(&text[last..]);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn case_insensitive_script_close_is_escaped() {
+        let input = "let a = '</SCRIPT>'; let b = '</Script>'; let c = '</script>';";
+        let escaped = escape_script_close(input);
+        assert_eq!(
+            escaped,
+            r"let a = '<\/SCRIPT>'; let b = '<\/Script>'; let c = '<\/script>';"
+        );
+        assert!(!escaped.contains("</SCRIPT>"));
+        assert!(!escaped.contains("</Script>"));
+        assert!(!escaped.contains("</script>"));
+    }
 }
