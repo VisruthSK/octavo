@@ -44,9 +44,8 @@ const popoverAtRest = (selector) => {
     state.frames = 0;
     return false;
   }
-  const positioned = !root.querySelector(".tippy-box") || root.hasAttribute("data-popper-placement");
   const rect = JSON.stringify(root.getBoundingClientRect());
-  state.frames = positioned && rect === state.rect && root.getAnimations({ subtree: true }).length === 0 ? state.frames + 1 : 0;
+  state.frames = rect === state.rect && root.getAnimations({ subtree: true }).length === 0 ? state.frames + 1 : 0;
   state.rect = rect;
   return state.frames >= 3;
 };
@@ -58,7 +57,16 @@ export async function hoverPopovers(page) {
     await page.waitForFunction((selector) => !document.querySelector(selector), popoverRoots, { timeout: 2000 }).catch(() => {});
     await target.hover({ timeout: 2000 }).catch(() => {});
   }
-  if (targets.length > 0) await page.waitForFunction(popoverAtRest, popoverRoots, { timeout: 2000, polling: "raf" }).catch(() => {});
+  if (targets.length > 0) {
+    await page.waitForFunction((selector) => document.querySelector(selector), popoverRoots, { timeout: 2000 }).catch(() => {});
+    await page
+      .evaluate(() => {
+        window.dispatchEvent(new Event("resize"));
+        return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      })
+      .catch(() => {});
+    await page.waitForFunction(popoverAtRest, popoverRoots, { timeout: 2000, polling: "raf" }).catch(() => {});
+  }
   return targets.length > 0;
 }
 
