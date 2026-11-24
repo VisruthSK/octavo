@@ -10,7 +10,7 @@ export default [
   {
     id: "scripts-regex-literal-keeps-its-pattern",
     category: "javascript",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["/\\d{4}-\\d{2}-\\d{2}/"] },
     build: () =>
       scriptPage(`const stamp = /\\d{4}-\\d{2}-\\d{2}/;
@@ -49,7 +49,7 @@ document.body.dataset.unicode = 日本語 + " ✓"`),
   {
     id: "scripts-object-accessors-are-kept",
     category: "javascript",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["get value", "set value"] },
     build: () =>
       scriptPage(`const store = { _raw : 2, get value() { return this._raw }, set value(next) { this._raw = next * 3 } }
@@ -184,7 +184,7 @@ document.body.dataset.built = factory()`),
   {
     id: "scripts-json-data-block-is-left-alone",
     category: "modules",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ['{"items":[1,2,3],"label":"scripts-json"}'] },
     build: () =>
       pageWith(
@@ -202,7 +202,7 @@ document.body.dataset.built = factory()`),
   {
     id: "scripts-module-script-is-minified",
     category: "modules",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["export", "scripts-module"] },
     build: () =>
       pageWith(
@@ -246,7 +246,7 @@ document.body.dataset.tla = value</script>`,
   {
     id: "scripts-inline-event-handler-is-kept",
     category: "script-tags",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["onclick=\"scriptsHandler(1)\""] },
     build: () => pageWith(`<button onclick="scriptsHandler(1)">press</button>`),
   },
@@ -281,7 +281,7 @@ document.body.dataset.hash = hash === "" ? "scripts-hash-empty" : hash`),
   {
     id: "scripts-license-banner-is-kept",
     category: "script-tags",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["MIT License"], removes: ["// an ordinary comment"] },
     build: () =>
       scriptPage(`/*! Corpus Library 1.0 | MIT License */
@@ -335,7 +335,7 @@ document.body.dataset.mapped = mapped
   {
     id: "scripts-order-dependence-between-scripts",
     category: "script-tags",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["scripts-order-ok"] },
     build: () =>
       pageWith(

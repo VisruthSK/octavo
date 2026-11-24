@@ -6,28 +6,28 @@ export default [
   {
     id: "parsing-script-text-that-looks-like-markup",
     category: "parsing",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["<div class='x'>"], removes: [".witness{"] },
     build: () => page(witness, `<script>var markup = "<div class='x'>";</script>`),
   },
   {
     id: "parsing-style-text-that-looks-like-markup",
     category: "parsing",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: [".shown{content:\"<script>\"}"], removes: [".witness{"] },
     build: () => page(`<style>.shown{content:"<script>"}</style>${witness}`, '<p class="shown">x</p>'),
   },
   {
     id: "parsing-textarea-content-is-not-markup",
     category: "parsing",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["<textarea><script>if (a < b) {}</script></textarea>"], removes: [".witness{"] },
     build: () => page(witness, "<textarea><script>if (a < b) {}</script></textarea>"),
   },
   {
     id: "parsing-comment-with-every-kind-of-tag",
     category: "parsing",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: [
@@ -45,7 +45,7 @@ export default [
   {
     id: "parsing-crlf-line-endings",
     category: "parsing",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["<p>line</p>"], removes: [".witness{"] },
     build: () =>
       `<!DOCTYPE html>\r\n<html lang="en">\r\n<head>\r\n<meta charset="utf-8">\r\n<title>Document</title>\r\n${witness}\r\n</head>\r\n<body>\r\n<p>line</p>\r\n</body>\r\n</html>\r\n`,
@@ -53,21 +53,21 @@ export default [
   {
     id: "parsing-fragment-without-html-is-rejected",
     category: "parsing",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "rejects", error: "not-html" },
     build: () => "<p>a fragment is not a document</p>",
   },
   {
     id: "parsing-unterminated-script-at-end-of-file",
     category: "parsing",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["var x=1;"], removes: ["var x = 1;", ".witness{"] },
     build: () => `${page(witness, "<p>before</p>")}<script>var x = 1;`,
   },
   {
     id: "parsing-two-html-elements",
     category: "parsing",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["<p>one</p>", "<p>two</p>"], removes: [".witness{"] },
     build: () =>
       `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Document</title>${witness}</head><body><p>one</p></body></html><html lang="en"><body><p>two</p></body></html>`,
