@@ -225,7 +225,15 @@ pub(crate) fn text_charset(chars: impl IntoIterator<Item = char>) -> HashSet<cha
 }
 
 pub(crate) fn woff2_file(bytes: &[u8], cache: Option<&Path>, tuning: Tuning) -> Option<Vec<u8>> {
-    transcode(bytes, None, false, Licenses::Keep, cache, tuning).map(|converted| converted.woff2)
+    transcode(
+        bytes,
+        None,
+        FontCategory::Icon,
+        Licenses::Keep,
+        cache,
+        tuning,
+    )
+    .map(|converted| converted.woff2)
 }
 
 pub(crate) fn woff2_file_subsets(
@@ -233,8 +241,15 @@ pub(crate) fn woff2_file_subsets(
     chars: &HashSet<char>,
     tuning: Tuning,
 ) -> Option<Vec<u8>> {
-    transcode(bytes, Some(chars), true, Licenses::Keep, None, tuning)
-        .map(|converted| converted.woff2)
+    transcode(
+        bytes,
+        Some(chars),
+        FontCategory::Text,
+        Licenses::Keep,
+        None,
+        tuning,
+    )
+    .map(|converted| converted.woff2)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
