@@ -171,7 +171,7 @@ jobs:
   engines:
     name: ${{ matrix.browser }} checks (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
     needs: [plan, build]
-    if: needs.plan.outputs.tier != 'select' && inputs.diagnose != 'experiment'
+    if: needs.plan.outputs.tier != 'select'
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 75 || 345 }}
     strategy:
@@ -222,7 +222,11 @@ jobs:
           restore-keys: |
             verdicts-${{ matrix.browser }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 58 || 320 }}" --octavo-args "${{ inputs.octavo_args }}" ${{ inputs.self && '--self' || '' }}
+      - env:
+          INPUT_FILTER: ${{ inputs.filter || '.' }}
+          OCTAVO_ARGS: ${{ inputs.octavo_args }}
+          SELF: ${{ inputs.self && '--self' || '' }}
+        run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "$INPUT_FILTER" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 58 || 320 }}" --octavo-args "$OCTAVO_ARGS" $SELF
         timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 65 || 335 }}
       - uses: actions/cache/save@v6
         if: always()
@@ -232,14 +236,18 @@ jobs:
           key: verdicts-${{ matrix.browser }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-${{ github.sha }}
       - name: Diagnose one document
         if: always() && inputs.diagnose != '' && (inputs.diagnose_browser == '' || inputs.diagnose_browser == matrix.browser)
+        env:
+          DIAGNOSE: ${{ inputs.diagnose }}
+          DIAGNOSE_LEVEL: ${{ inputs.diagnose_level }}
+          DIAGNOSE_SCENARIO: ${{ inputs.diagnose_scenario }}
         run: |
-          original="corpus/.cache/rendered/${{ inputs.diagnose }}.html"
-          [ -f "$original" ] || original="corpus/.cache/docs/${{ inputs.diagnose }}.html"
-          optimized="out/engines-${{ matrix.browser }}-${{ matrix.shard }}/${{ inputs.diagnose }}.${{ inputs.diagnose_level }}.html"
+          original="corpus/.cache/rendered/$DIAGNOSE.html"
+          [ -f "$original" ] || original="corpus/.cache/docs/$DIAGNOSE.html"
+          optimized="out/engines-${{ matrix.browser }}-${{ matrix.shard }}/$DIAGNOSE.$DIAGNOSE_LEVEL.html"
           if [ -f "$original" ] && [ -f "$optimized" ]; then
-            node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "${{ inputs.diagnose_scenario }}" out/diagnose/whole
-            target/release/octavo "$original" out/subset.html --level "${{ inputs.diagnose_level }}" --no-cache
-            node verify/screenshots.mjs "$PWD/$original" "$PWD/out/subset.html" "${{ inputs.diagnose_scenario }}" out/diagnose/subset
+            node verify/screenshots.mjs "$PWD/$original" "$PWD/$optimized" "$DIAGNOSE_SCENARIO" out/diagnose/whole
+            target/release/octavo "$original" out/subset.html --level "$DIAGNOSE_LEVEL" --no-cache
+            node verify/screenshots.mjs "$PWD/$original" "$PWD/out/subset.html" "$DIAGNOSE_SCENARIO" out/diagnose/subset
           fi
       - uses: actions/upload-artifact@v7
         if: always() && inputs.diagnose != '' && (inputs.diagnose_browser == '' || inputs.diagnose_browser == matrix.browser)
@@ -257,7 +265,7 @@ jobs:
   selftest:
     name: ${{ matrix.browser }} self-test
     needs: plan
-    if: needs.plan.outputs.tier != 'select' && (github.event_name != 'workflow_dispatch' || (inputs.filter == '.' && inputs.engine_browser == 'all' && inputs.engine_shard == 'all')) && inputs.diagnose != 'experiment'
+    if: needs.plan.outputs.tier != 'select' && (github.event_name != 'workflow_dispatch' || (inputs.filter == '.' && inputs.engine_browser == 'all' && inputs.engine_shard == 'all'))
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -290,7 +298,7 @@ jobs:
   linked:
     name: Linked renders (${{ needs.plan.outputs.tier }}, shard ${{ matrix.shard }})
     needs: [plan, build]
-    if: needs.plan.outputs.tier != 'select' && inputs.diagnose != 'experiment' && (!inputs.engine_browser || inputs.engine_browser == 'all') && (!inputs.engine_shard || inputs.engine_shard == 'all')
+    if: needs.plan.outputs.tier != 'select' && (!inputs.engine_browser || inputs.engine_browser == 'all') && (!inputs.engine_shard || inputs.engine_shard == 'all')
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 45 || 300 }}
     strategy:
@@ -332,7 +340,9 @@ jobs:
           path: corpus/.cache
           key: corpus-${{ needs.plan.outputs.tier }}-${{ matrix.shard }}-${{ needs.plan.outputs.engine_count }}-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
       - run: node corpus/upstream.mjs --jobs 2 --tier "$TIER" --shard "$SHARD"
-      - run: node verify/linked.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "${{ inputs.filter || '.' }}"
+      - env:
+          INPUT_FILTER: ${{ inputs.filter || '.' }}
+        run: node verify/linked.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "$INPUT_FILTER"
       - if: always()
         run: '[ -f out/linked/report.md ] && cat out/linked/report.md >> "$GITHUB_STEP_SUMMARY" || true'
       - uses: actions/upload-artifact@v7
@@ -341,82 +351,3 @@ jobs:
           name: linked-report-${{ matrix.shard }}
           path: out/linked/report.md
           if-no-files-found: ignore
-
-  experiment:
-    name: ${{ matrix.browser }} (PAGES=${{ matrix.pages }})
-    needs: [plan, build]
-    if: inputs.diagnose == 'experiment'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix:
-        browser: [chromium, firefox]
-        pages: [2, 3, 4, 6]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - uses: actions/download-artifact@v8
-        with:
-          name: octavo-binary
-          path: target/release
-      - run: chmod +x target/release/octavo
-      - run: npm ci
-        working-directory: verify
-      - run: |
-          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-network >/dev/null
-          for attempt in 1 2 3 4; do
-            npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0
-            sleep $((attempt * 20))
-          done
-          exit 1
-        working-directory: verify
-      - uses: quarto-dev/quarto-actions/setup@v2
-        with:
-          version: 1.11.9
-      - uses: actions/cache@v6
-        with:
-          path: corpus/.cache
-          key: corpus-full-1-10-${{ hashFiles('corpus/sources.json', 'corpus/selection.json', 'corpus/fonts.json') }}
-      - run: node corpus/upstream.mjs --jobs 2 --tier full --shard 1/10
-      - name: Run verification
-        env:
-          OCTAVO_BROWSER: ${{ matrix.browser }}
-          OCTAVO_PAGES: ${{ matrix.pages }}
-        run: |
-          mkdir -p out
-          node verify/corpus.mjs --tier full --browser --shard 1/10 --out "out/run" 2>&1 | tee out/run.log
-      - name: Extract timing and timeouts
-        if: always()
-        run: |
-          node -e '
-            const fs = require("node:fs");
-            if (!fs.existsSync("out/run.log")) process.exit(0);
-            const log = fs.readFileSync("out/run.log", "utf8");
-            const timeouts = (log.match(/capture timed out/g) || []).length;
-            const comparisons = [...log.matchAll(/\[(\d+)\/(\d+)\]\s+(\S+)\s+(\S+)\s+([\d.]+)s/g)];
-            const totalSeconds = comparisons.reduce((sum, m) => sum + parseFloat(m[5]), 0);
-            const count = comparisons.length;
-            const secPerComparison = count > 0 ? (totalSeconds / count).toFixed(2) : 0;
-            const summary = {
-              browser: "${{ matrix.browser }}",
-              pages: ${{ matrix.pages }},
-              count,
-              totalSeconds,
-              secPerComparison,
-              timeouts,
-            };
-            fs.writeFileSync("out/summary.json", JSON.stringify(summary, null, 2));
-            console.log("Summary:", summary);
-          '
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: timing-${{ matrix.browser }}-pages-${{ matrix.pages }}
-          path: out/summary.json
-          if-no-files-found: ignore
-

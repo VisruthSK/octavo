@@ -7,13 +7,23 @@ const pinned = JSON.parse(readFileSync(join(import.meta.dirname, "fonts.json"), 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const pathOf = (name) => join(directory, `${name}.ttf`);
 
+const ATTEMPTS = 4;
+
+async function download(url) {
+  for (let attempt = 1; ; attempt++) {
+    const response = await fetch(url, { redirect: "follow" }).catch((error) => ({ ok: false, status: 0, error }));
+    if (response.ok) return Buffer.from(await response.arrayBuffer());
+    const transient = response.status === 0 || response.status === 429 || response.status >= 500;
+    if (!transient || attempt === ATTEMPTS) throw new Error(`${url} returned ${response.status || response.error}`);
+    await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+  }
+}
+
 export async function ensureFonts() {
   mkdirSync(directory, { recursive: true });
   for (const font of pinned) {
     if (existsSync(pathOf(font.name)) && sha256(readFileSync(pathOf(font.name))) === font.sha256) continue;
-    const response = await fetch(font.url, { redirect: "follow" });
-    if (!response.ok) throw new Error(`${font.url} returned ${response.status}`);
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const bytes = await download(font.url);
     if (sha256(bytes) !== font.sha256) throw new Error(`${font.name}: download does not match the pinned sha256`);
     writeFileSync(pathOf(font.name), bytes);
   }
