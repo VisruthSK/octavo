@@ -9,6 +9,9 @@ on:
       - "verify/**"
       - "Cargo.lock"
       - ".github/workflows/corpus.yml"
+      - ".github/workflows/release.yml"
+      - ".github/build-setup.yml"
+      - "dist-workspace.toml"
   pull_request:
     paths: *paths
   workflow_call:
@@ -23,6 +26,10 @@ on:
         type: choice
         options: [smoke, full, select]
         default: smoke
+      self:
+        description: Verify each document against itself, so any difference is verifier noise
+        type: boolean
+        default: false
       engine_browser:
         description: Limit engine diagnostics to one browser
         type: choice
@@ -166,7 +173,7 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.tier != 'select' && inputs.diagnose != 'experiment'
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 60 || 345 }}
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 75 || 345 }}
     strategy:
       fail-fast: false
       matrix:
@@ -177,7 +184,7 @@ jobs:
       SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.engine_count }}
       OCTAVO_BROWSER: ${{ matrix.browser }}
       OCTAVO_PAGES: 4
-      OCTAVO_CAPTURE_TRACE: ${{ inputs.filter == 'twenty-thousand-paragraphs' && '1' || '0' }}
+      OCTAVO_CAPTURE_TRACE: ${{ inputs.filter == 'two-thousand-paragraphs' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -218,8 +225,9 @@ jobs:
       - env:
           INPUT_FILTER: ${{ inputs.filter || '.' }}
           OCTAVO_ARGS: ${{ inputs.octavo_args }}
-        run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "$INPUT_FILTER" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 45 || 320 }}" --octavo-args "$OCTAVO_ARGS"
-        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 50 || 335 }}
+          SELF: ${{ inputs.self && '--self' || '' }}
+        run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "$INPUT_FILTER" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 58 || 320 }}" --octavo-args "$OCTAVO_ARGS" $SELF
+        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 65 || 335 }}
       - uses: actions/cache/save@v6
         if: always()
         continue-on-error: true
