@@ -195,6 +195,12 @@ fn collect_chars(css: &[&str], loose: &[&str], settings: &Settings) -> Chars {
     Chars { icons, text }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FontCategory {
+    Text,
+    Icon,
+}
+
 fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Outcome {
     let plain = face
         .family
@@ -213,17 +219,20 @@ fn decide(face: &Face, usage: &Usage, chars: &Chars, settings: &Settings) -> Out
     let Some(font) = data::decode(&face.uri) else {
         return (Decision::Keep, None);
     };
-    let text = !(pseudo_only && !in_markup);
-    let subset = if pseudo_only && !in_markup {
-        Some(&chars.icons)
+    let category = if pseudo_only && !in_markup {
+        FontCategory::Icon
     } else {
-        chars.text.as_ref()
+        FontCategory::Text
+    };
+    let subset = match category {
+        FontCategory::Icon => Some(&chars.icons),
+        FontCategory::Text => chars.text.as_ref(),
     };
     let kept_bytes = font.bytes.len();
     match transcode(
         &font.bytes,
         subset,
-        text,
+        category,
         settings.notices,
         settings.cache,
         settings.tuning,
@@ -481,7 +490,7 @@ struct Transcoded {
 fn transcode(
     bytes: &[u8],
     chars: Option<&HashSet<char>>,
-    text: bool,
+    category: FontCategory,
     notices: Licenses,
     cache: Option<&Path>,
     tuning: Tuning,
@@ -492,7 +501,8 @@ fn transcode(
         b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
         _ => Cow::Borrowed(bytes),
     };
-    let kept_whole = text && chars.is_some() && !subsetting_is_exact(&sfnt);
+    let kept_whole =
+        category == FontCategory::Text && chars.is_some() && !subsetting_is_exact(&sfnt);
     let chars = if kept_whole { None } else { chars };
     let (Some(root), None) = (cache, chars) else {
         return convert(&sfnt, chars, notices, quality).map(|converted| Transcoded {
