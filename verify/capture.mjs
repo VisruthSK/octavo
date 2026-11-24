@@ -36,6 +36,20 @@ const NO_MOTION = "*,*::before,*::after{transition:none!important;animation:none
 
 const popoverRoots = "[data-tippy-root]";
 
+const popoverAtRest = (selector) => {
+  const root = document.querySelector(selector);
+  const state = (globalThis[Symbol.for("octavo.popover")] ??= { rect: "", frames: 0 });
+  if (!root) {
+    state.rect = "";
+    state.frames = 0;
+    return false;
+  }
+  const rect = JSON.stringify(root.getBoundingClientRect());
+  state.frames = rect === state.rect && root.getAnimations({ subtree: true }).length === 0 ? state.frames + 1 : 0;
+  state.rect = rect;
+  return state.frames >= 3;
+};
+
 export async function hoverPopovers(page) {
   const targets = (await page.$$(".footnote-ref, a[role=doc-biblioref], a.quarto-xref")).slice(0, 3);
   for (const target of targets) {
@@ -43,7 +57,7 @@ export async function hoverPopovers(page) {
     await page.waitForFunction((selector) => !document.querySelector(selector), popoverRoots, { timeout: 2000 }).catch(() => {});
     await target.hover({ timeout: 2000 }).catch(() => {});
   }
-  if (targets.length > 0) await page.waitForFunction((selector) => document.querySelector(selector), popoverRoots, { timeout: 2000 }).catch(() => {});
+  if (targets.length > 0) await page.waitForFunction(popoverAtRest, popoverRoots, { timeout: 2000, polling: "raf" }).catch(() => {});
   return targets.length > 0;
 }
 
