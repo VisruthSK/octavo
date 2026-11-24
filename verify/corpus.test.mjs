@@ -106,3 +106,46 @@ test("archive no-js capture failures are not ignored", async () => {
   }
   assert.equal(ignoredArchiveNoJsIssue("pixels differ"), true);
 });
+
+test("corpus workflow passes inputs through env rather than interpolating into run scripts", async () => {
+  const fs = await import("node:fs/promises");
+  const path = new URL("../.github/workflows/corpus.yml", import.meta.url);
+  const content = await fs.readFile(path, "utf8");
+  const lines = content.split("\n");
+  let inRun = false;
+  let runIndent = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const runMatch = line.match(/^(\s*)-\s+run:\s*(.*)$/);
+    if (runMatch) {
+      const rest = runMatch[2].trim();
+      if (rest === "|" || rest === ">") {
+        inRun = true;
+        runIndent = runMatch[1].length + 2;
+      } else {
+        assert.doesNotMatch(rest, /\$\{\{\s*inputs\./, `Line ${i + 1} interpolates inputs: ${line}`);
+      }
+      continue;
+    }
+    const singleRun = line.match(/^(\s*)run:\s*(.*)$/);
+    if (singleRun) {
+      const rest = singleRun[2].trim();
+      if (rest === "|" || rest === ">") {
+        inRun = true;
+        runIndent = singleRun[1].length + 2;
+      } else {
+        assert.doesNotMatch(rest, /\$\{\{\s*inputs\./, `Line ${i + 1} interpolates inputs: ${line}`);
+      }
+      continue;
+    }
+    if (inRun) {
+      const indent = line.search(/\S/);
+      if (indent === -1) continue;
+      if (indent < runIndent) {
+        inRun = false;
+      } else {
+        assert.doesNotMatch(line, /\$\{\{\s*inputs\./, `Line ${i + 1} interpolates inputs: ${line}`);
+      }
+    }
+  }
+});
