@@ -51,11 +51,7 @@ fn exact_corpus_and_byte_price() {
     }
     let upstream = std::env::var_os("OCTAVO_EXACT_UPSTREAM_CACHE")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(
-                "C:/Users/visru/Documents/Github/octavo-wt/mathjax/corpus/.cache/rendered",
-            )
-        });
+        .unwrap_or_else(|| root.join("corpus/.cache/rendered"));
     let mut upstream_paths = Vec::new();
     if upstream.is_dir() {
         html_files(&upstream, &mut upstream_paths);
