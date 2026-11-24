@@ -69,7 +69,6 @@ fn exact_corpus_and_byte_price() {
         Transform::MinifiedStylesheet,
         Transform::MinifiedScript,
         Transform::StrippedDefaultAttr,
-        Transform::StrippedZeroUnits,
         Transform::CollapsedCssWhitespace,
         Transform::NormalizedAttrQuotes,
     ];

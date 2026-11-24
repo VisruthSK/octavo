@@ -143,9 +143,7 @@ fn css_rewrites<'i>(
     parser: &mut Parser<'i, '_>,
     source: &str,
     strip_licenses: bool,
-    math_depth: usize,
     comments: &mut Vec<Range<usize>>,
-    zero_units: &mut Vec<Range<usize>>,
     ws: &mut Vec<(Range<usize>, &'static str)>,
 ) -> Result<(), ParseError<'i, ()>> {
     let mut prev_token: Option<String> = None;
@@ -190,81 +188,23 @@ fn css_rewrites<'i>(
                     }
                 }
                 match &token {
-                    Token::Dimension { value, unit, .. } => {
-                        let end = parser.position().byte_index();
-                        if *value == 0.0
-                            && math_depth == 0
-                            && oracle::LENGTH_UNITS
-                                .iter()
-                                .any(|u| unit.eq_ignore_ascii_case(u))
-                            && source[start..end].starts_with('0')
-                        {
-                            zero_units.push(start..end);
-                        }
-                        prev_token = Some("Dimension".to_string());
-                    }
-                    Token::CurlyBracketBlock => {
-                        let start = parser.position();
-                        parser.parse_nested_block(|inner| {
-                            css_rewrites(
-                                inner,
-                                source,
-                                strip_licenses,
-                                math_depth,
-                                comments,
-                                zero_units,
-                                ws,
-                            )
-                        })?;
-                        if !parser.slice_from(start).ends_with('}') {
-                            return Err(parser.new_custom_error(()));
-                        }
-                        prev_token = Some("end:}".to_string());
-                    }
-                    Token::Function(name) => {
-                        let is_math = ["calc", "min", "max", "clamp"]
-                            .iter()
-                            .any(|m| name.eq_ignore_ascii_case(m));
-                        let next_depth = if is_math { math_depth + 1 } else { math_depth };
-                        let start = parser.position();
-                        parser.parse_nested_block(|inner| {
-                            css_rewrites(
-                                inner,
-                                source,
-                                strip_licenses,
-                                next_depth,
-                                comments,
-                                zero_units,
-                                ws,
-                            )
-                        })?;
-                        if !parser.slice_from(start).ends_with(')') {
-                            return Err(parser.new_custom_error(()));
-                        }
-                        prev_token = Some("end:)".to_string());
-                    }
-                    Token::ParenthesisBlock | Token::SquareBracketBlock => {
-                        let close = if matches!(&token, Token::SquareBracketBlock) {
-                            ']'
-                        } else {
-                            ')'
+                    Token::CurlyBracketBlock
+                    | Token::Function(_)
+                    | Token::ParenthesisBlock
+                    | Token::SquareBracketBlock => {
+                        let close = match &token {
+                            Token::CurlyBracketBlock => '}',
+                            Token::SquareBracketBlock => ']',
+                            _ => ')',
                         };
                         let start = parser.position();
                         parser.parse_nested_block(|inner| {
-                            css_rewrites(
-                                inner,
-                                source,
-                                strip_licenses,
-                                math_depth,
-                                comments,
-                                zero_units,
-                                ws,
-                            )
+                            css_rewrites(inner, source, strip_licenses, comments, ws)
                         })?;
                         if !parser.slice_from(start).ends_with(close) {
                             return Err(parser.new_custom_error(()));
                         }
-                        prev_token = Some("end:)".to_string());
+                        prev_token = Some(if close == '}' { "end:}" } else { "end:)" }.to_string());
                     }
                     Token::Semicolon => {
                         prev_token = Some("Semicolon".to_string());
@@ -303,30 +243,24 @@ fn stylesheet(
     let mut input = ParserInput::new(source);
     let mut parser = Parser::new(&mut input);
     let mut comments = Vec::new();
-    let mut zero_units = Vec::new();
     let mut ws = Vec::new();
     if css_rewrites(
         &mut parser,
         source,
         options.strip_licenses,
-        0,
         &mut comments,
-        &mut zero_units,
         &mut ws,
     )
     .is_err()
     {
         return;
     }
-    if comments.is_empty() && zero_units.is_empty() && ws.is_empty() {
+    if comments.is_empty() && ws.is_empty() {
         return;
     }
     let mut edits_to_apply = Vec::new();
     for r in &comments {
         edits_to_apply.push((r.clone(), ""));
-    }
-    for r in &zero_units {
-        edits_to_apply.push((r.clone(), "0"));
     }
     for (r, text) in &ws {
         edits_to_apply.push((r.clone(), *text));
@@ -357,14 +291,6 @@ fn stylesheet(
             span: span.start + r.start..span.start + r.end,
             text: String::new(),
             transform: Transform::MinifiedStylesheet,
-            target: target.clone(),
-        });
-    }
-    for r in zero_units {
-        edits.push(Edit {
-            span: span.start + r.start..span.start + r.end,
-            text: "0".to_string(),
-            transform: Transform::StrippedZeroUnits,
             target: target.clone(),
         });
     }
@@ -1259,37 +1185,6 @@ mod tests {
     }
 
     #[test]
-    fn exact_strips_zero_length_units() {
-        let input = "<html><style>a{margin:0px;padding:0em;line-height:1;width:10px;height:0}</style></html>";
-        let out = optimize(input, Mode::Exact).unwrap();
-        assert_eq!(
-            out.html,
-            "<html><style>a{margin:0;padding:0;line-height:1;width:10px;height:0}</style></html>"
-        );
-        assert_eq!(
-            out.applied
-                .iter()
-                .filter(|s| s.transform == Transform::StrippedZeroUnits)
-                .count(),
-            2
-        );
-        assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
-    }
-
-    proptest::proptest! {
-        #[test]
-        fn zero_units_property_test(
-            unit in "(px|em|rem|vw|vh|cm|mm|pt|in)"
-        ) {
-            let html = format!("<html><style>a{{margin:0{unit};}}</style></html>");
-            let out = optimize(&html, Mode::Exact).unwrap();
-            proptest::prop_assert_eq!(&out.html, "<html><style>a{margin:0;}</style></html>");
-            proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::StrippedZeroUnits));
-            proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
-        }
-    }
-
-    #[test]
     fn exact_collapses_css_whitespace() {
         let input = "<html><style>  a , b  {  color: red ;  }  </style></html>";
         let out = optimize(input, Mode::Exact).unwrap();
@@ -1473,5 +1368,13 @@ mod tests {
             proptest::prop_assert!(out.applied.iter().any(|s| s.transform == Transform::MinifiedScript));
             proptest::prop_assert_eq!(optimize(&out.html, Mode::Exact).unwrap().html, out.html);
         }
+    }
+
+    #[test]
+    fn exact_keeps_zero_units_where_they_matter() {
+        let html = "<html><style>a{flex:1 0px;margin:0px;width:calc(0px + 1px)}</style></html>";
+        let output = optimize(html, Mode::Exact).unwrap();
+        assert_eq!(output.html, html);
+        assert!(output.applied.is_empty());
     }
 }
