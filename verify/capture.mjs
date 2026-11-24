@@ -766,7 +766,7 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
       }
     }
   } catch (error) {
-    throw new Error(`full-page screenshot: ${fullPageError}; tiled screenshot: ${error.message}`);
+    throw new Error(`full-page screenshot: ${fullPageError}; tiled screenshot of ${width}x${height} in ${tileWidth}x${tileHeight} tiles after ${tiles.length}: ${error.message}`);
   } finally {
     await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), originalScroll);
   }
