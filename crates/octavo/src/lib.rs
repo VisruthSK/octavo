@@ -29,16 +29,23 @@ mod css;
 mod data;
 mod doc;
 mod embed;
+#[doc = "Oracles for exact transformations."]
+pub mod exact;
 mod fonts;
 mod html;
 mod images;
 mod js;
 mod pack;
 mod quarto;
+mod site;
 mod words;
 
 pub use check::Url;
 pub use embed::{Embedded, Loaded, Resources, embed_resources};
+pub use site::{
+    SiteChange, SiteError, SiteFile, SiteFileKind, SiteKind, SitePlan, SiteReport,
+    optimize_directory, plan_directory,
+};
 
 use doc::{Doc, Edit, Edits};
 use std::{
@@ -51,7 +58,13 @@ use std::{
 /// How aggressively a document is rewritten.
 ///
 /// The levels nest: each includes everything the previous level does, plus
-/// more.
+/// more, until `Exact`, which stands apart.
+///
+/// `Serve`, `Portable` and `Archive` rely on heuristics: they guess which
+/// selectors, classes, scripts and fonts a document uses from its own text,
+/// and can be wrong. `Exact` applies only transforms that are
+/// semantics-preserving by construction, so its output renders exactly like
+/// the input in every browser; see `docs/design/exact-level.md`.
 ///
 /// ```
 /// use octavo::{optimize, Mode};
@@ -63,6 +76,14 @@ use std::{
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Mode {
+    /// Applies only transforms that are provably semantics-preserving by
+    /// construction: canonical base64, lossless image recompression and
+    /// guarded lossless WebP, whole-font WOFF2 re-encoding, and CSS comment,
+    /// whitespace, number and duplicate removal under pinned rules. Nothing
+    /// is pruned, subsetted, re-encoded lossily or packed. The output is
+    /// deterministic: same input bytes and options give identical output
+    /// bytes on every machine.
+    Exact,
     /// Smallest output when the server compresses it (removes what the page does
     /// not use, minifies, ordinary elements).
     #[default]
@@ -78,6 +99,7 @@ pub enum Mode {
 impl fmt::Display for Mode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
+            Mode::Exact => "exact",
             Mode::Serve => "serve",
             Mode::Portable => "portable",
             Mode::Archive => "archive",
@@ -88,14 +110,15 @@ impl fmt::Display for Mode {
 impl FromStr for Mode {
     type Err = String;
 
-    /// Parses the lowercase names `serve`, `portable` and `archive`.
+    /// Parses the lowercase names `exact`, `serve`, `portable` and `archive`.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
+            "exact" => Ok(Mode::Exact),
             "serve" => Ok(Mode::Serve),
             "portable" => Ok(Mode::Portable),
             "archive" => Ok(Mode::Archive),
             other => Err(format!(
-                "unknown level '{other}', expected one of: serve, portable, archive"
+                "unknown level '{other}', expected one of: exact, serve, portable, archive"
             )),
         }
     }
@@ -164,6 +187,15 @@ pub struct Options {
     /// How hard the compressors for fonts, PNG images and the packed blob
     /// work. It is independent of the [`Mode`].
     pub compression: Compression,
+    /// Restrict optimization to the transforms that are provably
+    /// semantics-preserving by construction, described in
+    /// `docs/design/exact-level.md`: canonical base64 payloads, lossless PNG
+    /// recompression and guarded lossless WebP, whole-font WOFF2
+    /// re-encoding, and CSS comment, whitespace, number and duplicate
+    /// removal under pinned rules. Nothing is pruned, subsetted, re-encoded
+    /// lossily, packed or otherwise rewritten outside those rules, and the
+    /// output is deterministic. `false` runs the heuristic stages.
+    pub exact: bool,
 }
 
 impl Options {
@@ -183,6 +215,7 @@ impl Default for Options {
             image_memory: None,
             cache_directory: None,
             compression: Compression::default(),
+            exact: false,
         }
     }
 }
@@ -418,6 +451,19 @@ pub enum Transform {
     /// because Chromium draws hinted static fonts differently on Linux
     /// after subsetting.
     FontKeptWhole,
+    /// A stylesheet was rewritten under the rules of the exact level.
+    MinifiedStylesheet,
+    /// A `data:` URL payload was re-encoded as canonical base64.
+    NormalizedDataUrl,
+    #[doc = "A whole font was re-encoded as WOFF2."]
+    ReencodedFont,
+    #[doc = "A PNG was converted to lossless WebP."]
+    ConvertedWebp,
+    StrippedDefaultAttr,
+    CollapsedCssWhitespace,
+    ShortenedCssValues,
+    RemovedCssRules,
+    NormalizedAttrQuotes,
     /// Resources were compressed into one blob.
     Packed,
 }
@@ -431,6 +477,15 @@ impl fmt::Display for Transform {
             Transform::RecompressedPng => "png-recompressed",
             Transform::ReencodedImage => "image-reencoded",
             Transform::FontKeptWhole => "font-kept-whole",
+            Transform::MinifiedStylesheet => "stylesheet-minified",
+            Transform::NormalizedDataUrl => "data-url-normalized",
+            Transform::ReencodedFont => "font-reencoded",
+            Transform::ConvertedWebp => "webp-converted",
+            Transform::StrippedDefaultAttr => "default-attr-stripped",
+            Transform::CollapsedCssWhitespace => "css-whitespace-collapsed",
+            Transform::ShortenedCssValues => "css-values-shortened",
+            Transform::RemovedCssRules => "css-rules-removed",
+            Transform::NormalizedAttrQuotes => "attr-quotes-normalized",
             Transform::Packed => "packed",
         })
     }
@@ -571,6 +626,11 @@ pub enum Warning {
     /// The page loads a resource from the network, so it cannot work
     /// offline. Carries the URL as written in the document.
     RemoteResource(Url),
+    #[doc = "An exact transformation was rejected by its oracle."]
+    OracleRejected {
+        transform: Transform,
+        target: Target,
+    },
 }
 
 impl fmt::Display for Warning {
@@ -581,6 +641,9 @@ impl fmt::Display for Warning {
                     f,
                     "loads {url} when opened, so the page does not work offline"
                 )
+            }
+            Warning::OracleRejected { transform, target } => {
+                write!(f, "oracle rejected {transform} for {target}")
             }
         }
     }
@@ -693,7 +756,11 @@ pub fn is_self_contained(src: &str) -> bool {
 /// # Ok::<(), octavo::Error>(())
 /// ```
 pub fn optimize(src: &str, mode: Mode) -> Result<Output, Error> {
-    Ok(simplify(src, Options::default())?.pack(mode))
+    let options = Options {
+        exact: mode == Mode::Exact,
+        ..Options::default()
+    };
+    Ok(simplify(src, options)?.pack(mode))
 }
 
 /// Runs the stages that do not depend on a [`Mode`].
@@ -728,41 +795,51 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     } else {
         Licenses::Keep
     };
-    let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
-        || {
-            images::stage(
-                &doc,
-                options.images,
-                options.compression.tuning(),
-                (!options.keep_png).then(|| {
-                    options
-                        .image_memory
-                        .unwrap_or(Options::DEFAULT_IMAGE_MEMORY)
-                }),
-            )
-        },
-        || {
-            let (markup, parts) = rayon::join(|| doc.markup(), || doc.word_parts());
-            let removals = quarto::stage(&doc, &markup);
-            let removed: Vec<Range<usize>> =
-                removals.iter().map(|edit| edit.span.clone()).collect();
-            let (scripts, (styles, kept_whole)) = rayon::join(
-                || js::stage(&doc, &removed, licenses),
-                || {
-                    let words = doc.words(markup, parts, &removed);
-                    css::stage(
-                        &doc,
-                        &words,
-                        options.subset_text_fonts,
-                        licenses,
-                        options.cache_directory.as_deref(),
-                        options.compression.tuning(),
-                    )
-                },
-            );
-            (removals, scripts, styles, kept_whole)
-        },
-    );
+    let tuning = options.compression.tuning();
+    let mut exact_warnings = Vec::new();
+    let (images, (removals, scripts, styles, kept_whole)) = if options.exact {
+        let (edits, warnings) = exact::stage(&doc, &options);
+        exact_warnings = warnings;
+        (Vec::new(), (Vec::new(), Vec::new(), edits, Vec::new()))
+    } else {
+        let (images, (removals, scripts, styles, kept_whole)) = rayon::join(
+            || {
+                images::stage(
+                    &doc,
+                    options.images,
+                    tuning,
+                    (!options.keep_png).then(|| {
+                        options
+                            .image_memory
+                            .unwrap_or(Options::DEFAULT_IMAGE_MEMORY)
+                    }),
+                    false,
+                )
+            },
+            || {
+                let (markup, parts) = rayon::join(|| doc.markup(), || doc.word_parts());
+                let removals = quarto::stage(&doc, &markup);
+                let removed: Vec<Range<usize>> =
+                    removals.iter().map(|edit| edit.span.clone()).collect();
+                let (scripts, (styles, kept_whole)) = rayon::join(
+                    || js::stage(&doc, &removed, licenses),
+                    || {
+                        let words = doc.words(markup, parts, &removed);
+                        css::stage(
+                            &doc,
+                            &words,
+                            options.subset_text_fonts,
+                            licenses,
+                            options.cache_directory.as_deref(),
+                            options.compression.tuning(),
+                        )
+                    },
+                );
+                (removals, scripts, styles, kept_whole)
+            },
+        );
+        (images, (removals, scripts, styles, kept_whole))
+    };
     let edits: Vec<Edit> = removals
         .into_iter()
         .chain(scripts)
@@ -798,6 +875,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
     let html = edits.apply(src);
     Ok(Simplified {
         scanned: html::Scanned::new(html),
+        original: src.to_string(),
+        exact: options.exact,
         compression: options.compression,
         applied,
         skipped,
@@ -805,6 +884,7 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
             .remote()
             .cloned()
             .map(Warning::RemoteResource)
+            .chain(exact_warnings)
             .collect(),
     })
 }
@@ -827,6 +907,8 @@ pub fn simplify(src: &str, options: Options) -> Result<Simplified, Error> {
 #[non_exhaustive]
 pub struct Simplified {
     scanned: html::Scanned,
+    original: String,
+    exact: bool,
     applied: Vec<Applied>,
     skipped: Vec<Skipped>,
     warnings: Vec<Warning>,
@@ -877,13 +959,21 @@ impl Simplified {
     /// ```
     #[must_use]
     pub fn pack(&self, mode: Mode) -> Output {
+        if mode == Mode::Exact && !self.exact {
+            return Output {
+                html: self.original.clone(),
+                applied: Vec::new(),
+                skipped: Vec::new(),
+                warnings: self.warnings.clone(),
+            };
+        }
         let unpacked = || Output {
             html: self.scanned.html().to_string(),
             applied: self.applied.clone(),
             skipped: self.skipped.clone(),
             warnings: self.warnings.clone(),
         };
-        if mode == Mode::Serve {
+        if matches!(mode, Mode::Serve | Mode::Exact) {
             return unpacked();
         }
         let Some(packed) = pack::run(&self.scanned, mode, self.compression.tuning())
@@ -938,6 +1028,7 @@ impl Simplified {
             Mode::Archive => &[Mode::Archive, Mode::Portable, Mode::Serve],
             Mode::Portable => &[Mode::Portable, Mode::Serve],
             Mode::Serve => &[Mode::Serve],
+            Mode::Exact => &[Mode::Exact],
         };
         ladder.iter().find_map(|&step| {
             let candidate = self.pack(step);

@@ -159,6 +159,27 @@ pub(crate) struct Rewritten {
     pub(crate) kept_whole: Vec<(String, usize)>,
 }
 
+pub(crate) fn exact_transcode(
+    bytes: &[u8],
+    tuning: Tuning,
+    _cache: Option<&Path>,
+) -> Option<Vec<u8>> {
+    let sfnt = match bytes.get(..4)? {
+        b"wOFF" => Cow::Owned(wuff::decompress_woff1(bytes).ok()?),
+        b"wOF2" => Cow::Owned(wuff::decompress_woff2(bytes).ok()?),
+        _ => Cow::Borrowed(bytes),
+    };
+    ttf2woff2::encode_with_options(
+        &sfnt,
+        ttf2woff2::EncodeOptions {
+            quality: ttf2woff2::BrotliQuality::from(tuning.woff2_quality.min(11)),
+            transform_glyf_loca: false,
+            threads: None,
+        },
+    )
+    .ok()
+}
+
 fn collect_usage(sheets: &mut [Option<StyleSheet<'_>>], loose: &[&str]) -> Usage {
     let rules = sheets
         .par_iter_mut()
@@ -181,18 +202,54 @@ fn collect_chars(css: &[&str], loose: &[&str], settings: &Settings) -> Chars {
     for text in css.iter().chain(loose) {
         icons.extend(content_chars(text));
     }
-    let text = settings.subset_text_fonts.then(|| {
-        let cased: Vec<char> = icons
-            .iter()
-            .flat_map(|c| c.to_uppercase().chain(c.to_lowercase()))
-            .collect();
-        let western = WESTERN_TEXT
+    let text = settings
+        .subset_text_fonts
+        .then(|| text_charset(icons.iter().copied()));
+    Chars { icons, text }
+}
+
+pub(crate) fn text_charset(chars: impl IntoIterator<Item = char>) -> HashSet<char> {
+    let mut set: HashSet<char> = chars.into_iter().collect();
+    let cased: Vec<char> = set
+        .iter()
+        .flat_map(|c| c.to_uppercase().chain(c.to_lowercase()))
+        .collect();
+    set.extend(cased);
+    set.extend(
+        WESTERN_TEXT
             .into_iter()
             .flatten()
-            .filter_map(char::from_u32);
-        icons.iter().copied().chain(western).chain(cased).collect()
-    });
-    Chars { icons, text }
+            .filter_map(char::from_u32),
+    );
+    set
+}
+
+pub(crate) fn woff2_file(bytes: &[u8], cache: Option<&Path>, tuning: Tuning) -> Option<Vec<u8>> {
+    transcode(
+        bytes,
+        None,
+        FontCategory::Icon,
+        Licenses::Keep,
+        cache,
+        tuning,
+    )
+    .map(|converted| converted.woff2)
+}
+
+pub(crate) fn woff2_file_subsets(
+    bytes: &[u8],
+    chars: &HashSet<char>,
+    tuning: Tuning,
+) -> Option<Vec<u8>> {
+    transcode(
+        bytes,
+        Some(chars),
+        FontCategory::Text,
+        Licenses::Keep,
+        None,
+        tuning,
+    )
+    .map(|converted| converted.woff2)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -443,7 +500,7 @@ fn content_chars(css: &str) -> HashSet<char> {
     chars
 }
 
-fn document_chars(src: &str) -> HashSet<char> {
+pub(crate) fn document_chars(src: &str) -> HashSet<char> {
     let decoded = html_escape::decode_html_entities(src);
     let mut chars: HashSet<char> = decoded.chars().filter(|c| !c.is_ascii()).collect();
     for (at, _) in src.match_indices("\\u") {
