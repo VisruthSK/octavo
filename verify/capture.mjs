@@ -137,7 +137,7 @@ async function fingerprints({ lossy, linked }) {
 
 function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle = true, scrollbarPseudo }) {
   const describe = (element, pseudo, baseStyle) => {
-    const style = pseudo === null && baseStyle ? baseStyle : getComputedStyle(element, pseudo);
+    const style = baseStyle ?? getComputedStyle(element, pseudo);
     if ((pseudo === "::before" || pseudo === "::after") && style.content === "none") return "";
     const noImage = style.backgroundImage === "none";
     const legacyBox = style.display.includes("box");
@@ -162,9 +162,10 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
   if (probe) {
     const element = (window[Symbol.for("octavo.interactive")] ?? document.querySelectorAll(probe.selector))[probe.index];
     if (!element) return { style: "", states: {} };
+    const baseStyle = getComputedStyle(element);
     return {
-      style: describe(element, null),
-      writingMode: getComputedStyle(element).writingMode,
+      style: describe(element, null, baseStyle),
+      writingMode: baseStyle.writingMode,
       states: {
         hover: element.matches(":hover"),
         focus: element.matches(":focus"),
@@ -226,6 +227,41 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
   }
   const styleValues = [];
   const styleIndexes = new Map();
+  const sampleTags = new Set(["p", "a", "h1", "h2", "h3", "h4", "h5", "h6", "li", "code"]);
+  const writingModes = [];
+  const bare = (name) => name.trim().replace(/^["']|["']$/g, "").toLowerCase();
+  const usedFonts = new Set();
+  const styles = elements.map((el) => {
+    const base = getComputedStyle(el);
+    writingModes.push(base.writingMode);
+    for (const name of base.fontFamily.split(",")) usedFonts.add(bare(name));
+    const tag = el.tagName.toLowerCase();
+    const isRoot = el === document.documentElement || el === document.body;
+    const isSample = sampleTags.has(tag);
+    const hasScroll = isRoot || isSample || el.matches?.(".custom-scroll, [style*='overflow']") || (base.overflow && base.overflow !== "visible");
+    const pseudos = [
+      null,
+      "::before",
+      "::after",
+      ...(base.display === "list-item" || tag === "li" ? ["::marker"] : []),
+      ...(placeholderStyle && el.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
+      ...(isRoot || isSample ? ["::selection"] : []),
+      ...(hasScroll ? [scrollbarPseudo] : []),
+    ];
+    const value = pseudos
+      .map((pseudo) => {
+        const style = pseudo === null ? base : getComputedStyle(el, pseudo);
+        if ((pseudo === "::before" || pseudo === "::after") && style.content === "none") return "";
+        if (pseudo === "::before" || pseudo === "::after") for (const name of style.fontFamily.split(",")) usedFonts.add(bare(name));
+        return describe(el, pseudo, style);
+      })
+      .join("");
+    if (!styleIndexes.has(value)) {
+      styleIndexes.set(value, styleValues.length);
+      styleValues.push(value);
+    }
+    return styleIndexes.get(value);
+  });
   return {
     animations,
     title: document.title,
@@ -235,46 +271,14 @@ function observe({ lossy, probe, motion, linked, prints = [], placeholderStyle =
       const { x, y, width, height } = el.getBoundingClientRect();
       return [x, y, width, height].map((n) => Math.round(n * 100) / 100);
     }),
-    styles: (() => {
-      const sampleTags = new Set(["p", "a", "h1", "h2", "h3", "h4", "h5", "h6", "li", "code"]);
-      const sampled = new Set();
-      return elements.map((el) => {
-        const base = getComputedStyle(el);
-        const tag = el.tagName.toLowerCase();
-        const isRoot = el === document.documentElement || el === document.body;
-        const isSample = sampleTags.has(tag);
-        const hasScroll = isRoot || isSample || el.matches?.(".custom-scroll, [style*='overflow']") || (base.overflow && base.overflow !== "visible");
-        const pseudos = [
-          null,
-          "::before",
-          "::after",
-          ...(base.display === "list-item" || tag === "li" ? ["::marker"] : []),
-          ...(placeholderStyle && el.matches("input[placeholder], textarea[placeholder]") ? ["::placeholder"] : []),
-          ...(isRoot || isSample ? ["::selection"] : []),
-          ...(hasScroll ? [scrollbarPseudo] : []),
-        ];
-        const value = pseudos.map((pseudo) => describe(el, pseudo, base)).join("");
-        if (!styleIndexes.has(value)) {
-          styleIndexes.set(value, styleValues.length);
-          styleValues.push(value);
-        }
-        return styleIndexes.get(value);
-      });
-    })(),
+    styles,
     styleValues,
-    writingModes: elements.map((el) => getComputedStyle(el).writingMode),
+    writingModes,
     fonts: (() => {
       const weights = { normal: "400", bold: "700" };
       const faces = new Map();
-      const bare = (name) => name.trim().replace(/^["']|["']$/g, "").toLowerCase();
-      const used = new Set();
-      for (const element of document.querySelectorAll("*")) {
-        for (const pseudo of [null, "::before", "::after"]) {
-          for (const name of getComputedStyle(element, pseudo).fontFamily.split(",")) used.add(bare(name));
-        }
-      }
       for (const font of document.fonts) {
-        if (font.status !== "loaded" || !used.has(bare(font.family))) continue;
+        if (font.status !== "loaded" || !usedFonts.has(bare(font.family))) continue;
         const stretch = font.stretch === "normal" ? "100%" : font.stretch;
         faces.set([font.family, font.style, weights[font.weight] ?? font.weight, stretch].join("|"), font.family);
       }
@@ -649,13 +653,23 @@ export async function loadDocument(page, file, root, entryPath) {
 }
 export async function settleFonts() {
   const bare = (name) => name.trim().replace(/^["']|["']$/g, "").toLowerCase();
+  const unloaded = [...document.fonts].filter((face) => face.status === "unloaded");
+  const needed = new Set(unloaded.map((face) => bare(face.family)));
   const used = new Set();
-  for (const element of document.querySelectorAll("*")) {
+  scan: for (const element of needed.size ? document.querySelectorAll("*") : []) {
     for (const pseudo of [null, "::before", "::after"]) {
-      for (const name of getComputedStyle(element, pseudo).fontFamily.split(",")) used.add(bare(name));
+      const style = getComputedStyle(element, pseudo);
+      if (pseudo && style.content === "none") continue;
+      for (const name of style.fontFamily.split(",")) {
+        const family = bare(name);
+        if (needed.delete(family)) {
+          used.add(family);
+          if (!needed.size) break scan;
+        }
+      }
     }
   }
-  await Promise.all([...document.fonts].filter((face) => face.status === "unloaded" && used.has(bare(face.family))).map((face) => face.load().catch(() => {})));
+  await Promise.all(unloaded.filter((face) => used.has(bare(face.family))).map((face) => face.load().catch(() => {})));
   const loaded = () => [...document.fonts].filter((face) => face.status === "loaded").length;
   let previous = -1;
   for (let round = 0; round < 8; round++) {
