@@ -921,7 +921,13 @@ export async function capture(
       if (scripted) await page.evaluate(settleFonts).catch(() => {});
       const observation = await page.evaluate(observe, { lossy, motion: scenario.motion, linked, prints, placeholderStyle: engine.placeholderStyle, scrollbarPseudo });
       observation.fonts = observation.fonts.map(canonicalFontFamily).sort();
-      states.push({ label, ...observation, screenshot, ...(screenshotError ? { screenshotError } : {}), ...extra });
+      const popovers = await page
+        .evaluate(() => [...document.querySelectorAll("[data-tippy-root]")].map((root) => {
+          const { left, right } = root.getBoundingClientRect();
+          return `${Math.round(left)}-${Math.round(right)}${root.hasAttribute("data-popper-placement") ? "" : " unplaced"}`;
+        }))
+        .catch(() => []);
+      states.push({ label, ...observation, screenshot, popovers, ...(screenshotError ? { screenshotError } : {}), ...extra });
     };
     await record("load", { digest: previousDigest });
     setPhase("forcedStates element count");

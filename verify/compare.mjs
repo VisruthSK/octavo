@@ -377,7 +377,11 @@ export function compare(before, after, lossy, stats) {
   if (requestsBefore.join() !== requestsAfter.join()) issues.push(`requests: ${requestsBefore} vs ${requestsAfter}`);
   if (before.states.length !== after.states.length) issues.push(`state count ${before.states.length} vs ${after.states.length}`);
   for (const [i, state] of before.states.entries()) {
-    if (after.states[i]) issues.push(...compareState(state, after.states[i], lossy, stats).map((issue) => `${state.label}: ${issue}`));
+    if (after.states[i]) {
+      const found = compareState(state, after.states[i], lossy, stats);
+      const popovers = `popovers ${JSON.stringify(state.popovers ?? [])} vs ${JSON.stringify(after.states[i].popovers ?? [])}`;
+      issues.push(...found.map((issue) => `${state.label}: ${issue} (${popovers})`));
+    }
   }
   return issues;
 }
