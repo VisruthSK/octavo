@@ -696,11 +696,28 @@ export async function settleFonts() {
 }
 
 
-export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
-  const pageSize = await page.evaluate(() => ({
+const documentSize = (page) =>
+  page.evaluate(() => ({
     width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
     height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
   }));
+
+const layoutSize = async (page) => {
+  try {
+    const session = await page.context().newCDPSession(page);
+    try {
+      const { cssContentSize } = await session.send("Page.getLayoutMetrics");
+      return { width: Math.ceil(cssContentSize.width), height: Math.ceil(cssContentSize.height) };
+    } finally {
+      await session.detach().catch(() => {});
+    }
+  } catch {
+    return null;
+  }
+};
+
+export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
+  const pageSize = (await layoutSize(page)) ?? (await documentSize(page));
   const width = Math.max(viewport.width, pageSize.width);
   const height = Math.max(viewport.height, pageSize.height);
   let fullPageError = `page height exceeds ${MAX_FULL_PAGE_HEIGHT} pixels`;
