@@ -290,7 +290,7 @@ fn png_converts_exactly(png: &[u8]) -> bool {
     seen_header
 }
 
-fn has_partial_alpha(image: &image::DynamicImage) -> bool {
+fn dynamic_has_partial_alpha(image: &image::DynamicImage) -> bool {
     let partial = |alpha: &u8| *alpha != 0 && *alpha != 255;
     match image {
         image::DynamicImage::ImageRgba8(rgba) => {
@@ -310,7 +310,7 @@ fn lossless_webp(decoded: &Decoded, budget: &MemoryBudget) -> Option<Vec<u8>> {
     let _held = budget.take(decoded.pixels.checked_mul(WEBP_BYTES_PER_PIXEL)?)?;
     let image =
         image::load_from_memory_with_format(&decoded.image.bytes, image::ImageFormat::Png).ok()?;
-    if has_partial_alpha(&image) {
+    if dynamic_has_partial_alpha(&image) {
         return None;
     }
     let mut config = webp::WebPConfig::new().ok()?;
@@ -484,4 +484,76 @@ fn webp(image: &RgbaImage, quality: u8) -> Option<Vec<u8>> {
             .ok()?;
     }
     Some(encoded)
+}
+
+pub(crate) fn recompress_png_file(bytes: &[u8], tuning: Tuning) -> Option<Vec<u8>> {
+    let (width, height) = image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?
+        .into_dimensions()
+        .ok()?;
+    recompress_png(bytes, u64::from(width) * u64::from(height), tuning)
+}
+
+pub(crate) fn reencode_file(
+    bytes: &[u8],
+    encoding: ImageEncoding,
+    width_limit: Option<u32>,
+) -> Option<(Mime, Vec<u8>)> {
+    let (source_width, source_height) = image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?
+        .into_dimensions()
+        .ok()?;
+    let pixels = u64::from(source_width) * u64::from(source_height);
+    if pixels > MAX_LOSSY_PIXELS {
+        return None;
+    }
+    let mut image = image::load_from_memory(bytes).ok()?.into_rgba8();
+    let mut resized = false;
+    if let Some(side) = encoding
+        .max_side
+        .filter(|&side| image.width().max(image.height()) > side.get())
+    {
+        image = shrink(image, side)?;
+        resized = true;
+    }
+    if let Some(limit) = width_limit.filter(|&limit| image.width() > limit) {
+        image = shrink_to_width(image, limit)?;
+        resized = true;
+    }
+    let pixels = u64::from(image.width()) * u64::from(image.height());
+    let (mime, encoded) = match encoding.format {
+        ImageFormat::Avif => (
+            Mime::ImageAvif,
+            avif(&image, encoding.quality.get(), pixels)?,
+        ),
+        ImageFormat::Webp => (Mime::ImageWebp, webp(&image, encoding.quality.get())?),
+    };
+    (resized || encoded.len() * 10 < bytes.len() * 9).then_some((mime, encoded))
+}
+
+pub(crate) fn has_partial_alpha(bytes: &[u8]) -> bool {
+    !image::load_from_memory(bytes)
+        .ok()
+        .is_some_and(|image| image.to_rgba8().pixels().all(|p| p.0[3] == 255))
+}
+
+fn shrink_to_width(image: RgbaImage, width: u32) -> Option<RgbaImage> {
+    let (source_width, source_height) = (image.width(), image.height());
+    let scale = f64::from(width) / f64::from(source_width);
+    let height = ((f64::from(source_height) * scale).round() as u32).max(1);
+    let source = Image::from_vec_u8(
+        source_width,
+        source_height,
+        image.into_raw(),
+        PixelType::U8x4,
+    )
+    .ok()?;
+    let mut resized = Image::new(width, height, PixelType::U8x4);
+    let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::CatmullRom));
+    Resizer::new()
+        .resize(&source, &mut resized, &options)
+        .ok()?;
+    RgbaImage::from_raw(width, height, resized.into_vec())
 }

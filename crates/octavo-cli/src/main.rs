@@ -7,7 +7,7 @@ use clap::{
 use indicatif::{ProgressBar, ProgressStyle};
 use octavo::{
     Compression, Error as OctavoError, ImageEncoding, ImageFormat, Loaded, Mode, Options, Quality,
-    Resources, Transform, Tuning, Warning, embed_resources, simplify,
+    Resources, SiteKind, Transform, Tuning, Warning, embed_resources, optimize_directory, simplify,
 };
 use std::{
     collections::{BTreeMap, HashSet},
@@ -33,7 +33,7 @@ const DIM: Style = Style::new().dimmed();
 #[command(
     name = "octavo",
     version,
-    about = "Shrinks the self-contained HTML that Quarto writes",
+    about = "Shrinks the self-contained HTML that Quarto writes, or the shared files of a rendered site",
     after_help = EXAMPLES,
     styles = STYLES,
     arg_required_else_help = true
@@ -95,7 +95,8 @@ Examples:
   octavo deck.html --level serve          keep the page working without JavaScript
   octavo deck.html --lossy-images        smaller, but images are not pixel-exact
   octavo report.html --maximum           the smallest output, however long it takes
-  octavo report.html --audit             show what each step would save";
+  octavo report.html --audit             show what each step would save
+  octavo _site                           optimize a rendered site's shared files once";
 
 fn default_jobs() -> NonZeroUsize {
     std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)
@@ -105,7 +106,7 @@ fn default_jobs() -> NonZeroUsize {
 struct Optimize {
     #[arg(
         required_unless_present = "completions",
-        help = "HTML file written by Quarto with embed-resources: true"
+        help = "HTML file written by Quarto with embed-resources: true, or the output directory of a rendered site"
     )]
     input: Option<PathBuf>,
     #[arg(help = "Where to write the result [default: <input>.min.html]")]
@@ -151,6 +152,12 @@ struct Optimize {
         help_heading = "Images",
     )]
     max_image_side: Option<NonZeroU32>,
+    #[arg(
+        long,
+        help_heading = "Sites",
+        help = "Rewrite a site directory where it is, which cannot be undone. Needed when the output is the input. Run site mode on a complete, fresh render: rules that no page uses are removed"
+    )]
+    in_place: bool,
     #[arg(
         long,
         help_heading = "Images",
@@ -336,6 +343,7 @@ fn main() -> ExitCode {
         image_quality,
         no_subset_fonts,
         max_image_side,
+        in_place,
         keep_png,
         image_memory,
         resource_path,
@@ -352,7 +360,6 @@ fn main() -> ExitCode {
         eprintln!("{ERROR}error{ERROR:#}: no input file was given");
         return ExitCode::FAILURE;
     };
-    let output = output.unwrap_or_else(|| input.with_extension("min.html"));
     let images = lossy_images.map(|format| {
         let mut encoding = ImageEncoding::new(format);
         encoding.quality = image_quality
@@ -388,9 +395,21 @@ fn main() -> ExitCode {
     } else {
         FetchPolicy::Fetch
     };
-    let result = if audit_only {
+    let result = if input.is_dir() {
+        if level != Mode::default() {
+            Err(format!(
+                "--level {} works on one file, not a directory",
+                level
+            ))
+        } else if audit_only {
+            Err("--audit works on one file, not a directory".to_string())
+        } else {
+            run_site(&input, output, &options, in_place)
+        }
+    } else if audit_only {
         audit(&input, level, options, &resource_path, fetch_policy)
     } else {
+        let output = output.unwrap_or_else(|| input.with_extension("min.html"));
         run(
             &input,
             &output,
@@ -500,6 +519,89 @@ fn spinner() -> ProgressBar {
     let bar = ProgressBar::new_spinner().with_style(style);
     bar.enable_steady_tick(Duration::from_millis(100));
     bar
+}
+
+fn run_site(
+    input: &Path,
+    output: Option<PathBuf>,
+    options: &Options,
+    in_place: bool,
+) -> Result<(), String> {
+    let started = Instant::now();
+    let output = match output {
+        Some(output) => output,
+        None => {
+            let root = fs::canonicalize(input).map_err(|e| format!("{}: {e}", input.display()))?;
+            let mut name = root.file_name().unwrap_or_default().to_os_string();
+            name.push(".min");
+            root.with_file_name(name)
+        }
+    };
+    let same = fs::canonicalize(&output)
+        .is_ok_and(|existing| fs::canonicalize(input).is_ok_and(|root| root == existing));
+    if same && !in_place {
+        return Err(format!(
+            "{} is both the input and the output. Pass --in-place to rewrite it, which cannot be undone, or choose another output",
+            output.display()
+        ));
+    }
+    let progress = spinner();
+    progress.set_message("optimizing the shared files");
+    let report = optimize_directory(input, &output, options).map_err(|e| e.to_string())?;
+    progress.finish_and_clear();
+    for warning in &report.warnings {
+        eprintln!("{WARN}warning{WARN:#}: {warning}");
+    }
+    let mut by_kind: BTreeMap<SiteKind, Savings> = BTreeMap::new();
+    for change in &report.changes {
+        let total = by_kind.entry(change.kind).or_default();
+        total.count += 1;
+        total.before += change.before as usize;
+        total.after += change.after as usize;
+    }
+    println!(
+        "{DIM}{:<12} {:>5} {:>10} {:>10} {:>10}{DIM:#}",
+        "files", "count", "before", "after", "saved"
+    );
+    for (kind, total) in &by_kind {
+        println!(
+            "{:<12} {:>5} {:>10} {:>10} {GOOD}{:>10}{GOOD:#}",
+            site_kind_name(*kind),
+            total.count,
+            size(total.before),
+            size(total.after),
+            size(total.before.saturating_sub(total.after)),
+        );
+    }
+    let saved: usize = by_kind
+        .values()
+        .map(|total| total.before.saturating_sub(total.after))
+        .sum();
+    let before = report.bytes as usize;
+    let after = before.saturating_sub(saved);
+    println!(
+        "\n{} {DIM}[{} pages, {} files, {:.1?}]{DIM:#} {}",
+        output.display(),
+        report.pages,
+        report.files,
+        started.elapsed(),
+        if after < before {
+            summary(before, after)
+        } else {
+            size(before)
+        }
+    );
+    Ok(())
+}
+
+fn site_kind_name(kind: SiteKind) -> &'static str {
+    match kind {
+        SiteKind::Stylesheet => "stylesheets",
+        SiteKind::Script => "scripts",
+        SiteKind::Font => "fonts",
+        SiteKind::Image => "images",
+        SiteKind::Page => "pages",
+    }
 }
 
 fn run(
