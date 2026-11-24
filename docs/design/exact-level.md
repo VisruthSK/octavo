@@ -1,0 +1,109 @@
+# Exact level: inventory
+
+## Browser bridge smoke specification
+
+Use one browser engine to render one compact document before and after exact optimization, and compare the rendered output. Include `white-space: pre` text, a visible space between inline-block elements, a `content` string containing whitespace and comment-like text, a custom property whose text is substituted into a declaration, and comments inside CSS values. Assert the text and generated content, measure the gap between inline blocks, and compare screenshots. These checks exercise the connection between the pinned CSS rules and browser behavior once; the oracle's negative tests establish that known changes are rejected.
+
+Step 1 of the `exact-level` task (issue context: `Mode` redesign, steps 3–4 of `engine-redesign-scope.md`). This records every transform Octavo applies today, read from the code on `main` (9208527). The class column separates transforms that are semantics-preserving by construction — the argument does not depend on guessing what the document uses — from heuristics, which guess selectors, classes, ids, scripts or characters and can be wrong.
+
+## How a document is processed
+
+`simplify` runs stages 1–6 for every mode; [`Mode`](../../../crates/octavo/src/lib.rs) (`Safe`, `Scripts`, `Packed`) only selects packaging. `Safe` therefore keeps the name of a conservative level while running every heuristic below; the design note already records that this overstates it.
+
+`embed_resources` (stage 0) is a separate input step that turns a page that links local files into the self-contained page the stages expect; it is not part of `optimize`.
+
+## Inventory
+
+| # | Stage | Transform | What it changes | Class | What could go wrong | Corpus fixtures |
+|---|---|---|---|---|---|---|
+| 0 | `embed.rs` `embed_resources` | — | Inlines local scripts, stylesheets, images and icons as `data:` URLs; inside embedded CSS, `url()` references are embedded and bare `@import`s are inlined in place, others rewritten to data URLs | By construction, given a correct `Resources` provider | Relative URL rebasing inside nested stylesheets; `@import` with media/supports/layer kept as a reference must still resolve; the provider, not Octavo, decides which files exist | `validation` (2), `tests/it/embed.rs` |
+| 1 | `quarto.rs` `stage` | `DeadLibrary` | Detects bundled Quarto runtime scripts (Tippy, Bootstrap, Popper, clipboard.js, AnchorJS) by a signature in the first 300 bytes of a script larger than 2 KB; removes a script it decides is dead, replacing the first with a null-object stub | Heuristic | The liveness check looks for `data-bs-*`/note-link words and the library's global name in other scripts' text. Classes and attributes that only appear at runtime (added by scripts, by user interaction, or by CSS-generated content driving selectors) are invisible to the word index, so a live library can be judged dead. The signature match could also hit a script that is not that library | `libraries` (40), `quarto` (58) |
+| 2 | `js.rs` `stage` | `MinifiedScript` | Parses classic and module scripts with oxc, compresses and mangles top-level names, reprints minified; inlines a unique module script whose `src` is a data URL; skips importmap, speculationrules and data blocks, non-UTF-8 sources, and code that looks already minified | Heuristic | Mangling preserves behaviour only for code that never observes source text (`Function.prototype.toString`, `eval` over names, stack traces). The oxc compressor is trusted, not proven. Inlining a module script changes `document.currentScript`, `import.meta.url` and the import resolution base for its own body | `javascript` (18), `modules` (6), `script-tags` (16) |
+| 3 | `css.rs` `stage` | `PrunedStylesheet` | Parses each stylesheet with lightningcss; prunes selectors whose classes, ids and tag names the word index cannot find; drops custom-property declarations whose name is never referenced (`var(` inside the sheet, or any word in the document); minifies; restores rules that had parse warnings or `calc()` with `/` or `*` that folds inexactly; keeps the unprefixed `backdrop-filter` | Heuristic | Pruning depends on the word index: classes, ids and tags that appear only through script-driven DOM changes are missing, so reachable rules are dropped. The custom-property shield can drop a variable referenced only from CSS injected at runtime or from a marker-isolated rule. Value minification and rule merging are trusted to lightningcss; the code already hedges against two known inexact folds (parse warnings, `calc()` division), which is evidence that minification is not by construction | `css` (49), `parsing` (48), `scale` (26) |
+| 4 | `fonts.rs` `rewrite` (inside stage 3) | `PrunedStylesheet` + `FontKeptWhole` | Every `@font-face` with a data-URL source is transcoded to WOFF2; text fonts are subsetted to the document's characters plus Latin ranges plus case variants; fonts with hinting programs (`fpgm`, `prep`, `cvt `) are kept whole instead and reported; icon fonts (pseudo-element-only families) are subsetted to characters reachable from CSS `content` strings, or all ASCII when `attr()`/`counter` appear; `@font-face` rules whose family the word index never mentions are dropped | Heuristic | Subsetting drops glyphs for text a script adds later — the documented fallback is a system font. Icon coverage is guessed from CSS `content`. A family applied only through JavaScript (`element.style.fontFamily`) or spelled differently is dropped by the usage check. Subsetting a hinted static font changes strokes on Linux — the reason the code keeps those whole — which shows the transform is not provably rendering-identical | `fonts` (18), `css` (49) |
+| 5 | `images.rs` `stage` (default) | `RecompressedPng` | PNG re-encoded by oxipng, stripping every chunk except the rendering-relevant ones (`cICP iCCP sRGB gAMA cHRM pHYs eXIf acTL fcTL fdAT`); additionally, when the PNG is 8-bit, has no colour-profile or animation chunks and no partial alpha, it is re-encoded as lossless WebP with `exact=1`, kept only when smaller | By construction, within correct decoders | oxipng re-encodes the same decoded pixels losslessly; the chunks it strips are ignorable per the PNG spec; VP8L lossless with `exact=1` reproduces RGBA exactly, and the restricted input set (8-bit, no profiles, no animation, no partial alpha) avoids the cases where browsers have historically differed. The remaining risk is an encoder bug, not a guessed decision | `images` (37) |
+| 6 | `images.rs` `stage` (`options.images` set) | `ReencodedImage` | Lossy AVIF or WebP re-encode, optional downscale of the longest side | Not semantics-preserving | Pixels change by design; layout can shift | `images` (37) |
+| 7 | `doc.rs` `Edits` | engine | Sorts edits by span start, drops edits that overlap an earlier one (reported as skipped), applies the survivors in order | By construction | Only ordering and conflict accounting; a byte range claimed by two stages is decided by span order, not by safety | `tests/it/regressions.rs` |
+| 8 | `pack.rs` `run` (Scripts, Packed) | `Packed` | Repackages scripts — plus stylesheets, inline SVG and images at `Packed` — into one base91 blob that an inlined loader decompresses; the page needs JavaScript at `Packed` | Heuristic | Changes the runtime structure. The guards (CSP text check, `&` in attributes, `<!--` next to `<script`, `on*=` handlers, minimum sizes) are heuristics over content that also depends on script behaviour for anything about timing, fetching or DOM readiness | `script-tags` (16), `scale` (26) |
+
+## What the corpus covers
+
+The 318 hand-written fixtures are grouped by topic in `corpus/docs/*.mjs`; the counts above are per family. The `smoke` tier (59 fixtures) covers every category and runs on every push; `full` is the rest.
+
+## Notes for the exact-level design (step 2 preview)
+
+- Transforms 5 (lossless PNG recompress and the guarded lossless WebP conversion) are the only large ones already argued from format properties rather than from document content.
+- Base64 normalisation is exercised by fixtures (`assets-base64-with-whitespace`, `assets-base64-with-a-missing-pad`, `assets-base64-with-an-extra-pad`) and is by construction: decoding a data URL is a total function of its bytes, so re-encoding canonically cannot change what a browser decodes.
+- The engine (stage 7) is already deterministic given the edit set: edits are sorted by span and overlaps are resolved in a fixed order. The word-index `Words` set is used for membership only.
+- Cache use (`fonts.rs` + `cache.rs`) is keyed by input bytes and quality, so it changes performance, not output; determinism must still be proven against a warm and a cold cache.
+- Anything that consults the word index (`quarto.rs`, `css.rs` pruning, `fonts.rs` decisions), anything minifier-driven beyond provable value rewrites (`js.rs`, `css.rs`), and anything that changes the runtime structure (`pack.rs`) cannot belong to a level whose guarantee is by construction.
+
+## Step 2: the exact set
+
+The level is named **exact**: same input bytes and same options produce identical output bytes on every machine, and every transform in the set changes what a browser renders by nothing — not approximately, by nothing, each argued from the format specifications rather than from guesses about the document. The set is closed: anything not listed here does not run.
+
+### Included
+
+| # | Transform | Exact rules | Why it cannot change rendering |
+|---|---|---|---|
+| E1 | Base64 payload normalisation | For every `data:` URL, the bytes after `;base64,` are re-emitted as canonical standard-alphabet base64 of the decoded bytes (whitespace inside the payload removed, padding completed, lowercase implied alphabet fixed). The scheme, media type and every parameter before `;base64,` stay byte-for-byte as written. | A data URL is a total function of its text to a byte string, per the WHATWG fetch data-URL parser: whitespace is ignored and non-canonical base64 decodes to the same bytes. A canonical re-encoding of the same decoded bytes is a different spelling of the same value. Nothing else in the attribute value is touched, so no attribute semantics move. |
+| E2 | PNG lossless recompress | oxipng `optimize_from_memory` with a pinned preset and `strip: Keep(cICP iCCP sRGB gAMA cHRM pHYs eXIf acTL fcTL fdAT)`, adopted only when strictly smaller. | oxipng decodes the image and re-encodes the same pixels with lossless zlib; any conformant PNG decoder produces identical pixels. Every stripped chunk is ancillary (the keep-list covers the chunks the PNG spec says affect rendering: colour spaces, physical dimensions, orientation metadata and animation), and ancillary chunks are ignorable by definition. |
+| E3 | Guarded lossless WebP conversion | Only for PNGs whose chunk walk shows: 8-bit depth, no `iCCP`/`cICP`/`gAMA`/`cHRM`/`eXIf`/`acTL` colour-profile or animation chunks, no partially transparent pixel. VP8L lossless encoding with `exact=1`, pinned method and quality, adopted only when strictly smaller than the best PNG. | VP8L is a lossless format: the decoder reproduces the encoded RGBA array exactly, and `exact=1` keeps the RGB channels under fully transparent pixels. The guards exclude the inputs where browsers have historically differed from the reference decoder (colour management, 16-bit depth, animation, non-binary alpha), so the decoded pixel array is bit-identical in every browser. |
+| E4 | Whole-font WOFF2 re-encode | Every `@font-face` source that is a data URL with a WOFF, WOFF2 or raw sfnt payload is decompressed (woff1/woff2 reversed) and re-encoded to WOFF2 with no subsetting: all glyphs, all tables, all layout features, pinned Brotli quality. Kept only when smaller; otherwise the original bytes stay. | WOFF2 is a lossless container transform defined by the W3C WOFF2 specification: the table directory is compressed and the `glyf`/`loca` tables undergo the spec's reversible transformation; every other table is stored or reconstructed exactly. Encoding a font whole is a different container for the same font data; a browser that honours the spec renders the identical outlines, metrics and features. No subsetting decision exists, so no glyph the document may ever use is lost. |
+| E5 | CSS comment removal | `/* ... */` removed everywhere a comment is recognised as a comment by the CSS tokenizer: outside quoted strings, outside `url(<unquoted>)` tokens, outside `<script>`-like edge contexts (there are none in CSS). Comments inside strings and inside unquoted `url()` tokens are literal and stay. | Per the CSS Syntax spec a comment is not a token and produces nothing in any token stream; its removal cannot change how any declaration, at-rule or selector parses. (Conditional comments are an HTML construct; no HTML whitespace or markup is edited at this level.) |
+| E6 | CSS whitespace removal | A whitespace run between two tokens is removed only when the run is adjacent to a structural token that already separates tokens: after `{`, `}`, `;`, `:`, `,` or before `{`, `}`, `;`, `,`, `)`; a run is collapsed to one space everywhere else, and never removed between two tokens that could join into one token (identifier next to identifier or number, hash next to name chars, `+`/`-` next to number). Inside quoted strings and unquoted `url()` tokens nothing changes. No whitespace rule applies inside custom property declarations (`--*`), whose values are substituted verbatim. | The rules only delete separators that the tokenizer does not need (a `{`, `;`, `,` or `:` already terminates the previous token) and otherwise keep one whitespace so no two tokens can merge into one token. Token identity is all that CSS parsing consumes. |
+| E7 | CSS number and colour shortening | `0.50em` → `.5em` (trailing fraction zeros and the leading zero; never the whole fraction, since `1.0` is a number and `1` an integer, which `z-index` tells apart); `#aabbcc` → `#abc` and `#aabbccdd` → `#abcd` inside a declaration value only, never in a selector. Exponent numbers, signs and integer digits are untouched. | The CSS number grammar gives both spellings the same value and the same integer-ness; hex shortening is defined by the spec. The oracle compares numbers by value and integer-ness and hex colours by RGBA, and treats a hash as a colour only when its statement ends in `;` or `}`. |
+| E8 | Removed from the exact set | Zero-length unit stripping is not exact: `flex: 1 0px` and `flex: 1 0` differ, and a unitless zero is invalid in many math-function positions. It moves to `serve`, where lightningcss applies it property by property. | The exact level cannot prove it without a property table. |
+| E9 | Empty-rule removal | A top-level style rule with an empty block, and an empty `@media`/`@supports`/`@container` block, is removed. | A rule with no declarations contributes nothing to the cascade. Skipped when the document has any script, because removing a rule shifts `document.styleSheets[i].cssRules[j]`. |
+| E10 | Repeated adjacent rule | A top-level style rule whose text is byte-identical to the rule just before it is removed. | Two adjacent identical rules apply the same declarations at the same specificity, and nothing sits between them to win. Skipped when the document has any script, for the same reason as E9. |
+
+### Excluded, with the reason
+
+| Transform (inventory #) | Reason it is not exact |
+|---|---|
+| Dead-library removal (1) | Depends on the word index and signature matching; a live library can be judged dead. |
+| Script minification and module inlining (2) | The mangler is trusted, not proven: code that observes source text (`Function.prototype.toString`, `eval` on names) can break, and inlining a module changes `document.currentScript`, `import.meta.url` and the import resolution base. |
+| Selector pruning and custom-property shield (3) | Both depend on the word index, which cannot see DOM changes made by scripts. |
+| lightningcss general minification (3) | Value folding and rule merging are outside the enumerated rules E5–E10; the existing code itself hedges around two inexact folds, which shows they are not by construction. |
+| Font subsetting and `@font-face` dropping (4) | Drops glyphs for text scripts may add and families the word index cannot see applying. |
+| Lossy image re-encode (6) | Changes pixels by design. |
+| Packing (8) | Changes the runtime structure and needs JavaScript. |
+| HTML whitespace or markup edits | Inter-element whitespace renders between inline boxes; whether it does depends on the applied CSS, which is exactly the kind of knowledge the exact level refuses to guess. Attribute values except the E1 payload stay as written. |
+
+### Determinism
+
+Output bytes are a pure function of (input bytes, options, crate versions):
+
+- Every codec setting is pinned or comes from `options.compression`, never from wall-clock time, thread count or machine word size. `ttf2woff2` runs with `threads: None`; oxipng and webp encoders are invoked with fixed parameters.
+- The font cache changes performance only: entries are keyed by input bytes and quality, and a warm cache returns the same bytes that a cold cache computes.
+- Edits are applied in span order with conflicts resolved by a fixed rule (the existing `Edits` engine), and no output path iterates a hash set. Parallel execution (`rayon`) collects in deterministic order at every existing collection site that the exact stages use.
+- E2/E3/E4 keep an edit only when it is strictly smaller, and equal-size candidates keep the original, so no tie needs breaking.
+
+### What the guarantee covers
+
+Every byte Octavo emits decodes to exactly what the input decoded to: the same pixels (E2, E3), the same font (E4), the same resource bytes (E1), and CSS that parses to the same declarations in the same cascade order (E5–E10). Anything Octavo does not understand is left untouched, as today. What the level does NOT promise: it does not promise the output is smaller than a heuristic level, and it does not promise anything about HTML outside the tagged resources.
+
+## Translation Validation and Oracles
+
+Equivalence holds by construction via translation validation: every exact transform is paired with an independent oracle that verifies whether output equals input semantically. A transform's result is adopted only if its oracle accepts it; otherwise the original bytes are kept and the report notes the rejection.
+
+### Architectural Decisions
+
+1. **No `--verify-exact` CLI flag:** There is no new public CLI surface for checking. Oracles live entirely at library level (`crates/octavo`, module `octavo::exact::oracle`) and are exercised by unit tests and a corpus test, not by a CLI flag. The CLI gains only the `--level exact` value (`Mode::Exact`).
+2. **Library-level execution:** Transforms, oracle gating, and report entries live strictly in the library (`octavo`). The CLI is thin: it parses options and prints output.
+
+### Oracle Inventory
+
+| Domain | Oracle Scope | Equivalence Condition | Failure Action |
+|---|---|---|---|
+| Base64 (E1) | Decoded bytes | `decode(output) == decode(input)` | Keep original data URL |
+| Images (E2, E3) | Pixel buffers & ancillary chunks | Decoded RGBA pixel buffer byte-equal across all pixels (including colour under fully transparent alpha), bit depth and colour type match, and kept rendering-relevant chunks (`gAMA`, `cHRM`, `sRGB`, `iCCP`, `pHYs`) are identical | Keep original image bytes |
+| Fonts (E4) | Table directory & sfnt tables | WOFF2 decoded back to sfnt; tables match input sfnt table-by-table after normalising table order and padding. The `head` table may differ only in `checkSumAdjustment` and flags bit 11; its directory checksum may differ by the corresponding bit contribution. All other table bytes and directory checksums match. | Keep original font bytes |
+| CSS (E5–E10) | cssparser token stream | Identical cssparser token stream modulo comments and pinned-insignificant whitespace; numbers match by parsed value and unit; hex colours match by RGBA; no rule added, dropped (except empty rules and byte-identical duplicates under adjacency rule), or reordered | Keep original CSS text |
+
+## Browser-free corpus check
+
+Run `node corpus/build.mjs --check`, then `cargo test -p octavo --lib exact_corpus_and_byte_price -- --ignored --nocapture`. The test reads every fixture in the manifest and every HTML file under the rendered upstream cache. Set `OCTAVO_EXACT_UPSTREAM_CACHE` to that rendered directory when it is not at the local default path. It verifies that output consists solely of the exact stage's validated edit spans, reports applied and rejected candidates and the number of documents unchanged by each transform, and fails on oracle rejections. The byte comparison uses every accepted fixture and the first 20 accepted upstream documents in sorted order.
+
+Implemented: E1 to E10. Outstanding: none of E1 to E10, and compile-time enforcement that every stage carries `Proven`. Zero-unit stripping is removed from the exact set. Open: JavaScript comment and whitespace removal is implemented with a hand-written token joiner; it should be rebuilt on the oxc printer and gated by the AST oracle. The corpus check does not substitute for the browser bridge smoke above.
+

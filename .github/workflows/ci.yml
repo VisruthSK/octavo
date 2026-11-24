@@ -76,6 +76,24 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --locked --workspace
 
+  exact:
+    name: Exact corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node corpus/build.mjs
+      - run: cargo test --locked --release -p octavo exact_corpus_and_byte_price -- --ignored --nocapture
+
   browser:
     name: Browser tests
     runs-on: ubuntu-24.04

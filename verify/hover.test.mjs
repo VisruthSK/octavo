@@ -46,3 +46,26 @@ test(`${engine.name} hovered popovers end in the same state however long they ta
     await browser.close();
   }
 });
+
+test(`${engine.name} a popover that is placed by a resize is placed before the hover step returns`, async () => {
+  const browser = await engine.launch();
+  try {
+    const tab = await browser.newPage({ viewport: { width: 390, height: 600 } });
+    await tab.setContent(`<style>body{margin:0}a{display:inline-block;width:80px;height:30px}div[data-tippy-root]{position:absolute;top:60px;left:0;width:439px;height:20px}</style>
+<a class="quarto-xref" href="#a">a</a>
+<script>
+document.querySelector("a").addEventListener("mouseenter", () => {
+  const root = document.body.appendChild(document.createElement("div"));
+  root.setAttribute("data-tippy-root", "");
+  root.style.left = "100px";
+  window.addEventListener("resize", () => requestAnimationFrame(() => (root.style.left = "-49px")));
+});
+</script>`);
+    await hoverPopovers(tab);
+    const width = await tab.evaluate(() => document.documentElement.scrollWidth);
+    assert.equal(width, 390);
+    await tab.close();
+  } finally {
+    await browser.close();
+  }
+});

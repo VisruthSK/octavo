@@ -36,6 +36,20 @@ const NO_MOTION = "*,*::before,*::after{transition:none!important;animation:none
 
 const popoverRoots = "[data-tippy-root]";
 
+const popoverAtRest = (selector) => {
+  const root = document.querySelector(selector);
+  const state = (globalThis[Symbol.for("octavo.popover")] ??= { rect: "", frames: 0 });
+  if (!root) {
+    state.rect = "";
+    state.frames = 0;
+    return false;
+  }
+  const rect = JSON.stringify(root.getBoundingClientRect());
+  state.frames = rect === state.rect && root.getAnimations({ subtree: true }).length === 0 ? state.frames + 1 : 0;
+  state.rect = rect;
+  return state.frames >= 3;
+};
+
 export async function hoverPopovers(page) {
   const targets = (await page.$$(".footnote-ref, a[role=doc-biblioref], a.quarto-xref")).slice(0, 3);
   for (const target of targets) {
@@ -43,7 +57,16 @@ export async function hoverPopovers(page) {
     await page.waitForFunction((selector) => !document.querySelector(selector), popoverRoots, { timeout: 2000 }).catch(() => {});
     await target.hover({ timeout: 2000 }).catch(() => {});
   }
-  if (targets.length > 0) await page.waitForFunction((selector) => document.querySelector(selector), popoverRoots, { timeout: 2000 }).catch(() => {});
+  if (targets.length > 0) {
+    await page.waitForFunction((selector) => document.querySelector(selector), popoverRoots, { timeout: 2000 }).catch(() => {});
+    await page
+      .evaluate(() => {
+        window.dispatchEvent(new Event("resize"));
+        return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      })
+      .catch(() => {});
+    await page.waitForFunction(popoverAtRest, popoverRoots, { timeout: 2000, polling: "raf" }).catch(() => {});
+  }
   return targets.length > 0;
 }
 
@@ -682,11 +705,45 @@ export async function settleFonts() {
 }
 
 
-export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
-  const pageSize = await page.evaluate(() => ({
+const documentSize = (page) =>
+  page.evaluate(() => ({
     width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth ?? 0),
     height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0),
   }));
+
+const renderWholePage = (page) =>
+  page
+    .evaluate(async () => {
+      const step = Math.max(window.innerHeight, 1);
+      for (let top = 0; top < document.documentElement.scrollHeight; top += step) {
+        window.scrollTo({ left: 0, top, behavior: "instant" });
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }
+      window.scrollTo({ left: 0, top: 0, behavior: "instant" });
+    })
+    .catch(() => {});
+
+const layoutSize = async (page) => {
+  try {
+    const session = await page.context().newCDPSession(page);
+    try {
+      const { cssContentSize } = await session.send("Page.getLayoutMetrics");
+      return { width: Math.ceil(cssContentSize.width), height: Math.ceil(cssContentSize.height) };
+    } finally {
+      await session.detach().catch(() => {});
+    }
+  } catch {
+    return null;
+  }
+};
+
+export async function captureScreenshot(page, viewport, onTile = () => {}, javaScriptEnabled = true) {
+  const measure = async () => (await layoutSize(page)) ?? (await documentSize(page));
+  let pageSize = await measure();
+  if (Math.max(viewport.height, pageSize.height) > MAX_FULL_PAGE_HEIGHT) {
+    await renderWholePage(page);
+    pageSize = await measure();
+  }
   const width = Math.max(viewport.width, pageSize.width);
   const height = Math.max(viewport.height, pageSize.height);
   let fullPageError = `page height exceeds ${MAX_FULL_PAGE_HEIGHT} pixels`;
@@ -706,8 +763,11 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
   const originalScroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
   const tiles = [];
   let bytes = 0;
+  let captured = 0;
   try {
     for (const y of positions(height, tileHeight)) {
+      const available = Math.max(viewport.height, (await measure()).height);
+      if (y >= available) break;
       for (const x of positions(width, tileWidth)) {
         const started = performance.now();
         let evaluated;
@@ -718,7 +778,7 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
           }, [x, y, javaScriptEnabled]);
           evaluated = performance.now();
           const clipWidth = Math.min(tileWidth, width - x);
-          const clipHeight = Math.min(tileHeight, height - y);
+          const clipHeight = Math.min(tileHeight, available - y);
           const png = await page.screenshot({
             fullPage: true,
             clip: { x, y, width: clipWidth, height: clipHeight },
@@ -728,6 +788,7 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
           bytes += png.length;
           if (bytes > MAX_SCREENSHOT_BYTES) return { kind: "limit", width, height, limit: MAX_SCREENSHOT_BYTES, reason: "tile bytes" };
           tiles.push({ x, y, width: clipWidth, height: clipHeight, png });
+          captured = Math.max(captured, y + clipHeight);
         } finally {
           const ended = performance.now();
           onTile({ x, y, evaluateMs: (evaluated ?? ended) - started, screenshotMs: evaluated ? ended - evaluated : 0 });
@@ -735,11 +796,11 @@ export async function captureScreenshot(page, viewport, onTile = () => {}, javaS
       }
     }
   } catch (error) {
-    throw new Error(`full-page screenshot: ${fullPageError}; tiled screenshot: ${error.message}`);
+    throw new Error(`full-page screenshot: ${fullPageError}; tiled screenshot of ${width}x${height} in ${tileWidth}x${tileHeight} tiles after ${tiles.length}: ${error.message}`);
   } finally {
     await page.evaluate(([left, top]) => window.scrollTo({ left, top, behavior: "instant" }), originalScroll);
   }
-  return { kind: "tiles", width, height, tiles };
+  return { kind: "tiles", width, height: captured, tiles };
 }
 
 export async function capture(
