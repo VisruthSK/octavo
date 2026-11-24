@@ -15,16 +15,16 @@ test("the committed manifest matches what the specs build", async () => {
   assert.deepEqual(readManifest(), built);
 });
 
-test("every category has a smoke document", async () => {
+test("every category has a subset document", async () => {
   const specs = await loadSpecs();
   const categories = new Set(specs.map((spec) => spec.category));
   for (const category of categories) {
-    assert.ok(specs.some((spec) => spec.category === category && spec.tier === "smoke"), category);
+    assert.ok(specs.some((spec) => spec.category === category && spec.tier === "subset"), category);
   }
 });
 
-test("at most a quarter of the corpus is in the smoke tier", async () => {
+test("at most a quarter of the corpus is in the subset tier", async () => {
   const specs = await loadSpecs();
-  const smoke = specs.filter((spec) => spec.tier === "smoke").length;
-  assert.ok(smoke * 4 <= specs.length || specs.length < 40, `${smoke} of ${specs.length}`);
+  const subset = specs.filter((spec) => spec.tier === "subset").length;
+  assert.ok(subset * 4 <= specs.length || specs.length < 40, `${subset} of ${specs.length}`);
 });

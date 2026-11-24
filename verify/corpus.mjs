@@ -105,7 +105,7 @@ export const ignoredArchiveNoJsIssue = (issue) => !issue.startsWith("check incom
 export const generateReport = formatReport;
 export function formatReport(results, options = {}) {
   const {
-    tier = "smoke",
+    tier = "subset",
     selectedCount = results.length,
     levels = ["serve", "archive"],
     browser = false,
@@ -239,7 +239,7 @@ export async function runCorpus() {
     const at = process.argv.indexOf(`--${name}`);
     return at < 0 ? fallback : (process.argv[at + 1] ?? fallback);
   };
-  const tier = flag("tier", "smoke");
+  const tier = flag("tier", "subset");
   const deadlineMinutes = Number(flag("deadline-minutes", "0"));
   if (!Number.isFinite(deadlineMinutes) || deadlineMinutes < 0) throw new RangeError("deadline-minutes must be a non-negative number");
   const deadlineAt = deadlineMinutes ? Date.now() + deadlineMinutes * 60_000 : Infinity;
@@ -302,7 +302,7 @@ export async function runCorpus() {
   const shard = shardCount ? { index: shardPosition - 1, count: shardCount } : undefined;
   const allHandWritten = (await materialize())
     .map((row) => ({ ...row, path: documentPath(row.id) }))
-    .filter((row) => tier === "full" || row.tier === "smoke");
+    .filter((row) => tier === "full" || row.tier === "subset");
   const handWritten = shardSlice(allHandWritten, shard, costs, engine.name);
   const selectionFile = join(root, "corpus", "selection.json");
   const allUpstream = (upstream && existsSync(selectionFile)

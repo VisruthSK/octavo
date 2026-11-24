@@ -22,10 +22,10 @@ on:
   workflow_dispatch:
     inputs:
       tier:
-        description: smoke is a quick stratified sample, full is every document, select rebuilds corpus/selection.json from every upstream document
+        description: subset is a quick stratified sample, full is every document, select rebuilds corpus/selection.json from every upstream document
         type: choice
-        options: [smoke, full, select]
-        default: smoke
+        options: [subset, full, select]
+        default: subset
       self:
         description: Verify each document against itself, so any difference is verifier noise
         type: boolean
@@ -98,7 +98,7 @@ jobs:
           if [ "$EVENT" = workflow_dispatch ]; then
             tier="$REQUESTED"
           elif [ "$EVENT" = pull_request ] || { [ "$EVENT" = push ] && [ "$REF_TYPE" = branch ]; }; then
-            tier=smoke
+            tier=subset
           else
             tier=full
           fi
@@ -149,8 +149,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      CARGO_PROFILE_RELEASE_LTO: ${{ needs.plan.outputs.tier == 'smoke' && 'off' || 'true' }}
-      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ needs.plan.outputs.tier == 'smoke' && '16' || '1' }}
+      CARGO_PROFILE_RELEASE_LTO: ${{ needs.plan.outputs.tier == 'subset' && 'off' || 'true' }}
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ needs.plan.outputs.tier == 'subset' && '16' || '1' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -178,7 +178,7 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.55.0-noble
       options: --init --ipc=host
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 75 || 345 }}
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'subset' && 75 || 345 }}
     strategy:
       fail-fast: false
       matrix:
@@ -226,8 +226,8 @@ jobs:
           INPUT_FILTER: ${{ inputs.filter || '.' }}
           OCTAVO_ARGS: ${{ inputs.octavo_args }}
           SELF: ${{ inputs.self && '--self' || '' }}
-        run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "$INPUT_FILTER" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'smoke' && 58 || 320 }}" --octavo-args "$OCTAVO_ARGS" $SELF
-        timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 65 || 335 }}
+        run: node verify/corpus.mjs --tier "$TIER" --browser --shard "$SHARD" --filter "$INPUT_FILTER" --out "out/engines-${{ matrix.browser }}-${{ matrix.shard }}" --deadline-minutes "${{ needs.plan.outputs.tier == 'subset' && 58 || 320 }}" --octavo-args "$OCTAVO_ARGS" $SELF
+        timeout-minutes: ${{ needs.plan.outputs.tier == 'subset' && 65 || 335 }}
       - uses: actions/cache/save@v6
         if: always()
         continue-on-error: true
@@ -299,7 +299,7 @@ jobs:
     container:
       image: mcr.microsoft.com/playwright:v1.55.0-noble
       options: --init --ipc=host
-    timeout-minutes: ${{ needs.plan.outputs.tier == 'smoke' && 45 || 300 }}
+    timeout-minutes: ${{ needs.plan.outputs.tier == 'subset' && 45 || 300 }}
     strategy:
       fail-fast: false
       matrix:

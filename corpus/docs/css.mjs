@@ -11,7 +11,7 @@ export default [
   {
     id: "css-modern-selectors-and-at-rules-survive",
     category: "css",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: [".card:has(", "@layer base", "@container", ":is(.a,.b)"],
@@ -26,7 +26,7 @@ export default [
   {
     id: "css-class-reachable-only-from-markup",
     category: "css",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: [".from-markup{margin-left:1px}"],
@@ -41,7 +41,7 @@ export default [
   {
     id: "css-class-added-by-classlist-add",
     category: "css",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: [".added-at-runtime{margin-left:1px}"],
@@ -56,7 +56,7 @@ export default [
   {
     id: "css-class-built-by-concatenation",
     category: "css",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: [".col-md-6{margin-left:1px}"],
@@ -71,7 +71,7 @@ export default [
   {
     id: "css-rule-with-an-attribute-selector-is-kept",
     category: "css",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: ["[data-marker]{margin-left:1px}"],
@@ -82,7 +82,7 @@ export default [
   {
     id: "css-media-block-survives-when-a-rule-survives",
     category: "css",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: ["@media screen{.live{margin-left:1px}}"],
@@ -97,14 +97,14 @@ export default [
   {
     id: "css-empty-media-block-disappears",
     category: "css",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", removes: ["@media print", ".nowhere{"] },
     build: () => page("<style>@media print{.nowhere{margin-left:2px}}</style>", "<p>x</p>"),
   },
   {
     id: "css-custom-property-used-only-by-a-script-survives",
     category: "css",
-    tier: "smoke",
+    tier: "subset",
     expect: {
       outcome: "optimizes",
       retains: ["--read-at-runtime:2"],
@@ -119,7 +119,7 @@ export default [
   {
     id: "css-invalid-stylesheet-is-left-untouched",
     category: "css",
-    tier: "smoke",
+    tier: "subset",
     expect: { outcome: "optimizes", retains: ["@@@ {{{ not css"], removes: [".witness{"] },
     build: () => page("<style>@@@ {{{ not css</style>" + witness, "<p>x</p>"),
   },

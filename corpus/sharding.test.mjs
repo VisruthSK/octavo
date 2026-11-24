@@ -7,26 +7,26 @@ import { assign, shardSlice } from "./sharding.mjs";
 
 const selectionPath = join(import.meta.dirname, "selection.json");
 const selection = JSON.parse(readFileSync(selectionPath, "utf8"));
-const smokeUpstream = selection.filter((entry) => entry.tier === "smoke");
+const subsetUpstream = selection.filter((entry) => entry.tier === "subset");
 
 const manifestPath = join(import.meta.dirname, "manifest.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-const smokeManifest = manifest.filter((entry) => entry.tier === "smoke");
-const allSmoke = [...smokeManifest, ...smokeUpstream];
+const subsetManifest = manifest.filter((entry) => entry.tier === "subset");
+const allSubset = [...subsetManifest, ...subsetUpstream];
 
 const costs = readCosts();
 
 test("balanced assignment is deterministic", () => {
   for (const engine of ["chromium", "firefox", "webkit"]) {
-    const run1 = assign(smokeUpstream, costs, 4, engine);
-    const run2 = assign(smokeUpstream, costs, 4, engine);
+    const run1 = assign(subsetUpstream, costs, 4, engine);
+    const run2 = assign(subsetUpstream, costs, 4, engine);
     assert.deepStrictEqual(run1, run2);
   }
 });
 
 test("the union of all shards equals the input with no duplicates for counts 2, 4 and 10", () => {
   for (const engine of ["chromium", "firefox", "webkit"]) {
-    for (const input of [smokeUpstream, selection]) {
+    for (const input of [subsetUpstream, selection]) {
       for (const count of [2, 4, 10]) {
         const shards = assign(input, costs, count, engine);
         assert.equal(shards.length, count);
@@ -45,8 +45,8 @@ test("the union of all shards equals the input with no duplicates for counts 2, 
 
 test("the heavy documents land in different shards at count 4", () => {
   for (const engine of ["chromium", "firefox", "webkit"]) {
-    const shards = assign(smokeUpstream, costs, 4, engine);
-    const sorted = [...smokeUpstream].sort((a, b) => costOf(b, costs, engine) - costOf(a, costs, engine));
+    const shards = assign(subsetUpstream, costs, 4, engine);
+    const sorted = [...subsetUpstream].sort((a, b) => costOf(b, costs, engine) - costOf(a, costs, engine));
     const top4 = sorted.slice(0, 4);
     const assignedShards = new Set();
     for (const heavy of top4) {
@@ -84,30 +84,30 @@ test("for counts 4 and 10 and each engine the shards cover the selection exactly
   }
 });
 
-test("the heaviest shard is within a stated bound of the average on smoke documents", () => {
+test("the heaviest shard is within a stated bound of the average on subset documents", () => {
   for (const engine of ["chromium", "firefox", "webkit"]) {
     for (const count of [2, 4]) {
-      const shards = assign(allSmoke, costs, count, engine);
+      const shards = assign(allSubset, costs, count, engine);
       const shardCosts = shards.map((shard) => shard.reduce((sum, item) => sum + costOf(item, costs, engine), 0));
       const totalCost = shardCosts.reduce((a, b) => a + b, 0);
       const average = totalCost / count;
       const maxCost = Math.max(...shardCosts);
       assert.ok(maxCost <= average * 1.25);
     }
-    const shards10 = assign(allSmoke, costs, 10, engine);
+    const shards10 = assign(allSubset, costs, 10, engine);
     const costs10 = shards10.map((shard) => shard.reduce((sum, item) => sum + costOf(item, costs, engine), 0));
     const total10 = costs10.reduce((a, b) => a + b, 0);
     const average10 = total10 / 10;
     const max10 = Math.max(...costs10);
-    const maxDoc10 = Math.max(...allSmoke.map((item) => costOf(item, costs, engine)));
+    const maxDoc10 = Math.max(...allSubset.map((item) => costOf(item, costs, engine)));
     const bound10 = Math.max(average10 * 1.30, maxDoc10);
     assert.ok(max10 <= bound10);
   }
 });
 
 test("a document missing from costs.json still gets assigned", () => {
-  const missing = { id: "unknown-synthetic-doc", tier: "smoke", bytes: 2048 };
-  const items = [...smokeUpstream, missing];
+  const missing = { id: "unknown-synthetic-doc", tier: "subset", bytes: 2048 };
+  const items = [...subsetUpstream, missing];
   for (const engine of ["chromium", "firefox", "webkit"]) {
     const shards = assign(items, costs, 4, engine);
     const found = shards.flat().find((item) => item.id === missing.id);
@@ -119,8 +119,8 @@ test("a document missing from costs.json still gets assigned", () => {
 test("shardSlice returns slice matching assign", () => {
   for (const engine of ["chromium", "firefox", "webkit"]) {
     for (let index = 0; index < 4; index++) {
-      const slice = shardSlice(smokeUpstream, { index, count: 4 }, costs, engine);
-      const expected = assign(smokeUpstream, costs, 4, engine)[index];
+      const slice = shardSlice(subsetUpstream, { index, count: 4 }, costs, engine);
+      const expected = assign(subsetUpstream, costs, 4, engine)[index];
       assert.deepStrictEqual(slice, expected);
     }
   }

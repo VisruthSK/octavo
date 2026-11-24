@@ -336,7 +336,7 @@ On a busy machine, large pages loaded side by side can land in different timing 
 cargo build --release
 node corpus/build.mjs                       # regenerate manifest.json, or --check it
 node corpus/upstream.mjs                    # render the real pages (needs Quarto)
-node verify/corpus.mjs --tier smoke --browser
+node verify/corpus.mjs --tier subset --browser
 node verify/corpus.mjs --tier full --browser --jobs 2
 ```
 
