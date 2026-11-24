@@ -141,7 +141,6 @@ fn font_hint(source: &str, offset: usize) -> Option<(Range<usize>, String)> {
 
 fn css_rewrites<'i>(
     parser: &mut Parser<'i, '_>,
-    source: &str,
     strip_licenses: bool,
     comments: &mut Vec<Range<usize>>,
     ws: &mut Vec<(Range<usize>, &'static str)>,
@@ -199,7 +198,7 @@ fn css_rewrites<'i>(
                         };
                         let start = parser.position();
                         parser.parse_nested_block(|inner| {
-                            css_rewrites(inner, source, strip_licenses, comments, ws)
+                            css_rewrites(inner, strip_licenses, comments, ws)
                         })?;
                         if !parser.slice_from(start).ends_with(close) {
                             return Err(parser.new_custom_error(()));
@@ -244,15 +243,7 @@ fn stylesheet(
     let mut parser = Parser::new(&mut input);
     let mut comments = Vec::new();
     let mut ws = Vec::new();
-    if css_rewrites(
-        &mut parser,
-        source,
-        options.strip_licenses,
-        &mut comments,
-        &mut ws,
-    )
-    .is_err()
-    {
+    if css_rewrites(&mut parser, options.strip_licenses, &mut comments, &mut ws).is_err() {
         return;
     }
     if comments.is_empty() && ws.is_empty() {
